@@ -1,6 +1,56 @@
 import * as THREE from 'three';
 import { PhuQuocState } from './constants';
 
+export interface PhuQuocSunPosition {
+  x: number;
+  y: number;
+  z: number;
+  sunProgress: number; // 0 (dawn ~06:00) to 1 (dusk ~18:00)
+  isDay: boolean;
+  isSunset: boolean;
+}
+
+/**
+ * Pure calculation for Phu Quoc solar trajectory across sky and sea.
+ * Convention:
+ *   +X: East (sunrise over inland hills)
+ *   -X: West (sunset over sea towards Gulf of Thailand)
+ *   +Y: Up (zenith)
+ *   +Z: North
+ *   -Z: South
+ * Note: 17:45 (tod = 17.75) is an artistic diorama preset for golden hour, not an astronomical ephemeris.
+ */
+export function calculatePhuQuocSunPosition(timeOfDay: number): PhuQuocSunPosition {
+  const tod = Math.max(0, Math.min(24, timeOfDay));
+  const isDay = tod >= 5.5 && tod <= 18.5;
+  const isSunset = tod > 16.5 && tod <= 19.0;
+
+  if (isDay) {
+    // Daytime trajectory:
+    // At 06:00: sunProgress = 0.0 -> sunAngle = 0.0 -> x = +16.0 (East), y = 0.0
+    // At 12:00: sunProgress = 0.5 -> sunAngle = PI/2 -> x = 0.0, y = 14.5 (Noon overhead)
+    // At 18:00: sunProgress = 1.0 -> sunAngle = PI   -> x = -16.0 (West), y = 0.0
+    const sunProgress = (tod - 6.0) / 12.0; // 0.0 to 1.0
+    const sunAngle = Math.max(0, Math.min(Math.PI, sunProgress * Math.PI));
+
+    const y = Math.sin(sunAngle) * 14.5;
+    const x = Math.cos(sunAngle) * 16.0; // +X is East, -X is West
+    const z = Math.sin(sunAngle * 0.4) * 4.0;
+
+    return { x, y, z, sunProgress, isDay: true, isSunset };
+  } else {
+    // Night-time moonlight:
+    const nightProgress = tod > 18.5 ? (tod - 18.5) / 11.0 : (tod + 5.5) / 11.0;
+    const moonAngle = nightProgress * Math.PI;
+
+    const y = Math.max(3.0, Math.sin(moonAngle) * 12.0);
+    const x = -Math.cos(moonAngle) * 14.0;
+    const z = Math.cos(moonAngle * 0.3) * 5.0;
+
+    return { x, y, z, sunProgress: 0, isDay: false, isSunset: false };
+  }
+}
+
 export interface PhuQuocLightingSystem {
   group: THREE.Group;
   dirLight: THREE.DirectionalLight;
@@ -9,7 +59,7 @@ export interface PhuQuocLightingSystem {
   sunDirection: THREE.Vector3;
   sunColor: THREE.Color;
   skyColor: THREE.Color;
-  update(state: PhuQuocState, scene: THREE.Scene): void;
+  update(state: PhuQuocState, scene?: THREE.Scene): void;
   dispose(): void;
 }
 
@@ -23,7 +73,7 @@ export function createPhuQuocLighting(
 
   let boundScene: THREE.Scene | undefined = initialScene;
 
-  // Directional Sun/Moon Light (West is -X)
+  // Directional Sun/Moon Light
   const dirLight = new THREE.DirectionalLight(0xffb077, 1.8);
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.width = 2048;
@@ -45,7 +95,7 @@ export function createPhuQuocLighting(
   const ambientLight = new THREE.AmbientLight(0xffd5b8, 0.25);
   lightGroup.add(ambientLight);
 
-  // Colors
+  // Atmosphere palettes
   const cSunNoon = new THREE.Color(0xfff7ea);
   const cSunSunset = new THREE.Color(0xff8438);
   const cSunNight = new THREE.Color(0x6e86a4);
@@ -78,20 +128,12 @@ export function createPhuQuocLighting(
       }
       const tod = state.timeOfDay; // 0 - 24
 
-      // Western Sunset Arc (-X is West):
-      // Sun rises in East (+X), arches high at noon, sets in West (-X) at ~18:00
-      const sunProgress = (tod - 6.0) / 12.0; // 0 at 6:00, 0.5 at 12:00, 1.0 at 18:00
-      const sunAngle = sunProgress * Math.PI;
-
-      const sunY = Math.sin(sunAngle) * 14.0;
-      // At noon (sunProgress 0.5): sunX ≈ 0. At sunset (sunProgress ~0.98): sunX ≈ -15 (West)
-      const sunX = -Math.cos(sunAngle) * 16.0;
-      const sunZ = Math.sin(sunAngle * 0.4) * 4.0;
-
-      dirLight.position.set(sunX, Math.max(-2, sunY), sunZ);
+      // 1. Calculate pure sun position
+      const sunPos = calculatePhuQuocSunPosition(tod);
+      dirLight.position.set(sunPos.x, Math.max(-1.5, sunPos.y), sunPos.z);
       sunDir.copy(dirLight.position).normalize();
 
-      // Atmospheric grading
+      // 2. Atmospheric grading
       if (tod >= 6.0 && tod <= 16.5) {
         // Daytime tropical sun
         const dayT = Math.sin(((tod - 6.0) / 10.5) * Math.PI);
