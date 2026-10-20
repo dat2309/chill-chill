@@ -45,8 +45,18 @@ export function fitOrthographicCameraToBounds(
 
       mesh.geometry.computeBoundingBox();
       if (mesh.geometry.boundingBox) {
-        const mBox = mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
-        box.union(mBox);
+        if ((mesh as THREE.InstancedMesh).isInstancedMesh) {
+          const instMesh = mesh as THREE.InstancedMesh;
+          const dummyMatrix = new THREE.Matrix4();
+          for (let i = 0; i < instMesh.count; i++) {
+            instMesh.getMatrixAt(i, dummyMatrix);
+            const mBox = mesh.geometry.boundingBox.clone().applyMatrix4(dummyMatrix).applyMatrix4(mesh.matrixWorld);
+            box.union(mBox);
+          }
+        } else {
+          const mBox = mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
+          box.union(mBox);
+        }
         meshCount++;
       }
     }

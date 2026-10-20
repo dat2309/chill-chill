@@ -24,11 +24,20 @@ export class SceneManager {
   private activeTheme: ThemeInstance<any> | null = null;
   private activeThemeId: ThemeId = 'garden';
   private activeThemeState: ThemeState<any> | null = null;
+  private themeCameraStates = new Map<
+    ThemeId,
+    { position: [number, number, number]; target: [number, number, number]; zoom: number }
+  >();
 
   private clock = new THREE.Clock();
   private animFrameId = 0;
+  private isRunning = false;
   private isPaused = false;
+  private isDocumentVisible = typeof document !== 'undefined' ? !document.hidden : true;
+  private isIntersecting = true;
+  private isContextLost = false;
   private disposed = false;
+  private simTime = 0;
 
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
@@ -123,11 +132,8 @@ export class SceneManager {
 
     this.intersectionObserver = new IntersectionObserver((entries) => {
       const entry = entries[0];
-      if (entry?.isIntersecting) {
-        this.resume();
-      } else {
-        this.pause();
-      }
+      this.isIntersecting = !!entry?.isIntersecting;
+      this.updateLoopState();
     });
     this.intersectionObserver.observe(container);
   }
@@ -140,8 +146,23 @@ export class SceneManager {
     return this.activeTheme;
   }
 
+  getCameraState(): { position: [number, number, number]; target: [number, number, number]; zoom: number } {
+    return {
+      position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
+      target: [this.controls.target.x, this.controls.target.y, this.controls.target.z],
+      zoom: this.camera.zoom,
+    };
+  }
+
+  setCameraState(cam: { position: [number, number, number]; target: [number, number, number]; zoom: number }): void {
+    this.camera.position.set(...cam.position);
+    this.controls.target.set(...cam.target);
+    this.camera.zoom = cam.zoom;
+    this.controls.update();
+  }
+
   /**
-   * Switch active diorama theme safely with cancellation handling.
+   * Switch active diorama theme safely with cancellation handling and no blank frames.
    */
   async switchTheme(
     targetThemeId: ThemeId,
@@ -153,34 +174,40 @@ export class SceneManager {
     const switchToken = ++this.currentSwitchToken;
     this.onThemeLoadingChange?.(true, null);
 
-    try {
-      // 1. Dispose old theme if present and remove from scene
-      if (this.activeTheme) {
-        this.scene.remove(this.activeTheme.group);
-        this.activeTheme.dispose();
-        this.activeTheme = null;
-      }
+    // Save current camera for outgoing active theme
+    if (this.activeTheme && this.activeThemeId) {
+      this.themeCameraStates.set(this.activeThemeId, this.getCameraState());
+    }
 
-      // 2. Load target theme factory dynamically
+    let newTheme: ThemeInstance<any> | null = null;
+    try {
+      // 1. Load target theme factory dynamically (old theme keeps rendering!)
       const loader = THEME_LOADERS[targetThemeId];
       if (!loader) {
         throw new Error(`Unknown theme loader for ID: ${targetThemeId}`);
       }
 
-      const newTheme = await loader(this.renderer);
+      newTheme = await loader(this.renderer);
 
-      // Check if another switch request intervened
+      // Check if cancelled
       if (switchToken !== this.currentSwitchToken || this.disposed) {
         newTheme.dispose();
         return;
       }
 
-      // 3. Initialize theme
+      // 2. Initialize new theme asynchronously
       await newTheme.init();
 
       if (switchToken !== this.currentSwitchToken || this.disposed) {
         newTheme.dispose();
         return;
+      }
+
+      // 3. New theme is completely ready: now atomically unmount and dispose old theme
+      if (this.activeTheme) {
+        this.scene.remove(this.activeTheme.group);
+        this.activeTheme.dispose();
+        this.activeTheme = null;
       }
 
       // 4. Attach new theme root group to scene
@@ -193,10 +220,11 @@ export class SceneManager {
       newTheme.applyState(this.activeThemeState);
 
       // 6. Restore or calibrate camera
-      if (initialCamera) {
-        this.camera.position.set(...initialCamera.position);
-        this.controls.target.set(...initialCamera.target);
-        this.camera.zoom = initialCamera.zoom;
+      const savedCam = initialCamera || this.themeCameraStates.get(targetThemeId);
+      if (savedCam) {
+        this.camera.position.set(...savedCam.position);
+        this.controls.target.set(...savedCam.target);
+        this.camera.zoom = savedCam.zoom;
       } else if (newTheme.cameraPreset) {
         this.camera.position.copy(newTheme.cameraPreset.position);
         this.controls.target.copy(newTheme.cameraPreset.target);
@@ -207,12 +235,22 @@ export class SceneManager {
       // 7. Adjust quality settings on renderer
       this.applyQuality(targetState.quality ?? 'high');
 
-      // 8. Fit camera bounds
-      this.fitCamera();
+      // 8. Fit camera bounds if no preset/saved camera was used
+      if (!savedCam) {
+        this.fitCamera();
+      }
 
       this.onThemeLoadingChange?.(false, null);
     } catch (err: any) {
       console.error('Failed to switch theme:', err);
+      if (newTheme) {
+        try {
+          newTheme.dispose();
+        } catch (disposeErr) {
+          console.warn('Error disposing aborted theme:', disposeErr);
+        }
+      }
+      // Old theme remains safely active
       if (switchToken === this.currentSwitchToken) {
         this.onThemeLoadingChange?.(false, err instanceof Error ? err : new Error(String(err)));
       }
@@ -256,50 +294,77 @@ export class SceneManager {
 
   start(): void {
     if (this.disposed) return;
-    this.clock.start();
-    this.isPaused = false;
-    this.animate();
+    this.isRunning = true;
+    this.updateLoopState();
   }
 
   pause(): void {
-    if (this.isPaused) return;
     this.isPaused = true;
-    cancelAnimationFrame(this.animFrameId);
-    this.clock.stop();
+    this.updateLoopState();
   }
 
   resume(): void {
-    if (!this.isPaused || this.disposed) return;
     this.isPaused = false;
-    this.clock.start();
-    this.animate();
+    this.updateLoopState();
+  }
+
+  private updateLoopState(): void {
+    const shouldRun =
+      this.isRunning &&
+      !this.disposed &&
+      !this.isPaused &&
+      this.isDocumentVisible &&
+      this.isIntersecting &&
+      !this.isContextLost;
+
+    if (shouldRun) {
+      if (this.animFrameId === 0) {
+        this.clock.getDelta(); // flush delta to avoid sudden time jumps
+        this.animFrameId = requestAnimationFrame(this.animate);
+      }
+    } else {
+      if (this.animFrameId !== 0) {
+        cancelAnimationFrame(this.animFrameId);
+        this.animFrameId = 0;
+      }
+    }
   }
 
   private onVisibilityChange = (): void => {
-    if (document.hidden) {
-      this.pause();
-    } else {
-      this.resume();
-    }
+    this.isDocumentVisible = !document.hidden;
+    this.updateLoopState();
   };
 
   private onContextLost = (e: Event): void => {
     e.preventDefault();
-    this.pause();
+    this.isContextLost = true;
+    this.updateLoopState();
     console.warn('WebGL context lost.');
   };
 
   private onContextRestored = (): void => {
+    this.isContextLost = false;
+    this.updateLoopState();
     console.info('WebGL context restored.');
-    this.resume();
   };
 
   private animate = (): void => {
-    if (this.disposed || this.isPaused) return;
+    if (this.disposed) return;
+    this.animFrameId = 0;
+
+    const shouldRun =
+      this.isRunning &&
+      !this.isPaused &&
+      this.isDocumentVisible &&
+      this.isIntersecting &&
+      !this.isContextLost;
+
+    if (!shouldRun) return;
+
     this.animFrameId = requestAnimationFrame(this.animate);
 
     const dt = Math.min(this.clock.getDelta(), 0.1);
-    const elapsed = this.clock.getElapsedTime();
+    this.simTime += dt;
 
     // FPS measurement
     this.frameCount++;
@@ -337,9 +402,9 @@ export class SceneManager {
     }
     this.controls.update();
 
-    // Update active theme (NO if (theme === ...) branch!)
+    // Update active theme with smooth continuous simulation time
     if (this.activeTheme && this.activeThemeState) {
-      this.activeTheme.update(dt, elapsed, this.activeThemeState);
+      this.activeTheme.update(dt, this.simTime, this.activeThemeState);
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -401,21 +466,35 @@ export class SceneManager {
   };
 
   private raycastAndRipple(baseStrength: number, isSplash: boolean): void {
-    if (!this.activeTheme || !this.activeThemeState) return;
+    if (!this.activeTheme || !this.activeThemeState || this.isDragging) return;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    // Raycast against active theme group
     const hits = this.raycaster.intersectObjects(this.activeTheme.group.children, true);
+    if (hits.length === 0) return;
+
+    const waterLevel = this.activeTheme.getWaterLevel?.() ?? 0.3;
+
     for (const hit of hits) {
+      const meshName = (hit.object.name || '').toLowerCase();
+      // Ignore helper, sky, or rain objects
+      if (meshName.includes('helper') || meshName.includes('rain') || meshName.includes('sky')) {
+        continue;
+      }
+
       const pt = hit.point;
-      // Delegate to active theme's isInWater
-      if (this.activeTheme.isInWater(pt.x, pt.z)) {
+      const isWaterSurfaceOrBelow = pt.y <= waterLevel + 0.08;
+
+      if (isWaterSurfaceOrBelow && this.activeTheme.isInWater(pt.x, pt.z)) {
         this.activeTheme.addRipple(pt.x, pt.z, baseStrength * this.activeThemeState.rippleStrength);
         if (isSplash) {
           this.activeTheme.reactToSplash(pt.x, pt.z);
         }
         break;
       }
+
+      // If the top-most solid object is an obstacle above water (pier, bungalow, boat, rock, plateau),
+      // it occludes the water beneath it -> do not trigger water ripple underneath
+      break;
     }
   }
 
@@ -426,7 +505,11 @@ export class SceneManager {
   dispose(): void {
     this.disposed = true;
     this.currentSwitchToken++;
-    cancelAnimationFrame(this.animFrameId);
+    this.isRunning = false;
+    if (this.animFrameId !== 0) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = 0;
+    }
 
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
 

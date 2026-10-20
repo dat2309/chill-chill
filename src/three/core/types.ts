@@ -21,6 +21,7 @@ export interface SavedCameraState {
   target: [number, number, number];
   zoom: number;
 }
+export type CameraState = SavedCameraState;
 
 export interface ThemeState<T extends ThemeId = ThemeId> {
   themeId: T;
@@ -100,6 +101,8 @@ export interface ThemeInstance<T extends ThemeId = ThemeId> {
   isInWater(worldX: number, worldZ: number): boolean;
   addRipple(worldX: number, worldZ: number, strength: number): void;
   reactToSplash(worldX: number, worldZ: number): void;
+  getTideOffset?(): number;
+  getWaterLevel?(): number;
   setDebugMode?(debug: boolean): void;
   dispose(): void;
 }

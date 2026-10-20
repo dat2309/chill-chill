@@ -5,6 +5,7 @@ import {
   ThemeState,
   SharedOptions,
   PersistedAppState,
+  CameraState,
 } from './types';
 
 export const CURRENT_STORAGE_VERSION = 2;
@@ -40,6 +41,20 @@ export const DEFAULT_SHARED_OPTIONS: SharedOptions = {
 const VALID_GARDEN_SEASONS: GardenSeason[] = ['spring', 'summer', 'autumn', 'winter'];
 const VALID_PHUQUOC_SEASONS: PhuQuocSeason[] = ['dry', 'rainy'];
 
+function sanitizeCameraState(raw: any): CameraState | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  if (!Array.isArray(raw.position) || raw.position.length !== 3) return undefined;
+  if (!Array.isArray(raw.target) || raw.target.length !== 3) return undefined;
+  if (typeof raw.zoom !== 'number' || !Number.isFinite(raw.zoom) || raw.zoom <= 0) return undefined;
+  const isFiniteArr = (arr: any[]) => arr.every(n => typeof n === 'number' && Number.isFinite(n));
+  if (!isFiniteArr(raw.position) || !isFiniteArr(raw.target)) return undefined;
+  return {
+    position: [raw.position[0], raw.position[1], raw.position[2]],
+    target: [raw.target[0], raw.target[1], raw.target[2]],
+    zoom: raw.zoom,
+  };
+}
+
 export function sanitizeGardenState(raw: any): ThemeState<'garden'> {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_GARDEN_STATE };
   const season = VALID_GARDEN_SEASONS.includes(raw.season) ? raw.season : DEFAULT_GARDEN_STATE.season;
@@ -47,9 +62,15 @@ export function sanitizeGardenState(raw: any): ThemeState<'garden'> {
     ? Math.max(0, Math.min(24, raw.timeOfDay))
     : DEFAULT_GARDEN_STATE.timeOfDay;
   const tide = raw.tide === 'low' || raw.tide === 'high' ? raw.tide : DEFAULT_GARDEN_STATE.tide;
-  const rippleStrength = typeof raw.rippleStrength === 'number' ? Math.max(0, Math.min(1, raw.rippleStrength)) : DEFAULT_GARDEN_STATE.rippleStrength;
-  const flowSpeed = typeof raw.flowSpeed === 'number' ? Math.max(0, Math.min(1, raw.flowSpeed)) : DEFAULT_GARDEN_STATE.flowSpeed;
-  const windStrength = typeof raw.windStrength === 'number' ? Math.max(0, Math.min(1, raw.windStrength)) : DEFAULT_GARDEN_STATE.windStrength;
+  const rippleStrength = typeof raw.rippleStrength === 'number' && Number.isFinite(raw.rippleStrength)
+    ? Math.max(0, Math.min(1, raw.rippleStrength))
+    : DEFAULT_GARDEN_STATE.rippleStrength;
+  const flowSpeed = typeof raw.flowSpeed === 'number' && Number.isFinite(raw.flowSpeed)
+    ? Math.max(0, Math.min(1, raw.flowSpeed))
+    : DEFAULT_GARDEN_STATE.flowSpeed;
+  const windStrength = typeof raw.windStrength === 'number' && Number.isFinite(raw.windStrength)
+    ? Math.max(0, Math.min(1, raw.windStrength))
+    : DEFAULT_GARDEN_STATE.windStrength;
   const autoRotate = Boolean(raw.autoRotate);
 
   return {
@@ -61,7 +82,7 @@ export function sanitizeGardenState(raw: any): ThemeState<'garden'> {
     flowSpeed,
     windStrength,
     autoRotate,
-    cameraState: raw.cameraState,
+    cameraState: sanitizeCameraState(raw.cameraState),
     debugTerrain: Boolean(raw.debugTerrain),
   };
 }
@@ -73,9 +94,15 @@ export function sanitizePhuQuocState(raw: any): ThemeState<'phuquoc'> {
     ? Math.max(0, Math.min(24, raw.timeOfDay))
     : DEFAULT_PHUQUOC_STATE.timeOfDay;
   const tide = raw.tide === 'low' || raw.tide === 'high' ? raw.tide : DEFAULT_PHUQUOC_STATE.tide;
-  const rippleStrength = typeof raw.rippleStrength === 'number' ? Math.max(0, Math.min(1, raw.rippleStrength)) : DEFAULT_PHUQUOC_STATE.rippleStrength;
-  const flowSpeed = typeof raw.flowSpeed === 'number' ? Math.max(0, Math.min(1, raw.flowSpeed)) : DEFAULT_PHUQUOC_STATE.flowSpeed;
-  const windStrength = typeof raw.windStrength === 'number' ? Math.max(0, Math.min(1, raw.windStrength)) : DEFAULT_PHUQUOC_STATE.windStrength;
+  const rippleStrength = typeof raw.rippleStrength === 'number' && Number.isFinite(raw.rippleStrength)
+    ? Math.max(0, Math.min(1, raw.rippleStrength))
+    : DEFAULT_PHUQUOC_STATE.rippleStrength;
+  const flowSpeed = typeof raw.flowSpeed === 'number' && Number.isFinite(raw.flowSpeed)
+    ? Math.max(0, Math.min(1, raw.flowSpeed))
+    : DEFAULT_PHUQUOC_STATE.flowSpeed;
+  const windStrength = typeof raw.windStrength === 'number' && Number.isFinite(raw.windStrength)
+    ? Math.max(0, Math.min(1, raw.windStrength))
+    : DEFAULT_PHUQUOC_STATE.windStrength;
   const autoRotate = Boolean(raw.autoRotate);
 
   return {
@@ -87,7 +114,7 @@ export function sanitizePhuQuocState(raw: any): ThemeState<'phuquoc'> {
     flowSpeed,
     windStrength,
     autoRotate,
-    cameraState: raw.cameraState,
+    cameraState: sanitizeCameraState(raw.cameraState),
     debugTerrain: Boolean(raw.debugTerrain),
   };
 }

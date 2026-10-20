@@ -52,6 +52,7 @@ export default function Scene({
     }
     testCanvas.remove();
 
+    let unmounted = false;
     let manager: SceneManager | null = null;
     try {
       manager = new SceneManager(container, {
@@ -64,17 +65,20 @@ export default function Scene({
       manager
         .switchTheme(themeId, themeState)
         .then(() => {
+          if (unmounted) return;
           manager?.start();
           isInitializedRef.current = true;
           onReady();
         })
         .catch((e: Error) => {
+          if (unmounted) return;
           console.error(e);
           onError(`Lỗi khởi tạo cảnh 3D: ${e.message}`);
           manager?.dispose();
           managerRef.current = null;
         });
     } catch (e: any) {
+      if (unmounted) return;
       console.error(e);
       onError(`Không thể khởi tạo WebGL 3D: ${e?.message ?? e}`);
       manager?.dispose();
@@ -82,6 +86,7 @@ export default function Scene({
     }
 
     return () => {
+      unmounted = true;
       if (manager) {
         manager.dispose();
       }
