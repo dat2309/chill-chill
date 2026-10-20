@@ -1,20 +1,28 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { SceneState, Season, Quality } from '../three/constants';
+import { ThemeId, ThemeMetadata, ThemeState, Quality } from '../three/core/types';
+import { THEME_LIST, THEME_METADATA_MAP } from '../three/themes/registry';
 
 interface UIProps {
-  state: SceneState;
-  onChange: (patch: Partial<SceneState>) => void;
+  activeThemeId: ThemeId;
+  state: ThemeState<any>;
+  onChange: (patch: Partial<ThemeState<any>>) => void;
   onReset: () => void;
+  onSelectTheme: (themeId: ThemeId) => void;
   fps: number;
   loading: boolean;
+  themeLoading: boolean;
+  themeError: string | null;
+  onRetryTheme: () => void;
   webglError: string | null;
 }
 
-const SEASON_LABELS: Record<Season, string> = {
+const SEASON_EMOJIS: Record<string, string> = {
   spring: '🌸',
   summer: '☀️',
   autumn: '🍂',
   winter: '❄️',
+  dry: '☀️',
+  rainy: '🌧️',
 };
 
 function formatTime(t: number): string {
@@ -25,12 +33,12 @@ function formatTime(t: number): string {
 
 function getTimeIcon(t: number): string {
   if (t >= 5 && t < 8) return '🌅';
-  if (t >= 8 && t < 17) return '☀️';
-  if (t >= 17 && t < 20) return '🌇';
+  if (t >= 8 && t < 16.5) return '☀️';
+  if (t >= 16.5 && t < 19.5) return '🌇';
   return '🌙';
 }
 
-// Icons as pure SVG components
+// Icons
 function ResetIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -72,24 +80,106 @@ function FullscreenIcon() {
   );
 }
 
-// Memoized FPS Display to prevent re-rendering parents
+function LayersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 17 12 22 22 17" />
+      <polyline points="2 12 12 17 22 12" />
+    </svg>
+  );
+}
+
+// Mini SVG illustrations for theme cards
+function GardenCardPreview() {
+  return (
+    <svg viewBox="0 0 280 120" width="100%" height="100%" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="gardenSky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#dcecf8" />
+          <stop offset="100%" stopColor="#f4ede1" />
+        </linearGradient>
+      </defs>
+      <rect width="280" height="120" fill="url(#gardenSky)" />
+      {/* Mountain silhouettes */}
+      <polygon points="20,120 70,35 120,120" fill="#a4b8ab" />
+      <polygon points="85,120 150,25 215,120" fill="#88a192" />
+      <polygon points="170,120 230,45 280,120" fill="#a4b8ab" />
+      {/* Mountain snow peaks */}
+      <polygon points="150,25 138,45 162,45" fill="#f8fafc" />
+      {/* Plateau & meadow */}
+      <path d="M0,80 Q70,75 140,85 T280,78 L280,120 L0,120 Z" fill="#6d8d47" />
+      {/* Glamping Dome */}
+      <circle cx="85" cy="85" r="14" fill="#faf5ec" stroke="#d5c8b2" strokeWidth="1.5" />
+      {/* Stream */}
+      <path d="M160,82 Q190,95 240,120 L270,120 Q220,95 190,82 Z" fill="#4fbdae" />
+    </svg>
+  );
+}
+
+function PhuQuocCardPreview() {
+  return (
+    <svg viewBox="0 0 280 120" width="100%" height="100%" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="phuQuocSunset" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#fca07d" />
+          <stop offset="60%" stopColor="#fde0c8" />
+          <stop offset="100%" stopColor="#f5e8d5" />
+        </linearGradient>
+      </defs>
+      <rect width="280" height="120" fill="url(#phuQuocSunset)" />
+      {/* Sunset sun */}
+      <circle cx="210" cy="55" r="18" fill="#ff7043" opacity="0.85" />
+      {/* Back granite hill */}
+      <path d="M120,120 Q180,60 280,85 L280,120 Z" fill="#758273" opacity="0.6" />
+      {/* Curved beach sand */}
+      <path d="M0,75 Q90,70 160,92 T280,95 L280,120 L0,120 Z" fill="#edd6b4" />
+      {/* Turquoise Sea Bay */}
+      <path d="M110,95 Q170,98 280,105 L280,120 L80,120 Z" fill="#2ebfa5" />
+      {/* Coconut Palm */}
+      <path d="M45,95 Q65,65 72,40" stroke="#5d4937" strokeWidth="3" fill="none" strokeLinecap="round" />
+      <path d="M72,40 Q55,42 42,50 M72,40 Q85,44 95,54 M72,40 Q65,28 50,25 M72,40 Q80,26 95,32" stroke="#2e7d32" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+      {/* Thatched bungalow */}
+      <polygon points="105,75 125,58 145,75" fill="#a48858" />
+      <rect x="110" y="75" width="30" height="15" fill="#8d6840" />
+      {/* Thuyen thung */}
+      <circle cx="230" cy="110" r="7" fill="#222" stroke="#1976d2" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+// Memoized FPS Display
 const FpsBadge = React.memo(({ fps }: { fps: number }) => {
   return <span>{fps} FPS</span>;
 });
 
-export default function UI({ state, onChange, onReset, fps, loading, webglError }: UIProps) {
+export default function UI({
+  activeThemeId,
+  state,
+  onChange,
+  onReset,
+  onSelectTheme,
+  fps,
+  loading,
+  themeLoading,
+  themeError,
+  onRetryTheme,
+  webglError,
+}: UIProps) {
+  const [showThemeModal, setShowThemeModal] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const [showTune, setShowTune] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [loadingFade, setLoadingFade] = useState(true);
 
+  const themeBtnRef = useRef<HTMLButtonElement>(null);
+  const themeModalCloseBtnRef = useRef<HTMLButtonElement>(null);
   const howBtnRef = useRef<HTMLButtonElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
 
-  // Check URL query param ?debug=1 to show Debug Terrain switch
-  const isDebugUrl = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+  const activeMetadata = THEME_METADATA_MAP[activeThemeId];
 
-  // Pointer coarse detection for touch vs desktop hint
+  // Touch vs pointer detection
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -103,13 +193,13 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
 
   // Loading screen fade
   useEffect(() => {
-    if (!loading) {
-      const t = setTimeout(() => setLoadingFade(false), 600);
+    if (!loading && !themeLoading) {
+      const t = setTimeout(() => setLoadingFade(false), 500);
       return () => clearTimeout(t);
     } else {
       setLoadingFade(true);
     }
-  }, [loading]);
+  }, [loading, themeLoading]);
 
   // Fullscreen sync
   useEffect(() => {
@@ -126,22 +216,18 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
     }
   }, []);
 
-  // Escape key handler and focus trap for "How it's made" dialog
+  // Keyboard escape handlers
   useEffect(() => {
-    if (showHow) {
-      closeBtnRef.current?.focus();
-      const onKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          setShowHow(false);
-        }
-      };
-      window.addEventListener('keydown', onKeyDown);
-      return () => {
-        window.removeEventListener('keydown', onKeyDown);
-        howBtnRef.current?.focus();
-      };
-    }
-  }, [showHow]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showThemeModal) setShowThemeModal(false);
+        if (showHow) setShowHow(false);
+        if (showTune) setShowTune(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showThemeModal, showHow, showTune]);
 
   if (webglError) {
     return (
@@ -154,47 +240,85 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
 
   return (
     <>
-      {/* Loading Screen */}
+      {/* Loading Overlay */}
       {loadingFade && (
-        <div className={`loading-screen ${!loading ? 'fade-out' : ''}`} aria-busy={loading} aria-live="polite">
+        <div className={`loading-screen ${!loading && !themeLoading ? 'fade-out' : ''}`} aria-busy={loading || themeLoading} aria-live="polite">
           <div className="loading-spinner" />
-          <div className="loading-text">Building the garden from math…</div>
+          <div className="loading-text">
+            {themeLoading ? `Đang chuyển sang ${activeMetadata.name}…` : 'Building the diorama from math…'}
+          </div>
         </div>
       )}
 
-      {/* Top Left Title & Branding */}
+      {/* Theme Load Error Notification */}
+      {themeError && (
+        <div className="webgl-error" role="alert" style={{ zIndex: 180 }}>
+          <h2>Không thể tải chủ đề</h2>
+          <p>{themeError}</p>
+          <button className="ctrl-btn active" onClick={onRetryTheme} style={{ marginTop: 12 }}>
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {/* Top Left Header & Branding */}
       <header className="top-left-panel">
         <div className="logo-row">
           <div className="logo-icon" aria-hidden="true">✦</div>
           <div className="logo-text">chillax<span className="logo-degree">°</span></div>
         </div>
-        <div className="eyebrow">GLAMPING AND STREAM, IN MINIATURE</div>
+        <div className="eyebrow">{activeMetadata.eyebrow}</div>
         <h1 className="hero-title">
-          Where the garden<br />
-          meets the <em>stream.</em>
+          {activeThemeId === 'garden' ? (
+            <>Where the garden<br />meets the <em>stream.</em></>
+          ) : (
+            <>Where the palms<br />meet the <em>sunset bay.</em></>
+          )}
         </h1>
-        <button
-          ref={howBtnRef}
-          className="how-btn"
-          onClick={() => setShowHow(true)}
-          aria-label="How it's made - Architecture and math breakdown"
-          aria-haspopup="dialog"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-          How it's made
-        </button>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          <button
+            ref={themeBtnRef}
+            className="theme-switch-btn"
+            onClick={() => setShowThemeModal(true)}
+            aria-label="Chọn chủ đề diorama"
+            aria-haspopup="dialog"
+          >
+            <LayersIcon />
+            <span>Chủ đề: {activeMetadata.name}</span>
+          </button>
+          <button
+            ref={howBtnRef}
+            className="how-btn"
+            onClick={() => setShowHow(true)}
+            aria-label="How it's made - Architecture and math breakdown"
+            aria-haspopup="dialog"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            How it's made
+          </button>
+        </div>
       </header>
 
       {/* Top Right Controls & Time Slider */}
       <div className="top-right-panel">
         <div className="badge-row">
-          <span className="badge">Chillax Garden</span>
-          <span className="badge">Highland Stream</span>
-          <span className="badge">Valley Cove</span>
+          {activeThemeId === 'garden' ? (
+            <>
+              <span className="badge">Chillax Garden</span>
+              <span className="badge">Highland Stream</span>
+              <span className="badge">Valley Cove</span>
+            </>
+          ) : (
+            <>
+              <span className="badge">Phú Quốc Bay</span>
+              <span className="badge">Sunset Beach</span>
+              <span className="badge">Mái Lá & Cầu Tàu</span>
+            </>
+          )}
         </div>
         <div className="time-control">
           <span className="time-icon" aria-hidden="true">{getTimeIcon(state.timeOfDay)}</span>
@@ -220,19 +344,24 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
         </button>
         <div className="ctrl-divider" aria-hidden="true" />
 
+        {/* Dynamic Season Selector per active theme */}
         <div className="season-selector" role="group" aria-label="Choose season">
-          {(['spring', 'summer', 'autumn', 'winter'] as Season[]).map(s => (
-            <button
-              key={s}
-              className={`season-btn ${state.season === s ? 'active' : ''}`}
-              onClick={() => onChange({ season: s })}
-              aria-label={`Season: ${s}`}
-              aria-pressed={state.season === s}
-            >
-              <span aria-hidden="true">{SEASON_LABELS[s]}</span>{' '}
-              <span className="season-label">{s.charAt(0).toUpperCase() + s.slice(1)}</span>
-            </button>
-          ))}
+          {activeMetadata.seasons.map(s => {
+            const isSelected = state.season === s.id;
+            const emoji = SEASON_EMOJIS[s.id] || '🌱';
+            return (
+              <button
+                key={s.id}
+                className={`season-btn ${isSelected ? 'active' : ''}`}
+                onClick={() => onChange({ season: s.id as any })}
+                aria-label={`Mùa: ${s.name}`}
+                aria-pressed={isSelected}
+              >
+                <span aria-hidden="true">{emoji}</span>{' '}
+                <span className="season-label">{s.name}</span>
+              </button>
+            );
+          })}
         </div>
         <div className="ctrl-divider" aria-hidden="true" />
 
@@ -243,7 +372,7 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
           aria-pressed={state.tide === 'high'}
         >
           <span className="btn-icon" aria-hidden="true"><WaterIcon /></span>
-          {state.tide === 'high' ? 'High' : 'Low'}
+          {state.tide === 'high' ? 'Triều cao' : 'Triều thấp'}
         </button>
         <div className="ctrl-divider" aria-hidden="true" />
 
@@ -269,7 +398,7 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
         <div className="tune-panel" role="region" aria-label="Environment tune settings">
           <h3>Settings</h3>
           <div className="tune-row">
-            <label className="tune-label" htmlFor="ripple-strength-slider">Ripple strength</label>
+            <label className="tune-label" htmlFor="ripple-strength-slider">Gợn sóng (Ripple)</label>
             <input
               id="ripple-strength-slider"
               className="tune-slider"
@@ -283,7 +412,7 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
             />
           </div>
           <div className="tune-row">
-            <label className="tune-label" htmlFor="flow-speed-slider">Flow speed</label>
+            <label className="tune-label" htmlFor="flow-speed-slider">Tốc độ nước / sóng</label>
             <input
               id="flow-speed-slider"
               className="tune-slider"
@@ -297,7 +426,7 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
             />
           </div>
           <div className="tune-row">
-            <label className="tune-label" htmlFor="wind-strength-slider">Wind</label>
+            <label className="tune-label" htmlFor="wind-strength-slider">Gió (Wind)</label>
             <input
               id="wind-strength-slider"
               className="tune-slider"
@@ -311,7 +440,7 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
             />
           </div>
           <div className="tune-row">
-            <span className="tune-label" id="auto-rotate-label">Auto rotate</span>
+            <span className="tune-label" id="auto-rotate-label">Tự động xoay</span>
             <div className="tune-toggle">
               <button
                 role="switch"
@@ -323,7 +452,7 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
             </div>
           </div>
           <div className="tune-row">
-            <span className="tune-label" id="quality-selector-label">Quality</span>
+            <span className="tune-label" id="quality-selector-label">Chất lượng đồ họa</span>
             <div className="quality-selector" role="group" aria-labelledby="quality-selector-label">
               {(['low', 'medium', 'high'] as Quality[]).map(q => (
                 <button
@@ -333,41 +462,95 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
                   aria-pressed={state.quality === q}
                   aria-label={`Graphics quality: ${q}`}
                 >
-                  {q.charAt(0).toUpperCase() + q.slice(1)}
+                  {q === 'low' ? 'Thấp' : q === 'medium' ? 'Vừa' : 'Cao'}
                 </button>
               ))}
             </div>
           </div>
-          {isDebugUrl && (
-            <div className="tune-row">
-              <span className="tune-label" id="debug-terrain-label">Debug Terrain (Magenta)</span>
-              <div className="tune-toggle">
-                <button
-                  role="switch"
-                  aria-checked={Boolean(state.debugTerrain)}
-                  aria-labelledby="debug-terrain-label"
-                  className={`toggle-switch ${state.debugTerrain ? 'on' : ''}`}
-                  onClick={() => onChange({ debugTerrain: !state.debugTerrain })}
-                />
-              </div>
-            </div>
-          )}
         </div>
       )}
 
       {/* Footer Instructions and Badges */}
       <footer className="footer">
         <div className="footer-left">
-          {isTouchDevice ? 'Drag to orbit · Tap water to splash' : 'Drag to orbit · Glide cursor on stream for ripples · Click water to splash'}
+          {isTouchDevice ? 'Kéo để xoay góc nhìn · Chạm vào nước để tạo sóng' : 'Kéo chuột để xoay · Di chuột qua mặt nước để tạo gợn sóng · Nhấp để tạo sóng tròn'}
         </div>
         <div className="footer-right">
-          <span>{state.season.charAt(0).toUpperCase() + state.season.slice(1)}</span>
+          <span>{activeMetadata.name}</span>
           <span>{formatTime(state.timeOfDay)}</span>
           <FpsBadge fps={fps} />
         </div>
       </footer>
 
-      {/* How It's Made Modal Dialog */}
+      {/* Theme Selector Modal Dialog */}
+      {showThemeModal && (
+        <div className="theme-modal-overlay" onClick={() => setShowThemeModal(false)}>
+          <div
+            className="theme-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="theme-modal-title"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="theme-modal-header">
+              <div>
+                <h2 id="theme-modal-title" className="theme-modal-title">Bộ Sưu Tập Diorama</h2>
+                <div className="theme-modal-subtitle">Chọn cảnh quan thu nhỏ 3D được kiến tạo thuần toán học</div>
+              </div>
+            </div>
+
+            <div className="theme-grid">
+              {THEME_LIST.map(theme => {
+                const isActive = theme.id === activeThemeId;
+                return (
+                  <button
+                    key={theme.id}
+                    className={`theme-card ${isActive ? 'active' : ''}`}
+                    onClick={() => {
+                      if (!isActive) {
+                        onSelectTheme(theme.id);
+                      }
+                      setShowThemeModal(false);
+                    }}
+                    aria-label={`Chọn chủ đề: ${theme.name}`}
+                  >
+                    <div className="theme-card-preview">
+                      {theme.id === 'garden' ? <GardenCardPreview /> : <PhuQuocCardPreview />}
+                    </div>
+                    <div className="theme-card-info">
+                      <div className="theme-card-title">{theme.name}</div>
+                      <div className="theme-card-desc">{theme.description}</div>
+                    </div>
+                    <div className="theme-card-meta">
+                      <span className="theme-badge">
+                        {theme.seasons.length} Mùa ({theme.seasons.map(s => s.name).join(' · ')})
+                      </span>
+                      {isActive && (
+                        <span className="theme-active-pill">
+                          <span aria-hidden="true">✓</span> Đang chọn
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="theme-modal-footer">
+              <button
+                ref={themeModalCloseBtnRef}
+                className="close-btn"
+                onClick={() => setShowThemeModal(false)}
+                aria-label="Đóng bảng chọn chủ đề"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Adaptive How It's Made Modal Dialog */}
       {showHow && (
         <div className="how-panel-overlay" onClick={() => setShowHow(false)}>
           <div
@@ -377,50 +560,13 @@ export default function UI({ state, onChange, onReset, fps, loading, webglError 
             aria-labelledby="how-panel-title"
             onClick={e => e.stopPropagation()}
           >
-            <h2 id="how-panel-title">How It's Made</h2>
-            <h3>🏔️ Terrain</h3>
-            <p>
-              The terrain is a 240×240 heightfield generated with multi-octave simplex noise (FBM),
-              ridged multifractal for mountain ridges, and Voronoi patterns for rock textures.
-              The diorama is a floating island with visible geological cross-section layers
-              colored via vertex colors — no external textures are used.
-            </p>
-            <h3>💧 Water & Ripples</h3>
-            <p>
-              Water uses a custom GLSL shader implementing Beer–Lambert light absorption
-              for depth-dependent color, Schlick's Fresnel approximation for reflections,
-              and animated surface normals. Ripples are simulated on the GPU using a
-              ping-pong render target running the 2D wave equation each frame, with an analytical fallback.
-            </p>
-            <h3>🐟 Fish</h3>
-            <p>
-              12 procedural fish are generated from mathematical body curves with oscillating
-              tail vertices. They follow a simplified Boids algorithm for loose schooling,
-              with boundary avoidance and ripple reactions.
-            </p>
-            <h3>🏕️ Architecture</h3>
-            <p>
-              Geodesic domes are constructed from subdivided icosahedra (detail level 2),
-              hemisphered and framed on individual stilts. The A-frame cabin, furniture, campfire,
-              and all props are built entirely from basic THREE.js geometries combined procedurally.
-            </p>
-            <h3>🌲 Vegetation</h3>
-            <p>
-              Over 4,500 plant instances use THREE.InstancedMesh for high performance. Tree canopies
-              are noise-deformed icospheres. Placement uses density maps based on elevation,
-              slope, and proximity to water, with exclusion zones around buildings.
-            </p>
-            <h3>☀️ Lighting</h3>
-            <p>
-              The sun orbits based on a 0–24h slider, with color temperature shifting from
-              warm golden (dawn/dusk) to neutral daylight to cool blue moonlight. Tent and
-              cabin interiors glow at night via emissive materials and point lights.
-            </p>
-            <h3>🍂 Seasons</h3>
-            <p>
-              Four seasons smoothly interpolate vegetation colors, flower density, and snow
-              coverage using per-instance color updates on InstancedMesh.
-            </p>
+            <h2 id="how-panel-title">How It's Made — {activeMetadata.name}</h2>
+            {(activeMetadata.howItMade || []).map((section, idx) => (
+              <div key={idx}>
+                <h3>{section.icon} {section.title}</h3>
+                <p>{section.content}</p>
+              </div>
+            ))}
             <button
               ref={closeBtnRef}
               className="close-btn"

@@ -1,27 +1,31 @@
 import React, { useRef, useEffect } from 'react';
-import { SceneManager } from '../three/SceneManager';
-import { SceneState, Quality } from '../three/constants';
+import { SceneManager } from '../three/core/SceneManager';
+import { ThemeId, ThemeState, Quality } from '../three/core/types';
 
 interface SceneProps {
-  state: SceneState;
+  themeId: ThemeId;
+  themeState: ThemeState<any>;
   onReady: () => void;
   onError: (msg: string) => void;
   onFps: (fps: number) => void;
   onQualityChange?: (quality: Quality) => void;
+  onThemeLoadingChange?: (loading: boolean, error?: Error | null) => void;
   managerRef: React.MutableRefObject<SceneManager | null>;
 }
 
 export default function Scene({
-  state,
+  themeId,
+  themeState,
   onReady,
   onError,
   onFps,
   onQualityChange,
+  onThemeLoadingChange,
   managerRef,
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const currentThemeIdRef = useRef<ThemeId>(themeId);
+  const isInitializedRef = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -50,13 +54,18 @@ export default function Scene({
 
     let manager: SceneManager | null = null;
     try {
-      manager = new SceneManager(container, onFps, onQualityChange);
+      manager = new SceneManager(container, {
+        onFpsUpdate: onFps,
+        onQualityChange,
+        onThemeLoadingChange,
+      });
       managerRef.current = manager;
 
       manager
-        .init()
+        .switchTheme(themeId, themeState)
         .then(() => {
           manager?.start();
+          isInitializedRef.current = true;
           onReady();
         })
         .catch((e: Error) => {
@@ -77,20 +86,31 @@ export default function Scene({
         manager.dispose();
       }
       managerRef.current = null;
+      isInitializedRef.current = false;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync state changes to manager
+  // Handle dynamic theme switching
   useEffect(() => {
-    managerRef.current?.updateState(state);
-  }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!isInitializedRef.current || !managerRef.current) return;
+    if (currentThemeIdRef.current !== themeId) {
+      currentThemeIdRef.current = themeId;
+      managerRef.current.switchTheme(themeId, themeState);
+    }
+  }, [themeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync active theme state updates
+  useEffect(() => {
+    if (!isInitializedRef.current || !managerRef.current) return;
+    managerRef.current.updateState(themeState);
+  }, [themeState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
       ref={containerRef}
       className="canvas-container"
       role="img"
-      aria-label="Chillax Garden & Stream 3D diorama - Khu cắm trại glamping bên suối núi thu nhỏ"
+      aria-label="3D diorama canvas viewer - Procedural WebGL"
     />
   );
 }
