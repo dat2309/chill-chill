@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "check-stream": "vite build --ssr scripts/check-stream.ts --outDir dist-scripts && node dist-scripts/check-stream.js",
     "check-phuquoc": "vite build --ssr scripts/check-phuquoc.ts --outDir dist-scripts && node dist-scripts/check-phuquoc.js",
-    "test": "npm run check-stream && npm run check-phuquoc"
+    "check-lifecycle": "vite build --ssr scripts/check-lifecycle.ts --outDir dist-scripts && node dist-scripts/check-lifecycle.js",
+    "test": "npm run check-stream && npm run check-phuquoc && npm run check-lifecycle"
   },
   "dependencies": {
     "react": "^18.3.1",

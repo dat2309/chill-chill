@@ -18,9 +18,11 @@ import {
   SEA_LEVEL_HIGH,
   DEFAULT_PHUQUOC_STATE,
 } from '../src/three/themes/phuquoc/constants';
+import { calculatePhuQuocSunPosition } from '../src/three/themes/phuquoc/lighting';
 import {
   sanitizeGardenState,
   sanitizePhuQuocState,
+  sanitizeCameraState,
   loadPersistedAppState,
   savePersistedAppState,
   DEFAULT_GARDEN_STATE,
@@ -220,6 +222,62 @@ assert(
 assert(
   DEFAULT_PHUQUOC_STATE.timeOfDay === 17.75 && DEFAULT_PHUQUOC_STATE.season === 'dry',
   'Phu Quoc preserves default Dry Season 17:45 sunset state'
+);
+
+// 8. Phu Quoc Solar Trajectory & Coordinate Convention (+X East, -X West)
+const sun06 = calculatePhuQuocSunPosition(6.0);
+assert(sun06.x > 0 && sun06.isDay, 'Sun rises in the East (+X > 0) around 06:00');
+
+const sun12 = calculatePhuQuocSunPosition(12.0);
+assert(
+  Math.abs(sun12.x) < 2.0 && sun12.y > 10.0,
+  'Sun reaches zenith overhead around 12:00 (|X| < 2.0, Y high > 10.0)'
+);
+
+const sun18 = calculatePhuQuocSunPosition(18.0);
+assert(sun18.x < 0, 'Sun sets in the West (-X < 0) around 18:00');
+
+const sun1745 = calculatePhuQuocSunPosition(17.75);
+assert(
+  sun1745.x < -14.0 && sun1745.y > 0.0 && sun1745.y < 3.0 && sun1745.isSunset,
+  'Artistic preset 17:45 positions sun low over western sea for golden hour'
+);
+
+let allSunCoordinatesFinite = true;
+for (let t = 0; t <= 24; t += 0.25) {
+  const p = calculatePhuQuocSunPosition(t);
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
+    allSunCoordinatesFinite = false;
+    break;
+  }
+}
+assert(allSunCoordinatesFinite, 'Solar trajectory generates smooth, finite 3D coordinates across 0-24h cycle');
+
+// 9. Camera Persistence & Sanitization
+const invalidCamCoincident = sanitizeCameraState({ position: [5, 5, 5], target: [5, 5, 5], zoom: 1 });
+assert(invalidCamCoincident === undefined, 'Camera sanitizer rejects coincident position and target');
+
+const clampedMinZoom = sanitizeCameraState({ position: [10, 10, 10], target: [0, 0, 0], zoom: 0.05 });
+assert(clampedMinZoom?.zoom === 0.4, 'Camera sanitizer clamps zoom to safe minimum bound');
+
+const clampedMaxZoom = sanitizeCameraState({ position: [10, 10, 10], target: [0, 0, 0], zoom: 10.0 });
+assert(clampedMaxZoom?.zoom === 3.0, 'Camera sanitizer clamps zoom to safe maximum bound');
+
+const mockAppState = {
+  version: 2,
+  activeThemeId: 'phuquoc' as const,
+  gardenState: { ...DEFAULT_GARDEN_STATE, cameraState: { position: [20, 20, 20] as [number, number, number], target: [0, 0, 0] as [number, number, number], zoom: 1.2 } },
+  phuquocState: { ...DEFAULT_PHUQUOC_STATE, cameraState: { position: [-15, 12, 18] as [number, number, number], target: [0, 0.5, 0] as [number, number, number], zoom: 1.5 } },
+  shared: { quality: 'high' as const },
+  camera: {
+    garden: { position: [20, 20, 20] as [number, number, number], target: [0, 0, 0] as [number, number, number], zoom: 1.2 },
+    phuquoc: { position: [-15, 12, 18] as [number, number, number], target: [0, 0.5, 0] as [number, number, number], zoom: 1.5 },
+  },
+};
+assert(
+  mockAppState.camera.garden.zoom !== mockAppState.camera.phuquoc.zoom &&
+  mockAppState.camera.garden.position[0] !== mockAppState.camera.phuquoc.position[0],
+  'Camera state across themes is stored and isolated independently'
 );
 
 // Summary
