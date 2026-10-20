@@ -41,17 +41,26 @@ export const DEFAULT_SHARED_OPTIONS: SharedOptions = {
 const VALID_GARDEN_SEASONS: GardenSeason[] = ['spring', 'summer', 'autumn', 'winter'];
 const VALID_PHUQUOC_SEASONS: PhuQuocSeason[] = ['dry', 'rainy'];
 
-function sanitizeCameraState(raw: any): CameraState | undefined {
+export function sanitizeCameraState(raw: any): CameraState | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   if (!Array.isArray(raw.position) || raw.position.length !== 3) return undefined;
   if (!Array.isArray(raw.target) || raw.target.length !== 3) return undefined;
   if (typeof raw.zoom !== 'number' || !Number.isFinite(raw.zoom) || raw.zoom <= 0) return undefined;
   const isFiniteArr = (arr: any[]) => arr.every(n => typeof n === 'number' && Number.isFinite(n));
   if (!isFiniteArr(raw.position) || !isFiniteArr(raw.target)) return undefined;
+
+  // Ensure camera position does not coincide with orbit target
+  const dx = raw.position[0] - raw.target[0];
+  const dy = raw.position[1] - raw.target[1];
+  const dz = raw.position[2] - raw.target[2];
+  if (dx * dx + dy * dy + dz * dz < 0.01) return undefined;
+
+  const zoom = Math.max(0.4, Math.min(3.0, raw.zoom));
+
   return {
     position: [raw.position[0], raw.position[1], raw.position[2]],
     target: [raw.target[0], raw.target[1], raw.target[2]],
-    zoom: raw.zoom,
+    zoom,
   };
 }
 
@@ -147,12 +156,19 @@ export function loadPersistedAppState(): PersistedAppState {
       debugTerrain: Boolean(data.shared?.debugTerrain),
     };
 
+    const camera: Partial<Record<ThemeId, CameraState>> = {};
+    const gardenCam = sanitizeCameraState(data.camera?.garden ?? data.gardenState?.cameraState);
+    if (gardenCam) camera.garden = gardenCam;
+    const phuquocCam = sanitizeCameraState(data.camera?.phuquoc ?? data.phuquocState?.cameraState);
+    if (phuquocCam) camera.phuquoc = phuquocCam;
+
     return {
       version: CURRENT_STORAGE_VERSION,
       activeThemeId,
       gardenState,
       phuquocState,
       shared,
+      camera,
     };
   } catch (err) {
     console.warn('Failed to parse localStorage app state, using fallback:', err);
@@ -169,6 +185,7 @@ export function savePersistedAppState(state: PersistedAppState): void {
       gardenState: state.gardenState,
       phuquocState: state.phuquocState,
       shared: state.shared,
+      camera: state.camera,
     });
     window.localStorage.setItem(STORAGE_KEY, serialized);
   } catch (err) {
