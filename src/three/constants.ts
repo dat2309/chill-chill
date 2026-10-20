@@ -12,7 +12,7 @@ export const SEED = 42;
 // Stream runs from middle-right towards front edge (+Z)
 // Glamping plateau is middle-left (-X, mid Z)
 // Mountains and evergreen forest at negative Z (back)
-export const STREAM_Z_START = 0.8;
+export const STREAM_Z_START = -7.5; // Stream begins in rear mountain gorge
 export const STREAM_Z_END = DIORAMA_DEPTH / 2; // 8.0 (front edge)
 export const STREAM_CENTER_X = 1.8;
 
@@ -69,7 +69,7 @@ export const SEASON_PALETTES: Record<Season, SeasonPalette> = {
   spring: {
     canopyPrimary: new THREE.Color(0x76b240),
     canopySecondary: new THREE.Color(0xa2db50),
-    pineFoliage: new THREE.Color(0x2f6842),
+    pineFoliage: new THREE.Color(0x387a4c), // Rich vibrant alpine green (never black)
     ground: new THREE.Color(0x739c44),
     flowerColors: [new THREE.Color(0xf48fb1), new THREE.Color(0xffffff), new THREE.Color(0xffeb3b)],
     grassTint: new THREE.Color(0x92cf4f),
@@ -78,7 +78,7 @@ export const SEASON_PALETTES: Record<Season, SeasonPalette> = {
   summer: {
     canopyPrimary: new THREE.Color(0x528b30),
     canopySecondary: new THREE.Color(0x74ad42),
-    pineFoliage: new THREE.Color(0x285938),
+    pineFoliage: new THREE.Color(0x326e44),
     ground: new THREE.Color(0x628740),
     flowerColors: [new THREE.Color(0xef5350), new THREE.Color(0xffd54f), new THREE.Color(0xba68c8)],
     grassTint: new THREE.Color(0x70aa3c),
@@ -87,7 +87,7 @@ export const SEASON_PALETTES: Record<Season, SeasonPalette> = {
   autumn: {
     canopyPrimary: new THREE.Color(0xdf6f1c),
     canopySecondary: new THREE.Color(0xf5a522),
-    pineFoliage: new THREE.Color(0x2f563a),
+    pineFoliage: new THREE.Color(0x3a6a48),
     ground: new THREE.Color(0x907248),
     flowerColors: [new THREE.Color(0xffb74d), new THREE.Color(0xd84315)],
     grassTint: new THREE.Color(0xaa8c52),
@@ -96,7 +96,7 @@ export const SEASON_PALETTES: Record<Season, SeasonPalette> = {
   winter: {
     canopyPrimary: new THREE.Color(0x5c6a60), // Muted winter deciduous
     canopySecondary: new THREE.Color(0x77877c),
-    pineFoliage: new THREE.Color(0x264b32), // Conifers remain deep evergreen
+    pineFoliage: new THREE.Color(0x2e583d), // Conifers remain deep evergreen
     ground: new THREE.Color(0x788376), // Muted ground with soil showing
     flowerColors: [],
     grassTint: new THREE.Color(0x869084),

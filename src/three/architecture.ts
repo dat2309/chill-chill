@@ -139,27 +139,28 @@ export function createArchitecture(
     opacity: 0.55,
   });
 
-  // 1. THREE GEODESIC DOME TENTS ON SOLID MEADOW
-  // Carefully positioned inside the level meadow zone (height = 2.05)
+  // 1. THREE GEODESIC DOME TENTS ON INDIVIDUAL WOODEN DECKS
+  // Separated across the meadow with space and natural vegetation between them
   const domeConfigs = [
-    { x: -5.0, z: -2.0, rotY: 0.15 }, // Dome 1 (Back left)
-    { x: -2.2, z: -1.2, rotY: -0.20 }, // Dome 2 (Mid right)
-    { x: -4.2, z: 0.0, rotY: 0.05 },   // Dome 3 (Front left)
+    { x: -4.8, z: -2.0, rotY: 0.15 }, // Dome 1 (Back left)
+    { x: -1.9, z: -1.2, rotY: -0.20 }, // Dome 2 (Mid right)
+    { x: -4.0, z: 0.15, rotY: 0.05 },   // Dome 3 (Front left)
   ];
 
   domeConfigs.forEach((cfg, idx) => {
     const groundY = getHeightAt(cfg.x, cfg.z);
-    const platformW = 2.0;
-    const platformD = 2.0;
-    const platformH = 0.10;
+    // Distinct compact individual platform for each dome
+    const platformW = 1.72;
+    const platformD = 1.72;
+    const platformH = 0.09;
     const platformTopY = groundY + platformH;
 
-    // Planks deck
-    const plankCount = 10;
-    const plankW = (platformW - 0.04) / plankCount;
+    // Separate wooden planks
+    const plankCount = 8;
+    const plankW = (platformW - 0.03) / plankCount;
     for (let p = 0; p < plankCount; p++) {
       const plankGeo = new THREE.BoxGeometry(plankW - 0.015, platformH, platformD).toNonIndexed();
-      const px = -platformW / 2 + 0.02 + (p + 0.5) * plankW;
+      const px = -platformW / 2 + 0.015 + (p + 0.5) * plankW;
       plankGeo.translate(cfg.x + px, groundY + platformH / 2, cfg.z);
 
       const baseCol = p % 2 === 0 ? COLORS.wood.plank.clone() : COLORS.wood.light.clone();
@@ -168,30 +169,25 @@ export function createArchitecture(
       }));
     }
 
-    // Step at front (+Z direction)
-    const stepGeo = new THREE.BoxGeometry(0.85, 0.05, 0.30).toNonIndexed();
-    stepGeo.translate(cfg.x, groundY + 0.025, cfg.z + platformD / 2 + 0.15);
+    // Individual step at front (+Z direction)
+    const stepGeo = new THREE.BoxGeometry(0.70, 0.05, 0.22).toNonIndexed();
+    stepGeo.translate(cfg.x, groundY + 0.025, cfg.z + platformD / 2 + 0.11);
     woodGeometries.push(prepareGeometry(stepGeo, COLORS.wood.light));
 
-    // Corner foundation posts firmly in ground
+    // Sturdy corner foundation posts firmly in ground
     const cornerOffsets = [
-      [-0.9, -0.9],
-      [0.9, -0.9],
-      [-0.9, 0.9],
-      [0.9, 0.9],
+      [-0.76, -0.76],
+      [0.76, -0.76],
+      [-0.76, 0.76],
+      [0.76, 0.76],
     ];
     cornerOffsets.forEach(([cx, cz]) => {
       const cornerGround = getHeightAt(cfg.x + cx, cfg.z + cz);
       const postH = Math.max(0.12, platformTopY - cornerGround + 0.12);
-      const post = new THREE.BoxGeometry(0.11, postH, 0.11).toNonIndexed();
+      const post = new THREE.BoxGeometry(0.09, postH, 0.09).toNonIndexed();
       post.translate(cfg.x + cx, platformTopY - postH / 2, cfg.z + cz);
       woodGeometries.push(prepareGeometry(post, COLORS.wood.dark));
     });
-
-    // Solid perimeter foundation skirt under deck so no light gaps ever appear
-    const skirtGeo = new THREE.BoxGeometry(platformW - 0.08, 0.20, platformD - 0.08).toNonIndexed();
-    skirtGeo.translate(cfg.x, groundY, cfg.z);
-    woodGeometries.push(prepareGeometry(skirtGeo, COLORS.wood.dark));
 
     // Geodesic Dome Mesh
     const { domeGeo, edgesGeo } = createGeodesicDomeHemisphere();
@@ -507,10 +503,10 @@ export function createArchitecture(
   const stairFlights: StairFlightDef[] = [
     // Flight 1: Upper cliff descent from campsite meadow down to intermediate landing
     { startX: -3.5, startZ: 0.85, endX: -3.0, endZ: 1.55, steps: 8, width: 0.90 },
-    // Flight 2: Lower cliff descent from intermediate landing down to pebble bank
+    // Flight 2: Lower cliff descent from intermediate landing down to pebble bank (lands on dry pebble shore)
     { startX: -2.85, startZ: 1.70, endX: -2.35, endZ: 2.45, steps: 8, width: 0.90 },
-    // Auxiliary Right Bank Stairs: Lower, gentle path from right bank to water
-    { startX: 0.3, startZ: 0.35, endX: 0.65, endZ: 1.75, steps: 8, width: 0.75 },
+    // Right Bank Gentle Trail: descends along dry gravel slope to a stone overlook landing above water
+    { startX: 3.4, startZ: 0.30, endX: 3.9, endZ: 1.55, steps: 7, width: 0.80 },
   ];
 
   stairFlights.forEach((flight) => {
@@ -554,7 +550,7 @@ export function createArchitecture(
   landingGeo.translate(landingX, landingBedY + 0.05 - landingTerraceH / 2 + 0.06, landingZ);
   stoneGeometries.push(prepareGeometry(landingGeo, COLORS.terrain.rock));
 
-  // Stone curbs around landing edge
+  // Stone curbs around intermediate landing edge
   const landingCurbs = [
     { x: landingX - 0.58, z: landingZ, w: 0.12, d: 1.05 },
     { x: landingX, z: landingZ + 0.53, w: 1.15, d: 0.12 },
@@ -565,72 +561,146 @@ export function createArchitecture(
     stoneGeometries.push(prepareGeometry(cGeo, COLORS.terrain.rockDark));
   });
 
+  // Right Bank Overlook Terrace (dry stone landing platform safely above water)
+  const rLandingX = 4.0;
+  const rLandingZ = 1.70;
+  const rLandingBedY = getHeightAt(rLandingX, rLandingZ);
+  const rLandingGeo = new THREE.BoxGeometry(1.10, 0.20, 0.95).toNonIndexed();
+  rLandingGeo.translate(rLandingX, rLandingBedY + 0.04, rLandingZ);
+  stoneGeometries.push(prepareGeometry(rLandingGeo, COLORS.terrain.rock));
+
   // Natural Flagstone Stepping Stones connecting campsite to stairs and stairs to water
   const flagstoneSpots = [
-    // Campsite meadow path leading to stairs
-    { x: -3.8, z: 0.2 },
-    { x: -3.7, z: 0.5 },
-    { x: -3.6, z: 0.7 },
-    // Pebble bank path leading to water edge
-    { x: -2.1, z: 2.7 },
-    { x: -1.8, z: 3.1 },
-    { x: -1.4, z: 3.6 },
-    { x: -1.0, z: 4.1 },
+    // Connecting Dome 1 to Campfire
+    { x: -4.4, z: -1.6 },
+    { x: -4.0, z: -1.3 },
+    { x: -3.6, z: -1.1 },
+    // Connecting Dome 2 to Campfire
+    { x: -2.4, z: -1.0 },
+    { x: -2.8, z: -0.9 },
+    // Connecting Dome 3 to Campfire
+    { x: -3.9, z: -0.3 },
+    { x: -3.6, z: -0.6 },
+    // Connecting Cabin porch to Campfire
+    { x: -1.5, z: -2.1 },
+    { x: -2.0, z: -1.7 },
+    { x: -2.6, z: -1.3 },
+    // Path from Campfire towards Cliff Stairs
+    { x: -3.3, z: -0.5 },
+    { x: -3.4, z: -0.1 },
+    { x: -3.5, z: 0.35 },
+    { x: -3.5, z: 0.70 },
+    // Path from Dome 1 towards Picnic Table
+    { x: -5.2, z: -1.5 },
+    { x: -5.6, z: -1.1 },
+    { x: -5.9, z: -0.8 },
+    // Pebble bank path from lower stairs to water edge
+    { x: -2.0, z: 2.7 },
+    { x: -1.7, z: 3.1 },
+    { x: -1.3, z: 3.6 },
+    { x: -0.9, z: 4.0 },
+    // Right bank path connecting overlook terrace to beach
+    { x: 4.2, z: 2.2 },
+    { x: 4.5, z: 2.7 },
+    { x: 4.8, z: 3.3 },
   ];
   flagstoneSpots.forEach((fp) => {
     const fY = getHeightAt(fp.x, fp.z);
-    const fGeo = new THREE.CylinderGeometry(0.24, 0.28, 0.06, 7).toNonIndexed();
-    fGeo.translate(fp.x, fY + 0.03, fp.z);
+    const fGeo = new THREE.CylinderGeometry(0.22, 0.26, 0.05, 7).toNonIndexed();
+    fGeo.translate(fp.x, fY + 0.025, fp.z);
     stoneGeometries.push(prepareGeometry(fGeo, COLORS.terrain.rockDark));
   });
 
   // 7. SUP BOARD AND ACCESSORIES ON PEBBLE BANK
-  // Beached naturally at the waterline of the wide foreground basin
-  const supX = 5.1;
-  const supZ = 4.2;
+  // Beached naturally on dry gravel shore at water margin (X = 5.0, Z = 4.2)
+  const supX = 5.05;
+  const supZ = 4.15;
   const supGroundY = getHeightAt(supX, supZ);
 
-  // SUP Hull
+  // SUP Hull with tapered bow & stern
   const supLen = 1.95;
   const supWidth = 0.52;
-  const supBoard = new THREE.BoxGeometry(supWidth, 0.07, supLen).toNonIndexed();
+  const supBoard = new THREE.BoxGeometry(supWidth, 0.075, supLen).toNonIndexed();
+  const bPos = supBoard.attributes.position;
+  for (let i = 0; i < bPos.count; i++) {
+    const zL = bPos.getZ(i);
+    const taper = 1.0 - Math.pow(Math.abs(zL) / (supLen * 0.5), 3.0) * 0.32;
+    bPos.setX(i, bPos.getX(i) * taper);
+  }
+  supBoard.computeVertexNormals();
   supBoard.rotateY(-0.42);
   supBoard.rotateZ(0.08); // Gently tilted resting along pebble slope
   supBoard.translate(supX, supGroundY + 0.05, supZ);
   propGeometries.push(prepareGeometry(supBoard, new THREE.Color(0xf9c74f))); // Bright sunny yellow SUP
 
   // Grip Pad on SUP
-  const gripPad = new THREE.BoxGeometry(supWidth * 0.72, 0.01, supLen * 0.65).toNonIndexed();
+  const gripPad = new THREE.BoxGeometry(supWidth * 0.70, 0.01, supLen * 0.62).toNonIndexed();
   gripPad.rotateY(-0.42);
   gripPad.rotateZ(0.08);
-  gripPad.translate(supX, supGroundY + 0.086, supZ);
+  gripPad.translate(supX, supGroundY + 0.088, supZ);
   propGeometries.push(prepareGeometry(gripPad, new THREE.Color(0x18484e))); // Alpine dark teal grip
 
-  // Paddle
-  const padGroundY = getHeightAt(supX + 0.38, supZ - 0.25);
-  const paddleShaft = new THREE.CylinderGeometry(0.012, 0.012, 1.4, 6).toNonIndexed();
+  // Bungee deck cords across the yellow nose
+  [-0.60, -0.48, -0.36].forEach((bz) => {
+    const cord = new THREE.BoxGeometry(supWidth * 0.45, 0.012, 0.02).toNonIndexed();
+    cord.rotateY(-0.42);
+    cord.rotateZ(0.08);
+    cord.translate(supX + Math.sin(0.42) * bz, supGroundY + 0.088, supZ + Math.cos(0.42) * bz);
+    propGeometries.push(prepareGeometry(cord, new THREE.Color(0x222222)));
+  });
+
+  // Paddle with T-grip handle
+  const padGroundY = getHeightAt(supX + 0.42, supZ - 0.28);
+  const paddleShaft = new THREE.CylinderGeometry(0.012, 0.012, 1.45, 6).toNonIndexed();
   paddleShaft.rotateZ(Math.PI / 2 - 0.12);
-  paddleShaft.translate(supX + 0.38, padGroundY + 0.03, supZ - 0.25);
+  paddleShaft.translate(supX + 0.42, padGroundY + 0.03, supZ - 0.28);
   propGeometries.push(prepareGeometry(paddleShaft, COLORS.wood.dark));
 
-  const paddleBlade = new THREE.BoxGeometry(0.14, 0.01, 0.32).toNonIndexed();
+  const paddleBlade = new THREE.BoxGeometry(0.15, 0.01, 0.34).toNonIndexed();
   paddleBlade.rotateY(-0.12);
-  paddleBlade.translate(supX + 1.05, padGroundY + 0.025, supZ - 0.15);
+  paddleBlade.translate(supX + 1.10, padGroundY + 0.025, supZ - 0.18);
   propGeometries.push(prepareGeometry(paddleBlade, new THREE.Color(0xf9c74f)));
 
-  // Orange Life Jacket
-  const vestGroundY = getHeightAt(supX + 0.42, supZ + 0.45);
-  const vest = new THREE.BoxGeometry(0.32, 0.10, 0.36).toNonIndexed();
-  vest.rotateY(0.35);
-  vest.translate(supX + 0.42, vestGroundY + 0.05, supZ + 0.45);
-  propGeometries.push(prepareGeometry(vest, new THREE.Color(0xf4511e)));
+  // Ergonomic Life Vest (Áo phao) with twin chest foam pads and buckle straps
+  const vestGroundY = getHeightAt(supX + 0.45, supZ + 0.45);
+  // Left chest pad
+  const vestLeft = new THREE.BoxGeometry(0.13, 0.09, 0.32).toNonIndexed();
+  vestLeft.rotateY(0.35);
+  vestLeft.translate(supX + 0.38, vestGroundY + 0.05, supZ + 0.42);
+  propGeometries.push(prepareGeometry(vestLeft, new THREE.Color(0xf4511e)));
 
-  // Wicker Picnic Basket
-  const basketGroundY = getHeightAt(supX + 0.48, supZ + 0.88);
-  const basket = new THREE.BoxGeometry(0.28, 0.20, 0.24).toNonIndexed();
+  // Right chest pad
+  const vestRight = new THREE.BoxGeometry(0.13, 0.09, 0.32).toNonIndexed();
+  vestRight.rotateY(0.35);
+  vestRight.translate(supX + 0.52, vestGroundY + 0.05, supZ + 0.48);
+  propGeometries.push(prepareGeometry(vestRight, new THREE.Color(0xf4511e)));
+
+  // Webbing buckle straps across vest
+  [-0.08, 0.08].forEach((sz) => {
+    const strap = new THREE.BoxGeometry(0.26, 0.018, 0.035).toNonIndexed();
+    strap.rotateY(0.35);
+    strap.translate(supX + 0.45, vestGroundY + 0.095, supZ + 0.45 + sz);
+    propGeometries.push(prepareGeometry(strap, new THREE.Color(0x222222)));
+  });
+
+  // Wicker Picnic Basket with lid and handle
+  const basketGroundY = getHeightAt(supX + 0.50, supZ + 0.90);
+  const basket = new THREE.BoxGeometry(0.28, 0.18, 0.22).toNonIndexed();
   basket.rotateY(-0.20);
-  basket.translate(supX + 0.48, basketGroundY + 0.10, supZ + 0.88);
+  basket.translate(supX + 0.50, basketGroundY + 0.09, supZ + 0.90);
   propGeometries.push(prepareGeometry(basket, new THREE.Color(0xb2834e)));
+
+  const basketHandle = new THREE.CylinderGeometry(0.012, 0.012, 0.26, 6).toNonIndexed();
+  basketHandle.rotateX(Math.PI / 2);
+  basketHandle.translate(supX + 0.50, basketGroundY + 0.20, supZ + 0.90);
+  propGeometries.push(prepareGeometry(basketHandle, new THREE.Color(0x8d6232)));
+
+  // Canvas Dry Bag / Tote
+  const toteGroundY = getHeightAt(supX + 0.25, supZ + 0.85);
+  const dryBag = new THREE.CylinderGeometry(0.09, 0.09, 0.24, 8).toNonIndexed();
+  dryBag.rotateZ(0.15);
+  dryBag.translate(supX + 0.25, toteGroundY + 0.12, supZ + 0.85);
+  propGeometries.push(prepareGeometry(dryBag, new THREE.Color(0xdcd4c4)));
 
   // Merge static geometries
   const mergedWood = BufferGeometryUtils.mergeGeometries(woodGeometries, false);

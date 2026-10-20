@@ -12,7 +12,7 @@ import {
   SceneState,
   TideLevel,
 } from './constants';
-import { getStreamCenter, getStreamHalfWidth } from './terrain';
+import { getStreamCenter, getStreamHalfWidth, getWaterSurfaceHeight } from './terrain';
 
 export interface WaterSystem {
   group: THREE.Group;
@@ -126,7 +126,7 @@ const waterVertexShader = `
     vec2 ripUv = (initialWorld.xz - uRippleBounds.xy) / (uRippleBounds.zw - uRippleBounds.xy);
     vRippleUv = ripUv;
 
-    float depth = max(0.0, uWaterLevel - aTerrainHeight);
+    float depth = max(0.0, initialWorld.y - aTerrainHeight);
     vDepth = depth;
     float shoreDamping = clamp(depth * 8.0, 0.0, 1.0);
 
@@ -266,12 +266,12 @@ const waterFragmentShader = `
     vec3 spec = uSunColor * specular * uSunIntensity * 0.55;
     surfaceColor += spec;
 
-    // 4. Subtle, delicate foam: ONLY at the upstream rocky cascade (z < 1.8)
+    // 4. Subtle, delicate foam: at upstream cascade and rapids (z in [-0.8, 1.2])
     float foam = 0.0;
-    if (vWorldPosition.z < 1.8 && vIsFrontCut < 0.5) {
-      float upstreamFactor = smoothstep(1.8, 0.9, vWorldPosition.z);
-      float rapidNoise = sin(vWorldPosition.x * 14.0 + uTime * 4.5) * cos(vWorldPosition.z * 16.0 - uTime * 5.5);
-      foam = upstreamFactor * smoothstep(0.45, 0.95, rapidNoise) * 0.28;
+    if (vWorldPosition.z < 1.3 && vIsFrontCut < 0.5) {
+      float cascadeFactor = smoothstep(1.2, 0.3, vWorldPosition.z) * smoothstep(-1.2, -0.1, vWorldPosition.z);
+      float rapidNoise = sin(vWorldPosition.x * 16.0 + uTime * 5.0) * cos(vWorldPosition.z * 18.0 - uTime * 6.0);
+      foam = cascadeFactor * smoothstep(0.38, 0.90, rapidNoise) * 0.35;
     }
     surfaceColor = mix(surfaceColor, uFoamColor, foam);
 
@@ -290,7 +290,7 @@ const waterFragmentShader = `
  * Builds the stream surface geometry + vertical front cross-section skirt.
  */
 function createStreamGeometry(getHeightAt: (x: number, z: number) => number): THREE.BufferGeometry {
-  const segmentsZ = 120;
+  const segmentsZ = 140;
   const segmentsX = 54;
   const numSurfaceVerts = (segmentsZ + 1) * (segmentsX + 1);
 
@@ -304,20 +304,22 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
   const isFrontCut = new Float32Array(totalVerts);
   const indices: number[] = [];
 
-  const zStart = 0.50;
-  const zEnd = DIORAMA_DEPTH * 0.5; // 8.0
+  const zStart = -7.5; // Originates in rear mountain gorge
+  const zEnd = DIORAMA_DEPTH * 0.5; // 8.0 (front edge)
 
   // 1. Surface grid
   for (let iz = 0; iz <= segmentsZ; iz++) {
     const tZ = iz / segmentsZ;
     const z = zStart + tZ * (zEnd - zStart);
     const centerX = getStreamCenter(z);
-    const halfWidth = getStreamHalfWidth(z) * 1.20;
+    const halfWidth = getStreamHalfWidth(z) * 1.15;
+    const waterSurfaceY = getWaterSurfaceHeight(z);
 
     for (let ix = 0; ix <= segmentsX; ix++) {
       const tX = ix / segmentsX;
       const x = centerX - halfWidth + tX * (halfWidth * 2.0);
-      const y = 0.0;
+      // Local y relative to mesh.position.y (which is WATER_LEVEL)
+      const y = waterSurfaceY - WATER_LEVEL;
 
       const idx = iz * (segmentsX + 1) + ix;
       positions[idx * 3 + 0] = x;
@@ -333,6 +335,10 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
   }
 
   for (let iz = 0; iz < segmentsZ; iz++) {
+    const tZ = iz / segmentsZ;
+    const z = zStart + tZ * (zEnd - zStart);
+    const waterY = getWaterSurfaceHeight(z);
+
     for (let ix = 0; ix < segmentsX; ix++) {
       const i0 = iz * (segmentsX + 1) + ix;
       const i1 = iz * (segmentsX + 1) + (ix + 1);
@@ -345,7 +351,7 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
       const h3 = terrainHeights[i3];
 
       const minH = Math.min(h0, h1, h2, h3);
-      if (minH <= WATER_LEVEL_HIGH + 0.08) {
+      if (minH <= waterY + 0.06) {
         indices.push(i0, i2, i1);
         indices.push(i1, i2, i3);
       }

@@ -77,12 +77,28 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 /**
+ * Elevation Y of the water surface along Z.
+ * - Flat alpine basin in foreground (z >= 0.8) at WATER_LEVEL (0.28)
+ * - Upstream mountain cascade (z: 0.0 to 0.8) dropping from 0.65 to 0.28
+ * - Upper mountain gorge (z: -7.5 to 0.0) descending from 1.75 down to 0.65
+ */
+export function getWaterSurfaceHeight(z: number): number {
+  if (z >= 0.8) return WATER_LEVEL;
+  if (z >= 0.0) {
+    const t = z / 0.8;
+    return THREE.MathUtils.lerp(0.65, WATER_LEVEL, t * t * (3.0 - 2.0 * t));
+  }
+  const t = Math.max(0.0, Math.min(1.0, (z + 7.5) / 7.5));
+  return THREE.MathUtils.lerp(1.75, 0.65, t);
+}
+
+/**
  * Procedural heightfield creating a natural glamping valley:
  * - High rear mountain ridge (z < -3.5)
- * - Elevated contiguous glamping meadow on the left at PLATEAU_HEIGHT (1.35)
- * - Natural organic rocky cliff (NO horizontal rice terrace steps!)
+ * - Elevated soft-contoured glamping meadow on the left at PLATEAU_HEIGHT (1.35)
+ * - Natural organic rocky cliff with crags and crevices (no rice terraces)
  * - Continuous stream channel flowing from rear mountain gorge down to wide foreground basin
- * - Lower, gently rolling right bank
+ * - Lower, gently rolling right bank with small knolls and gravel patches
  */
 export function computeRawTerrainHeight(x: number, z: number): { height: number; zone: ZoneType; distToStream: number } {
   const halfW = DIORAMA_WIDTH * 0.5;
@@ -93,7 +109,6 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   }
 
   // 1. Mountain zone (concentrated at rear z < -3.5)
-  const mountainWeight = smoothstep(-3.2, -6.5, z);
   const mountainRidge = ridged2D(x * 0.22 + 4.0, z * 0.22 - 3.0, 4, 2.0, 0.48);
   const mountainFbm = fbm2D(x * 0.32 + 10.0, z * 0.32 - 4.0, 3, 2.0, 0.45);
   // Natural peak silhouettes leaving center rear sightline open
@@ -101,16 +116,16 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   const peakRight = Math.exp(-Math.pow((x - 4.5) / 3.2, 2) - Math.pow((z + 6.4) / 2.0, 2)) * 1.45;
   const mountainH = 2.1 + mountainRidge * 1.1 + mountainFbm * 0.25 + peakLeft + peakRight;
 
-  // 2. Glamping Plateau Zone (x: -7.6 to -0.4, z: -3.5 to 0.85)
-  // Perfectly leveled contiguous meadow at PLATEAU_HEIGHT (1.35)
-  const pMinX = -7.6;
-  const pMaxX = -0.4;
-  const pMinZ = -3.5;
-  const pMaxZ = 0.85;
+  // 2. Glamping Plateau Zone: Softened, natural undulating contour (NOT a rigid rectangle)
+  // Curves organically around campsite living area
+  const frontEdgeZ = 0.85 + Math.sin((x + 4.0) * 0.70) * 0.35 + SimplexNoise2D(x * 0.6, 1.5) * 0.22;
+  const rightEdgeX = -0.55 + Math.sin((z + 1.2) * 0.80) * 0.45 + SimplexNoise2D(1.5, z * 0.7) * 0.25;
+  const backEdgeZ = -3.5 + Math.cos(x * 0.4) * 0.35;
+  const leftEdgeX = -7.6 + SimplexNoise2D(z * 0.5, 3.2) * 0.25;
 
-  const inPlateauBox = x >= pMinX && x <= pMaxX && z >= pMinZ && z <= pMaxZ;
-  const distEdgeX = Math.min(x - pMinX, pMaxX - x);
-  const distEdgeZ = Math.min(z - pMinZ, pMaxZ - z);
+  const inPlateauBox = x >= leftEdgeX && x <= rightEdgeX && z >= backEdgeZ && z <= frontEdgeZ;
+  const distEdgeX = Math.min(x - leftEdgeX, rightEdgeX - x);
+  const distEdgeZ = Math.min(z - backEdgeZ, frontEdgeZ - z);
   const distEdge = Math.min(distEdgeX, distEdgeZ);
   const plateauCore = smoothstep(-0.25, 0.45, distEdge);
 
@@ -118,12 +133,13 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
 
   // 3. Natural Organic Cliff Face (NO horizontal rice terrace steps!)
   // Drops naturally from meadow down to stream bank with organic rock crags and crevices
-  const cliffDrop = smoothstep(0.85, 2.15, z);
+  const cliffDrop = smoothstep(frontEdgeZ, frontEdgeZ + 1.30, z);
   const cragNoise = SimplexNoise2D(x * 1.8, z * 1.8) * 0.06 + SimplexNoise2D(x * 0.8 + 5.0, z * 0.8 + 5.0) * 0.04;
   const naturalCliffH = THREE.MathUtils.lerp(plateauGentle, 0.35, cliffDrop) + cragNoise * (1.0 - cliffDrop) * cliffDrop * 2.2;
 
-  // 4. Right bank: lower and gently rolling (Y ~ 0.38 to 0.65)
-  const rightBankH = 0.46 + fbm2D(x * 0.25 + 5.0, z * 0.25 + 5.0, 3, 2.0, 0.4) * 0.22;
+  // 4. Right bank: lower and gently rolling with small knolls and gravel banks
+  const rightKnoll = Math.exp(-Math.pow((x - 4.5) / 1.8, 2) - Math.pow((z - 2.8) / 1.8, 2)) * 0.25;
+  const rightBankH = 0.44 + rightKnoll + fbm2D(x * 0.35 + 5.0, z * 0.35 + 5.0, 3, 2.0, 0.4) * 0.18;
 
   // Combine base height before stream carving
   let baseH: number;
@@ -136,8 +152,8 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   } else if (inPlateauBox && plateauCore > 0.75) {
     baseH = plateauGentle;
     currentZone = 'plateau';
-  } else if (inPlateauBox || (x < 0.2 && z <= 2.2)) {
-    const isCliff = z >= 0.85 && z <= 2.3 && x <= 0.4;
+  } else if (inPlateauBox || (x < rightEdgeX + 0.6 && z <= frontEdgeZ + 1.4)) {
+    const isCliff = z >= frontEdgeZ && z <= frontEdgeZ + 1.4 && x <= rightEdgeX + 0.6;
     if (isCliff) {
       baseH = naturalCliffH;
       currentZone = 'cliff';
@@ -158,28 +174,21 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   const scx = getStreamCenter(z);
   const distToStream = Math.abs(x - scx);
   const shw = getStreamHalfWidth(z);
+  const waterSurfaceY = getWaterSurfaceHeight(z);
 
   // Parabolic channel profile
   const channelProfile = smoothstep(shw * 1.15, shw * 0.18, distToStream);
 
-  // Continuous stream bed descent:
-  // Mountain gorge (z = -7.5 to 0.8): descends from Y = 1.75 down to Y = 0.25
-  // Lower wide pool (z >= 0.8 to 8.0): sits at Y = 0.11 - 0.13
-  let targetBedH: number;
-  if (z < 0.9) {
-    const tGorge = smoothstep(-7.5, 0.9, z);
-    targetBedH = THREE.MathUtils.lerp(1.75, 0.25, tGorge) + SimplexNoise2D(x * 1.2, z * 1.2) * 0.03;
-  } else {
-    targetBedH = 0.11 + SimplexNoise2D(x * 1.2 + 15.0, z * 1.2 + 15.0) * 0.025;
-  }
+  // Riverbed sits consistently ~0.18 below water surface along centerline
+  const targetBedH = (waterSurfaceY - 0.18) + SimplexNoise2D(x * 1.4 + 12.0, z * 1.4 + 12.0) * 0.025;
 
   let finalH = baseH;
   if (channelProfile > 0.001) {
     finalH = THREE.MathUtils.lerp(baseH, Math.min(baseH, targetBedH), channelProfile);
 
-    if (distToStream < shw * 0.90 && finalH <= WATER_LEVEL + 0.05) {
+    if (distToStream < shw * 0.90 || finalH <= waterSurfaceY + 0.02) {
       currentZone = 'stream';
-    } else if (distToStream < shw * 1.20) {
+    } else if (distToStream < shw * 1.25) {
       currentZone = 'bank';
     }
   }
@@ -266,17 +275,18 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     const scx = getStreamCenter(z);
     const distToStream = Math.abs(x - scx);
     const shw = getStreamHalfWidth(z);
+    const waterY = getWaterSurfaceHeight(z);
 
     let zone: ZoneType = 'bank';
     if (!inBounds) {
       zone = 'out_of_bounds';
     } else if (z < -3.5 && h > 2.0) {
       zone = 'mountain';
-    } else if (x >= -7.6 && x <= -0.4 && z >= -3.5 && z <= 0.85 && h >= 1.25 && slope < 0.18) {
+    } else if (x >= -7.2 && x <= -0.6 && z >= -3.2 && z <= 0.85 && h >= 1.20 && slope < 0.20) {
       zone = 'plateau';
-    } else if (x <= 0.6 && z >= 0.8 && z <= 2.3 && slope > 0.28) {
+    } else if (x <= 0.6 && z >= 0.7 && z <= 2.5 && slope > 0.26) {
       zone = 'cliff';
-    } else if (z >= 0.8 && distToStream < shw * 0.88 && h <= WATER_LEVEL + 0.05) {
+    } else if (distToStream < shw * 0.92 || h <= waterY + 0.02) {
       zone = 'stream';
     } else if (x > 1.2) {
       zone = 'bank';
@@ -286,12 +296,13 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   }
 
   function isInStream(x: number, z: number): boolean {
-    if (z < 0.8) return false;
+    if (z < -7.5 || z > halfD + 0.1) return false;
     const scx = getStreamCenter(z);
     const dist = Math.abs(x - scx);
     const shw = getStreamHalfWidth(z);
+    const waterY = getWaterSurfaceHeight(z);
     const h = getHeightAt(x, z);
-    return dist < shw * 0.90 || (h <= WATER_LEVEL + 0.03 && z >= 0.85);
+    return dist < shw * 0.92 || h <= waterY + 0.02;
   }
 
   function isOnPlateau(x: number, z: number): boolean {
@@ -326,25 +337,33 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     const gNoise = SimplexNoise2D(x * 0.55, z * 0.55) * 0.5 + 0.5;
     outCol.copy(pal.ground).lerp(pal.grassTint, gNoise * 0.55);
 
-    // Glamping Plateau Meadow: richer green
-    if (x >= -7.6 && x <= -0.4 && z >= -3.5 && z <= 0.85 && slope < 0.20) {
+    // Glamping Plateau Meadow: richer lush green
+    if (x >= -7.2 && x <= -0.6 && z >= -3.2 && z <= 0.85 && slope < 0.20) {
       outCol.lerp(pal.grassTint, 0.40);
     }
 
-    // Stream basin: warm sandy gravel and riverbed tones
-    if (z >= 0.75 && distToStream < shw * 1.35) {
+    // Stream channel & banks: warm sandy gravel and riverbed stones from mountain gorge to front edge
+    if (distToStream < shw * 1.35) {
       const gravelNoise = SimplexNoise2D(x * 2.0, z * 2.0) * 0.5 + 0.5;
       const gravelCol = COLORS.terrain.sand.clone().lerp(COLORS.water.bedGravel, gravelNoise);
-      const shoreBlend = smoothstep(shw * 1.35, shw * 0.70, distToStream);
+      const shoreBlend = smoothstep(shw * 1.35, shw * 0.65, distToStream);
       outCol.lerp(gravelCol, shoreBlend * 0.90);
     }
 
-    // Rocky cliffs
+    // Right bank: add natural dirt patches and warm gravel knolls (reduced uniform flat grass)
+    if (x > 1.2 && distToStream >= shw * 1.05) {
+      const dirtNoise = SimplexNoise2D(x * 0.75 + 10.0, z * 0.75 + 10.0) * 0.5 + 0.5;
+      if (dirtNoise > 0.62) {
+        outCol.lerp(COLORS.terrain.dirt, (dirtNoise - 0.62) * 1.3);
+      }
+    }
+
+    // Rocky cliffs: stratified rock with moss in crevices
     if (slope > 0.26) {
       const rockNoise = SimplexNoise2D(x * 1.1, z * 1.1) * 0.5 + 0.5;
       const rockCol = COLORS.terrain.rock.clone().lerp(COLORS.terrain.rockDark, rockNoise);
-      if (slope > 0.42 && y > 0.45 && s !== 'winter') {
-        rockCol.lerp(COLORS.terrain.moss, 0.38);
+      if (slope > 0.40 && y > 0.35 && s !== 'winter') {
+        rockCol.lerp(COLORS.terrain.moss, 0.42);
       }
       outCol.lerp(rockCol, smoothstep(0.26, 0.58, slope));
     }

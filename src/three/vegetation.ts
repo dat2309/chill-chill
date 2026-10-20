@@ -63,11 +63,13 @@ export function createVegetation(
   const dummy = new THREE.Object3D();
 
   // 1. PINE / CONIFER TREES (~26 well-scaled trees on mountain ridges)
-  // Height: 1.5 - 2.4, Radius: 0.38 - 0.58, with varied silhouettes per tree
+  // Height: 1.4 - 2.3, Radius: 0.36 - 0.58, with varied silhouettes per tree
   const pineTrunkGeom = new THREE.CylinderGeometry(0.04, 0.08, 1.0, 6);
   pineTrunkGeom.translate(0, 0.5, 0);
 
-  const pineConeGeom = new THREE.ConeGeometry(1.0, 1.0, 7);
+  // 9-segment cone with smooth vertex normals for rich evergreen light wrap (never black)
+  const pineConeGeom = new THREE.ConeGeometry(1.0, 1.0, 9);
+  pineConeGeom.computeVertexNormals();
   pineConeGeom.translate(0, 0.5, 0);
 
   const pineTrunkMat = new THREE.MeshStandardMaterial({
@@ -79,9 +81,9 @@ export function createVegetation(
 
   const pineFoliageMat = new THREE.MeshStandardMaterial({
     color: SEASON_PALETTES.spring.pineFoliage,
-    roughness: 0.82,
-    metalness: 0.05,
-    flatShading: true,
+    roughness: 0.65,
+    metalness: 0.03,
+    flatShading: false, // Smooth cone lighting wrap so shaded sides retain rich evergreen depth
   });
 
   const pineCount = 26;
@@ -164,9 +166,12 @@ export function createVegetation(
   pineTrunkMesh.instanceMatrix.needsUpdate = true;
   pineFoliageMesh.instanceMatrix.needsUpdate = true;
 
-  // 2. LARGE DECIDUOUS SHADE TREES WITH ORGANIC CLOUD-LIKE 5-PUFF CANOPIES
+  // 2. LARGE DECIDUOUS SHADE TREES WITH CLOUD-LIKE 7-PUFF CANOPIES & BRANCHES
   const decTrunkGeom = new THREE.CylinderGeometry(0.08, 0.16, 1.0, 7);
   decTrunkGeom.translate(0, 0.5, 0);
+
+  const decBranchGeom = new THREE.CylinderGeometry(0.035, 0.065, 0.55, 6);
+  decBranchGeom.translate(0, 0.27, 0);
 
   // Smooth shaded icosahedron deformed with soft simplex noise for cloud-like foliage puffs
   const decCanopyGeom = new THREE.IcosahedronGeometry(1.0, 2);
@@ -190,19 +195,23 @@ export function createVegetation(
   // Soft non-flat shading for cloud-like volume
   const decCanopyMat = new THREE.MeshStandardMaterial({
     color: SEASON_PALETTES.spring.canopyPrimary,
-    roughness: 0.78,
+    roughness: 0.72,
     metalness: 0.02,
     flatShading: false,
   });
 
   const decTreeCount = 13;
-  const blobsPerTree = 5; // 5 organic puffs per tree
+  const blobsPerTree = 7; // 7 organic puffs per tree
+  const branchesPerTree = 3;
   const decTrunkMesh = new THREE.InstancedMesh(decTrunkGeom, decTrunkMat, decTreeCount);
+  const decBranchMesh = new THREE.InstancedMesh(decBranchGeom, decTrunkMat, decTreeCount * branchesPerTree);
   const decCanopyMesh = new THREE.InstancedMesh(decCanopyGeom, decCanopyMat, decTreeCount * blobsPerTree);
   decTrunkMesh.castShadow = true;
+  decBranchMesh.castShadow = true;
   decCanopyMesh.castShadow = true;
   decCanopyMesh.receiveShadow = true;
   group.add(decTrunkMesh);
+  group.add(decBranchMesh);
   group.add(decCanopyMesh);
 
   interface DecTree {
@@ -250,6 +259,7 @@ export function createVegetation(
   });
 
   let canopyIdx = 0;
+  let branchIdx = 0;
   for (let i = 0; i < decTrees.length; i++) {
     const t = decTrees[i];
     dummy.position.set(t.x, t.y, t.z);
@@ -258,13 +268,26 @@ export function createVegetation(
     dummy.updateMatrix();
     decTrunkMesh.setMatrixAt(i, dummy.matrix);
 
-    // 5 overlapping foliage puffs forming a grand, soft cloud-like canopy
+    // 3 supporting branches reaching out to leaf puffs
+    const bAngles = [0.35, 2.45, 4.55];
+    for (let b = 0; b < branchesPerTree; b++) {
+      const ang = bAngles[b] + vRng.range(-0.15, 0.15);
+      dummy.position.set(t.x, t.y + t.h * 0.62, t.z);
+      dummy.rotation.set(Math.cos(ang) * 0.48, ang, Math.sin(ang) * 0.48);
+      dummy.scale.set(1.0, t.h * 0.85, 1.0);
+      dummy.updateMatrix();
+      decBranchMesh.setMatrixAt(branchIdx++, dummy.matrix);
+    }
+
+    // 7 overlapping foliage puffs forming a grand, soft cloud-like canopy
     const offsets = [
-      { dx: 0, dy: t.h * 1.02, dz: 0, sx: t.r * 1.12, sy: t.r * 0.96, sz: t.r * 1.12 },
-      { dx: 0.36, dy: t.h * 0.82, dz: 0.22, sx: t.r * 0.88, sy: t.r * 0.82, sz: t.r * 0.88 },
-      { dx: -0.34, dy: t.h * 0.86, dz: -0.24, sx: t.r * 0.86, sy: t.r * 0.80, sz: t.r * 0.86 },
-      { dx: -0.16, dy: t.h * 0.76, dz: 0.32, sx: t.r * 0.82, sy: t.r * 0.76, sz: t.r * 0.82 },
-      { dx: 0.26, dy: t.h * 0.74, dz: -0.28, sx: t.r * 0.80, sy: t.r * 0.74, sz: t.r * 0.80 },
+      { dx: 0, dy: t.h * 1.06, dz: 0, sx: t.r * 1.05, sy: t.r * 0.92, sz: t.r * 1.05 },
+      { dx: 0.38, dy: t.h * 0.86, dz: 0.20, sx: t.r * 0.82, sy: t.r * 0.76, sz: t.r * 0.82 },
+      { dx: -0.36, dy: t.h * 0.88, dz: -0.22, sx: t.r * 0.80, sy: t.r * 0.74, sz: t.r * 0.80 },
+      { dx: -0.18, dy: t.h * 0.78, dz: 0.34, sx: t.r * 0.78, sy: t.r * 0.72, sz: t.r * 0.78 },
+      { dx: 0.28, dy: t.h * 0.76, dz: -0.30, sx: t.r * 0.75, sy: t.r * 0.70, sz: t.r * 0.75 },
+      { dx: -0.40, dy: t.h * 0.68, dz: 0.12, sx: t.r * 0.68, sy: t.r * 0.64, sz: t.r * 0.68 },
+      { dx: 0.32, dy: t.h * 0.66, dz: 0.32, sx: t.r * 0.68, sy: t.r * 0.64, sz: t.r * 0.68 },
     ];
     for (const off of offsets) {
       dummy.position.set(t.x + off.dx, t.y + off.dy, t.z + off.dz);
@@ -275,15 +298,17 @@ export function createVegetation(
     }
   }
   decTrunkMesh.instanceMatrix.needsUpdate = true;
+  decBranchMesh.instanceMatrix.needsUpdate = true;
   decCanopyMesh.instanceMatrix.needsUpdate = true;
 
   // 3. LOW BUSHES (~110 instances along banks, cliff ledges, path edges)
-  const bushGeom = new THREE.IcosahedronGeometry(0.32, 1);
+  const bushGeom = new THREE.IcosahedronGeometry(0.30, 2);
+  bushGeom.computeVertexNormals();
   const bushMat = new THREE.MeshStandardMaterial({
     color: SEASON_PALETTES.spring.canopyPrimary,
-    roughness: 0.85,
-    metalness: 0.05,
-    flatShading: true,
+    roughness: 0.76,
+    metalness: 0.02,
+    flatShading: false,
   });
 
   const bushCount = 110;
@@ -299,14 +324,14 @@ export function createVegetation(
     const x = vRng.range(-halfW + 0.8, halfW - 0.8);
     const z = vRng.range(-halfD + 0.8, halfD - 0.8);
 
-    if (isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.25)) continue;
+    if (isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.25) || isNearCampActivity(x, z)) continue;
     const h = getHeightAt(x, z);
     if (h < WATER_LEVEL + 0.05) continue;
     const slope = getSlopeAt(x, z);
     if (slope > 0.65) continue;
 
-    const r = vRng.range(0.24, 0.44);
-    dummy.position.set(x, h + r * 0.4, z);
+    const r = vRng.range(0.24, 0.42);
+    dummy.position.set(x, h + r * 0.35, z);
     dummy.rotation.set(0, vRng.range(0, Math.PI * 2), 0);
     dummy.scale.set(r, r * 0.85, r);
     dummy.updateMatrix();
@@ -366,18 +391,16 @@ export function createVegetation(
   group.add(flowerStemMesh);
   group.add(flowerHeadMesh);
 
-  // 10 distinct botanical clusters
+  // 8 distinct asymmetrical botanical clusters
   const flowerBeds = [
-    { cx: -4.8, cz: 0.35, colIdx: 0, radius: 0.75 },  // Pink Cosmos bed near dome 3
-    { cx: -2.3, cz: 0.15, colIdx: 1, radius: 0.65 },  // White Chamomile bed near dome 2
-    { cx: -5.7, cz: -1.7, colIdx: 2, radius: 0.70 },  // Golden Buttercup bed near dome 1
-    { cx: -3.7, cz: -1.9, colIdx: 0, radius: 0.60 },  // Pink cluster between domes
-    { cx: -6.4, cz: -0.2, colIdx: 1, radius: 0.65 },  // White cluster near picnic table
-    { cx: 3.4,  cz: 2.1,  colIdx: 2, radius: 0.80 },  // Golden bed on right bank
-    { cx: 4.6,  cz: 3.2,  colIdx: 0, radius: 0.75 },  // Pink bed on right bank
-    { cx: 2.5,  cz: 3.6,  colIdx: 1, radius: 0.60 },  // White bed near SUP beach
-    { cx: -1.6, cz: 2.7,  colIdx: 2, radius: 0.65 },  // Golden bed near lower stairs
-    { cx: 5.2,  cz: 0.7,  colIdx: 0, radius: 0.75 },  // Pink bed on right hill
+    { cx: -4.5, cz: 0.55, colIdx: 0, radius: 0.65 },  // Pink Cosmos bed near dome 3 garden
+    { cx: -1.6, cz: -0.7, colIdx: 1, radius: 0.55 },  // White Chamomile bed near dome 2 flank
+    { cx: -5.3, cz: -1.5, colIdx: 2, radius: 0.60 },  // Golden Buttercup bed near dome 1
+    { cx: -3.6, cz: 0.45, colIdx: 0, radius: 0.50 },  // Pink cluster along stairs path
+    { cx: -2.6, cz: 2.30, colIdx: 1, radius: 0.55 },  // White cluster near lower stairs landing
+    { cx: 3.8,  cz: 2.10, colIdx: 2, radius: 0.70 },  // Golden bed on right bank
+    { cx: 4.6,  cz: 3.00, colIdx: 0, radius: 0.65 },  // Pink bed on right bank
+    { cx: 5.3,  cz: 3.60, colIdx: 1, radius: 0.55 },  // White bed above pebble beach
   ];
 
   const flowerColors = SEASON_PALETTES.spring.flowerColors;
@@ -504,16 +527,29 @@ export function createVegetation(
   grassMesh.count = Math.max(1, gPlaced);
   grassMesh.instanceMatrix.needsUpdate = true;
 
-  // 7. FERNS ON CLIFF & NEAR STREAM (~120 instances)
-  const fernGeom = new THREE.ConeGeometry(0.24, 0.22, 5);
-  fernGeom.translate(0, 0.11, 0);
+  // 7. FERNS & ROCK PLANTS IN CLIFF CREVICES (~75 instances)
+  // Soft, flat curved fronds placed strictly on steep rocky faces (NO cone spikes on flat grass!)
+  const fernGeom = new THREE.BufferGeometry();
+  const frondPositions = [
+    // Center frond
+    0, 0, 0,   -0.06, 0.14, 0.08,   0, 0.20, 0.12,
+    0, 0, 0,    0, 0.20, 0.12,       0.06, 0.14, 0.08,
+    // Left frond
+    0, 0, 0,   -0.12, 0.10, -0.02,  -0.15, 0.14, 0.04,
+    // Right frond
+    0, 0, 0,    0.15, 0.14, 0.04,    0.12, 0.10, -0.02,
+  ];
+  fernGeom.setAttribute('position', new THREE.Float32BufferAttribute(frondPositions, 3));
+  fernGeom.computeVertexNormals();
+
   const fernMat = new THREE.MeshStandardMaterial({
     color: 0x3d752c,
-    roughness: 0.78,
-    metalness: 0.04,
-    flatShading: true,
+    roughness: 0.75,
+    metalness: 0.02,
+    side: THREE.DoubleSide,
+    flatShading: false,
   });
-  const fernCount = 120;
+  const fernCount = 75;
   const fernMesh = new THREE.InstancedMesh(fernGeom, fernMat, fernCount);
   group.add(fernMesh);
 
@@ -524,20 +560,21 @@ export function createVegetation(
     const x = vRng.range(-halfW + 0.8, halfW - 0.8);
     const z = vRng.range(0.6, halfD - 0.8);
 
-    if (isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15)) continue;
+    if (isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z)) continue;
     const h = getHeightAt(x, z);
     if (h < WATER_LEVEL + 0.05) continue;
     const slope = getSlopeAt(x, z);
-    // Prefer moist rocks, cliff ledges and riverbanks
-    if (slope < 0.25 && z < 2.5) continue;
+    // Strictly in steep rock crevices and cliff ledges (never on flat meadow)
+    if (slope < 0.35) continue;
 
-    dummy.position.set(x, h, z);
+    dummy.position.set(x, h + 0.02, z);
     dummy.rotation.set(vRng.range(-0.15, 0.15), vRng.range(0, Math.PI * 2), vRng.range(-0.15, 0.15));
-    const sc = vRng.range(0.55, 1.1);
-    dummy.scale.set(sc, sc * 0.7, sc);
+    const sc = vRng.range(0.70, 1.25);
+    dummy.scale.set(sc, sc, sc);
     dummy.updateMatrix();
     fernMesh.setMatrixAt(fernPlaced++, dummy.matrix);
   }
+  fernMesh.count = Math.max(1, fernPlaced);
   fernMesh.instanceMatrix.needsUpdate = true;
 
   scene.add(group);
@@ -590,6 +627,7 @@ export function createVegetation(
       pineFoliageMat.dispose();
       decTrunkGeom.dispose();
       decTrunkMat.dispose();
+      decBranchGeom.dispose();
       decCanopyGeom.dispose();
       decCanopyMat.dispose();
       bushGeom.dispose();

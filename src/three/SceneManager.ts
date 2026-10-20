@@ -40,10 +40,10 @@ export class SceneManager {
   private disposed = false;
 
   // Isometric viewpoint: from (+X, +Y, +Z) looking down at model
-  // Slightly higher angle to capture both the campsite and expansive turquoise stream
-  private initialTarget = new THREE.Vector3(-0.6, 0.65, 0.0);
-  private initialCameraPos = new THREE.Vector3(25.0, 23.0, 25.0);
-  private baseFrustumHeight = 21.0;
+  // Calibrated reset framing with generous margin around base, trees, mountain peaks, and above bottom toolbar
+  private initialTarget = new THREE.Vector3(-0.4, 0.45, 0.0);
+  private initialCameraPos = new THREE.Vector3(26.0, 23.0, 26.0);
+  private baseFrustumHeight = 25.5;
 
   constructor(container: HTMLElement, onFps: (fps: number) => void) {
     this.onFpsUpdate = onFps;
@@ -67,11 +67,11 @@ export class SceneManager {
     this.scene = new THREE.Scene();
     this.scene.background = null;
 
-    // Orthographic Camera fitted to diorama bounds
+    // Orthographic Camera fitted cleanly to diorama bounds with breathing room
     const aspect = container.clientWidth / container.clientHeight;
     let frustumH = this.baseFrustumHeight;
-    if (aspect < 1.1) {
-      frustumH = this.baseFrustumHeight / (aspect * 0.88);
+    if (aspect < 1.35) {
+      frustumH = this.baseFrustumHeight / Math.min(1.0, aspect * 0.78);
     }
 
     this.camera = new THREE.OrthographicCamera(
@@ -334,8 +334,8 @@ export class SceneManager {
     const aspect = w / h;
 
     let frustumH = this.baseFrustumHeight;
-    if (aspect < 1.1) {
-      frustumH = this.baseFrustumHeight / (aspect * 0.88);
+    if (aspect < 1.35) {
+      frustumH = this.baseFrustumHeight / Math.min(1.0, aspect * 0.78);
     }
 
     this.camera.left = (-frustumH * aspect) / 2;
