@@ -8,6 +8,7 @@ export interface PhuQuocArchitectureSystem {
   lanternLights: THREE.PointLight[];
   update(dt: number, elapsed: number, timeOfDay: number): void;
   updateSeason(season: PhuQuocSeason, t: number): void;
+  isUnderRoof(x: number, z: number): boolean;
   dispose(): void;
 }
 
@@ -342,6 +343,22 @@ export function createPhuQuocArchitecture(
       // In rainy season, thatch roof absorbs moisture and darkens slightly
       const targetColor = season === 'rainy' ? PHUQUOC_COLORS.wood.thatchWet : PHUQUOC_COLORS.wood.thatch;
       thatchMatDry.color.lerp(targetColor, t);
+    },
+    isUnderRoof(x: number, z: number): boolean {
+      for (const spot of BUNGALOW_SPOTS) {
+        const dx = x - spot.x;
+        const dz = z - spot.z;
+        if (dx * dx + dz * dz < 2.25) return true; // 1.5m radius roof overhang
+      }
+      if (
+        x >= PIER_CONFIG.startX - PIER_CONFIG.width * 0.8 &&
+        x <= PIER_CONFIG.startX + PIER_CONFIG.width * 0.8 &&
+        z >= PIER_CONFIG.startZ &&
+        z <= PIER_CONFIG.endZ
+      ) {
+        return true;
+      }
+      return false;
     },
     dispose() {
       geometriesToDispose.forEach((g) => g.dispose());

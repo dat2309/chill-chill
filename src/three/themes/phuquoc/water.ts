@@ -9,7 +9,7 @@ import {
   PHUQUOC_COLORS,
   TideLevel,
 } from './constants';
-import { getShoreZ, getWaterLevel, isInWater } from './shoreline';
+import { getWaterLevel, isInWater } from './shoreline';
 
 export interface PhuQuocWaterSystem {
   group: THREE.Group;
@@ -20,6 +20,8 @@ export interface PhuQuocWaterSystem {
   getWaterLevel(): number;
   getTideOffset(): number;
   setSunLighting(sunDir: THREE.Vector3, sunCol: THREE.Color, skyCol: THREE.Color): void;
+  setForceAnalyticalFallback?(force: boolean): void;
+  isUsingGpuSimulation?(): boolean;
   dispose(): void;
 }
 
@@ -30,10 +32,43 @@ interface AnalyticalRipple {
   strength: number;
 }
 
+const MAX_ANALYTICAL_RIPPLES = 10;
+
+function checkRenderTargetSupport(
+  renderer: THREE.WebGLRenderer,
+  type: THREE.TextureDataType
+): boolean {
+  let testTarget: THREE.WebGLRenderTarget | null = null;
+  try {
+    testTarget = new THREE.WebGLRenderTarget(16, 16, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      type,
+    });
+    const prevRT = renderer.getRenderTarget();
+    renderer.setRenderTarget(testTarget);
+    renderer.clear();
+    renderer.setRenderTarget(prevRT);
+    testTarget.dispose();
+    return true;
+  } catch {
+    if (testTarget) {
+      try {
+        testTarget.dispose();
+      } catch {
+        // Ignore
+      }
+    }
+    return false;
+  }
+}
+
 export function createPhuQuocWater(
   renderer: THREE.WebGLRenderer,
   parentGroup: THREE.Group,
-  getHeightAt: (x: number, z: number) => number
+  getHeightAt: (x: number, z: number) => number,
+  debugForceAnalytical: boolean = false
 ): PhuQuocWaterSystem {
   const waterGroup = new THREE.Group();
   waterGroup.name = 'PhuQuocWater';
@@ -46,6 +81,7 @@ export function createPhuQuocWater(
   let targetWaterLevel = SEA_LEVEL_HIGH;
   let tideOffset = 1.0;
   let targetTideOffset = 1.0;
+  let currentSimTime = 0;
 
   // --- Water Mesh with Precise Seabed-Anchored Skirt Geometry ---
   const segX = 120;
@@ -82,7 +118,6 @@ export function createPhuQuocWater(
   }
 
   // 2. Front Cut Vertical Skirt (at Z = maxZ = 8.0)
-  // Bottom vertices follow actual seabed height at (x, maxZ)
   for (let ix = 0; ix < segX; ix++) {
     const tx0 = ix / segX;
     const tx1 = (ix + 1) / segX;
@@ -165,45 +200,64 @@ export function createPhuQuocWater(
   waterGeo.setIndex(indices);
   waterGeo.computeVertexNormals();
 
-  // --- Ping-Pong GPU Ripple Simulation with Capability Check ---
+  // --- Capability Check for Render Targets ---
   const simRes = WATER_RES;
-  const isFloatSupported =
-    renderer.capabilities.isWebGL2 ||
-    Boolean(renderer.extensions.has('OES_texture_float'));
-  const simType = isFloatSupported ? THREE.FloatType : THREE.HalfFloatType;
+  let useGpuSimulation = !debugForceAnalytical;
+  let rtType: THREE.TextureDataType = THREE.HalfFloatType;
 
-  let useGpuSimulation = true;
-  let rtA!: THREE.WebGLRenderTarget;
-  let rtB!: THREE.WebGLRenderTarget;
+  if (useGpuSimulation) {
+    if (checkRenderTargetSupport(renderer, THREE.FloatType)) {
+      rtType = THREE.FloatType;
+    } else if (checkRenderTargetSupport(renderer, THREE.HalfFloatType)) {
+      rtType = THREE.HalfFloatType;
+    } else {
+      useGpuSimulation = false;
+    }
+  }
 
-  const rtOptions: THREE.RenderTargetOptions = {
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-    format: THREE.RGBAFormat,
-    type: simType,
-  };
+  let rtA: THREE.WebGLRenderTarget | null = null;
+  let rtB: THREE.WebGLRenderTarget | null = null;
 
-  try {
-    rtA = new THREE.WebGLRenderTarget(simRes, simRes, rtOptions);
-    rtB = new THREE.WebGLRenderTarget(simRes, simRes, rtOptions);
+  if (useGpuSimulation) {
+    const rtOptions: THREE.RenderTargetOptions = {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      type: rtType,
+    };
 
-    // Initial zero clear
-    const prevRT = renderer.getRenderTarget();
-    const prevClearColor = new THREE.Color();
-    renderer.getClearColor(prevClearColor);
-    const prevClearAlpha = renderer.getClearAlpha();
+    try {
+      rtA = new THREE.WebGLRenderTarget(simRes, simRes, rtOptions);
+      rtB = new THREE.WebGLRenderTarget(simRes, simRes, rtOptions);
 
-    renderer.setClearColor(0x000000, 0);
-    renderer.setRenderTarget(rtA);
-    renderer.clear();
-    renderer.setRenderTarget(rtB);
-    renderer.clear();
+      // Initial clear
+      const prevRT = renderer.getRenderTarget();
+      const prevClearColor = new THREE.Color();
+      renderer.getClearColor(prevClearColor);
+      const prevClearAlpha = renderer.getClearAlpha();
 
-    renderer.setRenderTarget(prevRT);
-    renderer.setClearColor(prevClearColor, prevClearAlpha);
-  } catch (e) {
-    console.warn('GPU float simulation not supported, falling back to analytical ripples:', e);
-    useGpuSimulation = false;
+      try {
+        renderer.setClearColor(0x000000, 0);
+        renderer.setRenderTarget(rtA);
+        renderer.clear();
+        renderer.setRenderTarget(rtB);
+        renderer.clear();
+      } finally {
+        renderer.setRenderTarget(prevRT);
+        renderer.setClearColor(prevClearColor, prevClearAlpha);
+      }
+    } catch (e) {
+      console.warn('GPU simulation target creation failed, falling back to analytical ripples:', e);
+      if (rtA) {
+        rtA.dispose();
+        rtA = null;
+      }
+      if (rtB) {
+        rtB.dispose();
+        rtB = null;
+      }
+      useGpuSimulation = false;
+    }
   }
 
   const simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -258,7 +312,12 @@ export function createPhuQuocWater(
   const impulseGeo = new THREE.PlaneGeometry(0.12, 0.12);
   const impulseMat = new THREE.ShaderMaterial({
     transparent: true,
+    depthTest: false,
+    depthWrite: false,
     blending: THREE.AdditiveBlending,
+    uniforms: {
+      uStrength: { value: 0.5 },
+    },
     vertexShader: `
       varying vec2 vUv;
       void main() {
@@ -267,11 +326,12 @@ export function createPhuQuocWater(
       }
     `,
     fragmentShader: `
+      uniform float uStrength;
       varying vec2 vUv;
       void main() {
         float dist = length(vUv - vec2(0.5));
-        float strength = smoothstep(0.5, 0.0, dist) * 0.45;
-        gl_FragColor = vec4(strength, 0.0, 0.0, 1.0);
+        float amp = smoothstep(0.5, 0.0, dist) * uStrength * 0.85;
+        gl_FragColor = vec4(amp, 0.0, 0.0, 1.0);
       }
     `,
   });
@@ -279,8 +339,9 @@ export function createPhuQuocWater(
   impulseScene.add(impulseMesh);
   const impulseCamera = new THREE.OrthographicCamera(0, 1, 1, 0, 0, 1);
 
-  // Analytical ripple queue fallback
+  // Analytical ripple buffer
   const analyticalRipples: AnalyticalRipple[] = [];
+  const analyticalBuffer = new Float32Array(MAX_ANALYTICAL_RIPPLES * 4);
 
   // --- Water Surface ShaderMaterial ---
   const waterMaterial = new THREE.ShaderMaterial({
@@ -290,7 +351,7 @@ export function createPhuQuocWater(
       uTime: { value: 0 },
       uWaterLevel: { value: currentWaterLevel },
       uTideOffset: { value: 1.0 },
-      uRippleMap: { value: useGpuSimulation ? rtA.texture : null },
+      uRippleMap: { value: rtA ? rtA.texture : null },
       uShallowColor: { value: PHUQUOC_COLORS.water.shallow.clone() },
       uDeepColor: { value: PHUQUOC_COLORS.water.deep.clone() },
       uSunsetSkyColor: { value: new THREE.Color(0xffa785) },
@@ -299,6 +360,8 @@ export function createPhuQuocWater(
       uFlowSpeed: { value: 0.45 },
       uWindStrength: { value: 0.35 },
       uUseGpu: { value: useGpuSimulation ? 1.0 : 0.0 },
+      uAnalyticalCount: { value: 0 },
+      uAnalyticalRipples: { value: analyticalBuffer },
     },
     vertexShader: `
       attribute float aTerrainH;
@@ -309,6 +372,8 @@ export function createPhuQuocWater(
       uniform float uWindStrength;
       uniform sampler2D uRippleMap;
       uniform float uUseGpu;
+      uniform int uAnalyticalCount;
+      uniform vec4 uAnalyticalRipples[10];
 
       varying vec3 vWorldPos;
       varying vec2 vUv;
@@ -335,7 +400,22 @@ export function createPhuQuocWater(
             vec4 ripple = texture2D(uRippleMap, uv);
             pos.y += swell + ripple.r * 0.12;
           } else {
-            pos.y += swell;
+            // Analytical ripple displacement
+            float analyticalDisp = 0.0;
+            for (int i = 0; i < 10; i++) {
+              if (i >= uAnalyticalCount) break;
+              vec4 rip = uAnalyticalRipples[i];
+              float age = uTime - rip.z;
+              if (age > 0.0 && age < 3.0) {
+                float d = distance(pos.xz, rip.xy);
+                float waveRadius = age * 2.4;
+                float waveDist = abs(d - waveRadius);
+                float atten = exp(-age * 1.5) * exp(-d * 0.35) * rip.w;
+                float wave = sin((d - waveRadius) * 8.0) * smoothstep(0.65, 0.0, waveDist) * atten * 0.10;
+                analyticalDisp += wave;
+              }
+            }
+            pos.y += swell + analyticalDisp;
           }
         }
 
@@ -355,6 +435,8 @@ export function createPhuQuocWater(
       uniform vec3 uSunColor;
       uniform sampler2D uRippleMap;
       uniform float uUseGpu;
+      uniform int uAnalyticalCount;
+      uniform vec4 uAnalyticalRipples[10];
 
       varying vec3 vWorldPos;
       varying vec2 vUv;
@@ -392,9 +474,29 @@ export function createPhuQuocWater(
           float hD = texture2D(uRippleMap, vUv + vec2(0.0, -texel.y)).r;
           float hU = texture2D(uRippleMap, vUv + vec2(0.0, texel.y)).r;
           N = normalize(vec3(hL - hR, 0.25, hD - hU));
+        } else {
+          // Analytical normal perturbation from ripple radial gradient
+          for (int i = 0; i < 10; i++) {
+            if (i >= uAnalyticalCount) break;
+            vec4 rip = uAnalyticalRipples[i];
+            float age = uTime - rip.z;
+            if (age > 0.0 && age < 3.0) {
+              vec2 diff = vWorldPos.xz - rip.xy;
+              float d = length(diff);
+              if (d > 0.02) {
+                vec2 dir = diff / d;
+                float waveRadius = age * 2.4;
+                float waveDist = abs(d - waveRadius);
+                float atten = exp(-age * 1.5) * exp(-d * 0.35) * rip.w;
+                float slope = cos((d - waveRadius) * 8.0) * 8.0 * smoothstep(0.65, 0.0, waveDist) * atten * 0.10;
+                N.x -= dir.x * slope * 0.4;
+                N.z -= dir.y * slope * 0.4;
+              }
+            }
+          }
         }
 
-        // Add subtle procedural swell normal
+        // Add subtle procedural ocean swell normal
         N.x += sin(vWorldPos.z * 3.0 + uTime * 2.0) * 0.08;
         N.z += cos(vWorldPos.x * 2.5 - uTime * 1.5) * 0.06;
         N = normalize(N);
@@ -429,7 +531,7 @@ export function createPhuQuocWater(
   waterMesh.renderOrder = 2;
   waterGroup.add(waterMesh);
 
-  let lastHoverTime = 0;
+  let lastHoverSimTime = 0;
   let simAccumulator = 0;
   const FIXED_TIMESTEP = 1 / 60;
 
@@ -437,6 +539,8 @@ export function createPhuQuocWater(
     group: waterGroup,
     mesh: waterMesh,
     update(dt: number, elapsed: number, windStrength: number, flowSpeed: number) {
+      currentSimTime = elapsed;
+
       // Smooth tide interpolation
       if (Math.abs(tideOffset - targetTideOffset) > 0.001) {
         tideOffset += (targetTideOffset - tideOffset) * Math.min(1.0, dt * 1.8);
@@ -449,66 +553,98 @@ export function createPhuQuocWater(
       waterMaterial.uniforms.uWindStrength.value = windStrength;
       waterMaterial.uniforms.uFlowSpeed.value = flowSpeed;
 
+      // Update analytical ripples
+      while (analyticalRipples.length > 0 && elapsed - analyticalRipples[0].startTime > 3.0) {
+        analyticalRipples.shift();
+      }
+
+      const activeAnalyticalCount = Math.min(MAX_ANALYTICAL_RIPPLES, analyticalRipples.length);
+      for (let i = 0; i < activeAnalyticalCount; i++) {
+        const rip = analyticalRipples[i];
+        const base = i * 4;
+        analyticalBuffer[base] = rip.x;
+        analyticalBuffer[base + 1] = rip.z;
+        analyticalBuffer[base + 2] = rip.startTime;
+        analyticalBuffer[base + 3] = rip.strength;
+      }
+      waterMaterial.uniforms.uAnalyticalCount.value = activeAnalyticalCount;
+
       // Fixed timestep GPU simulation step
-      if (useGpuSimulation) {
+      if (useGpuSimulation && rtA && rtB) {
         simAccumulator += Math.min(dt, 0.1);
         let steps = 0;
 
         const prevRT = renderer.getRenderTarget();
         const prevAutoClear = renderer.autoClear;
-        renderer.autoClear = false;
 
-        while (simAccumulator >= FIXED_TIMESTEP && steps < 3) {
-          simMaterial.uniforms.uPrevTexture.value = rtA.texture;
-          renderer.setRenderTarget(rtB);
-          renderer.render(simScene, simCamera);
+        try {
+          renderer.autoClear = false;
+          let targetA: THREE.WebGLRenderTarget = rtA;
+          let targetB: THREE.WebGLRenderTarget = rtB;
 
-          const tmp = rtA;
-          rtA = rtB;
-          rtB = tmp;
+          while (simAccumulator >= FIXED_TIMESTEP && steps < 3) {
+            simMaterial.uniforms.uPrevTexture.value = targetA.texture;
+            renderer.setRenderTarget(targetB);
+            renderer.render(simScene, simCamera);
 
-          simAccumulator -= FIXED_TIMESTEP;
-          steps++;
+            const tmp: THREE.WebGLRenderTarget = targetA;
+            targetA = targetB;
+            targetB = tmp;
+
+            simAccumulator -= FIXED_TIMESTEP;
+            steps++;
+          }
+          rtA = targetA;
+          rtB = targetB;
+
+          // Prevent backlog buildup
+          simAccumulator = Math.min(simAccumulator, FIXED_TIMESTEP * 1.5);
+        } finally {
+          renderer.setRenderTarget(prevRT);
+          renderer.autoClear = prevAutoClear;
         }
 
-        renderer.setRenderTarget(prevRT);
-        renderer.autoClear = prevAutoClear;
-        waterMaterial.uniforms.uRippleMap.value = rtA.texture;
+        if (rtA) {
+          waterMaterial.uniforms.uRippleMap.value = rtA.texture;
+        }
       }
     },
     addRipple(worldX: number, worldZ: number, strength: number) {
       if (!isInWater(worldX, worldZ, tideOffset)) return;
 
-      const now = performance.now();
-      // Rate-limit hover impulses
-      if (strength < 0.25 && now - lastHoverTime < 50) return;
-      lastHoverTime = now;
+      // Rate-limit hover impulses using simulation time
+      if (strength < 0.25 && currentSimTime - lastHoverSimTime < 0.05) return;
+      lastHoverSimTime = currentSimTime;
 
       const uvX = (worldX + halfW) / DIORAMA_WIDTH;
       const uvZ = (worldZ - minZ) / (maxZ - minZ);
       if (uvX < 0 || uvX > 1 || uvZ < 0 || uvZ > 1) return;
 
-      if (useGpuSimulation) {
+      if (useGpuSimulation && rtA) {
         const prevRT = renderer.getRenderTarget();
         const prevAutoClear = renderer.autoClear;
 
-        // Additive impulse injection without clearing wave texture
-        renderer.autoClear = false;
-        impulseMesh.position.set(uvX, uvZ, 0);
-        impulseMesh.scale.setScalar(0.08 + Math.min(1.0, strength) * 0.08);
+        try {
+          renderer.autoClear = false;
+          impulseMat.uniforms.uStrength.value = strength;
+          impulseMesh.position.set(uvX, uvZ, 0);
+          impulseMesh.scale.setScalar(0.08 + Math.min(1.0, strength) * 0.08);
 
-        renderer.setRenderTarget(rtA);
-        renderer.render(impulseScene, impulseCamera);
-
-        renderer.setRenderTarget(prevRT);
-        renderer.autoClear = prevAutoClear;
+          renderer.setRenderTarget(rtA);
+          renderer.render(impulseScene, impulseCamera);
+        } finally {
+          renderer.setRenderTarget(prevRT);
+          renderer.autoClear = prevAutoClear;
+        }
       } else {
         // Analytical fallback queue
-        if (analyticalRipples.length > 16) analyticalRipples.shift();
+        if (analyticalRipples.length >= MAX_ANALYTICAL_RIPPLES) {
+          analyticalRipples.shift();
+        }
         analyticalRipples.push({
           x: worldX,
           z: worldZ,
-          startTime: now * 0.001,
+          startTime: currentSimTime,
           strength,
         });
       }
@@ -534,12 +670,23 @@ export function createPhuQuocWater(
       waterMaterial.uniforms.uSunColor.value.copy(sunCol);
       waterMaterial.uniforms.uSunsetSkyColor.value.copy(skyCol);
     },
+    setForceAnalyticalFallback(force: boolean) {
+      useGpuSimulation = !force && Boolean(rtA && rtB);
+      waterMaterial.uniforms.uUseGpu.value = useGpuSimulation ? 1.0 : 0.0;
+    },
+    isUsingGpuSimulation() {
+      return useGpuSimulation;
+    },
     dispose() {
       waterGeo.dispose();
       waterMaterial.dispose();
-      if (useGpuSimulation) {
+      if (rtA) {
         rtA.dispose();
+        rtA = null;
+      }
+      if (rtB) {
         rtB.dispose();
+        rtB = null;
       }
       simMaterial.dispose();
       simQuadGeo.dispose();

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ThemeInstance, ThemeState, PhuQuocSeason } from '../../core/types';
+import { ThemeInstance, ThemeState, PhuQuocSeason, Quality } from '../../core/types';
 import { PHUQUOC_METADATA, PHUQUOC_CAMERA_PRESET } from './config';
 import { createPhuQuocTerrain, PhuQuocTerrainSystem } from './terrain';
 import { createPhuQuocWater, PhuQuocWaterSystem } from './water';
@@ -76,15 +76,36 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     await new Promise((r) => requestAnimationFrame(r));
 
     // 7. Weather & Tropical Rain
-    this.weather = createPhuQuocWeather(this.group, (season, progress) => {
-      this.terrain.updateSeason(season, progress);
-      this.architecture.updateSeason(season, progress);
-      this.vegetation.updateSeason(season, progress);
-    });
+    this.weather = createPhuQuocWeather(
+      this.group,
+      (season, progress) => {
+        this.terrain.updateSeason(season, progress);
+        this.architecture.updateSeason(season, progress);
+        this.vegetation.updateSeason(season, progress);
+      },
+      (x, z, strength) => {
+        if (this.isInWater(x, z) && !this.architecture.isUnderRoof(x, z)) {
+          this.water?.addRipple(x, z, strength);
+        }
+      }
+    );
 
     // 8. Sunset Lighting
     this.lighting = createPhuQuocLighting(this.group);
   }
+
+  setQuality(quality: Quality): void {
+    if (this.currentQuality !== quality) {
+      this.currentQuality = quality;
+      this.weather?.setQuality(quality);
+    }
+  }
+
+  setForceAnalyticalFallback(force: boolean): void {
+    this.water?.setForceAnalyticalFallback?.(force);
+  }
+
+  private currentQuality: Quality = 'high';
 
   applyState(state: ThemeState<'phuquoc'>, _prevSeason?: PhuQuocSeason, _blendFactor: number = 1): void {
     if (this.currentTide !== state.tide && this.water) {
@@ -96,9 +117,17 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
       this.currentSeason = state.season;
       this.weather.setSeason(state.season);
     }
+
+    if (state.quality && state.quality !== this.currentQuality) {
+      this.setQuality(state.quality);
+    }
   }
 
   update(dt: number, elapsed: number, state: ThemeState<'phuquoc'>): void {
+    if (state.quality && state.quality !== this.currentQuality) {
+      this.setQuality(state.quality);
+    }
+
     const pqState: PhuQuocState = {
       timeOfDay: state.timeOfDay,
       season: state.season,
@@ -107,7 +136,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
       flowSpeed: state.flowSpeed,
       windStrength: state.windStrength,
       autoRotate: state.autoRotate,
-      quality: 'high',
+      quality: this.currentQuality,
     };
 
     // Subsystem updates
@@ -119,16 +148,11 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
 
     this.water?.update(dt, elapsed, state.windStrength, state.flowSpeed);
     this.architecture?.update(dt, elapsed, state.timeOfDay);
-    this.boats?.update(
-      dt,
-      elapsed,
-      this.water?.getWaterLevel() ?? 0.3,
-      state.windStrength,
-      state.flowSpeed
-    );
+    const waterLevel = this.water?.getWaterLevel() ?? 0.3;
+    this.boats?.update(dt, elapsed, waterLevel, state.windStrength, state.flowSpeed);
     this.vegetation?.update(dt, elapsed, state.windStrength);
-    this.fish?.update(dt, elapsed, this.water?.getWaterLevel() ?? 0.3);
-    this.weather?.update(dt, elapsed, state.windStrength);
+    this.fish?.update(dt, elapsed, waterLevel);
+    this.weather?.update(dt, elapsed, state.windStrength, waterLevel);
   }
 
   getContentBounds(): THREE.Box3 {
