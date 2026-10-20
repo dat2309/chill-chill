@@ -4,11 +4,39 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chillax Garden &amp; Stream — Built from Math</title>
+
+    <meta name="description" content="Chillax Garden &amp; Stream: A procedural 3D WebGL isometric diorama of a mountain glamping valley and crystal stream built purely from mathematics." />
+    <meta name="theme-color" content="#f5f0e6" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Chillax Garden &amp; Stream — Built from Math" />
+    <meta property="og:description" content="A procedural 3D WebGL isometric diorama of an alpine glamping retreat beside a flowing mountain stream, generated 100% from mathematics without external 3D models." />
+    <meta property="og:image" content="/og.png" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Chillax Garden &amp; Stream — Built from Math" />
+    <meta name="twitter:description" content="A procedural 3D WebGL isometric diorama of an alpine glamping retreat beside a flowing mountain stream, generated 100% from mathematics." />
+    <meta name="twitter:image" content="/og.png" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- TODO: Manually place og.png (1200x630 real WebGL capture) into public/og.png -->
+
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   </head>
   <body>
+    <noscript>
+      <div style="padding: 2rem; font-family: sans-serif; text-align: center; background: #f5f0e6; color: #2d2a26;">
+        <h2>JavaScript Required</h2>
+        <p>Chillax Garden &amp; Stream is an interactive 3D WebGL mathematical diorama. Please enable JavaScript in your browser to view the procedural landscape, water shader simulations, and campsite.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

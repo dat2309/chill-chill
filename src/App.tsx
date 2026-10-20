@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import Scene from './components/Scene';
 import UI from './components/UI';
-import { SceneState, DEFAULT_STATE } from './three/constants';
+import { SceneState, DEFAULT_STATE, Quality } from './three/constants';
 import { SceneManager } from './three/SceneManager';
 
 export default function App() {
@@ -12,10 +12,11 @@ export default function App() {
   const managerRef = useRef<SceneManager | null>(null);
 
   const handleChange = useCallback((patch: Partial<SceneState>) => {
-    setState(prev => {
-      const next = { ...prev, ...patch };
-      return next;
-    });
+    setState(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const handleQualityChange = useCallback((quality: Quality) => {
+    setState(prev => ({ ...prev, quality }));
   }, []);
 
   const handleReset = useCallback(() => {
@@ -46,6 +47,7 @@ export default function App() {
         onReady={handleReady}
         onError={handleError}
         onFps={handleFps}
+        onQualityChange={handleQualityChange}
         managerRef={managerRef}
       />
       <div

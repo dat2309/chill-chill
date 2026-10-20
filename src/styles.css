@@ -44,12 +44,28 @@ html, body, #root {
   position: absolute;
   inset: 0;
   z-index: 1;
+  touch-action: none;
 }
 
 .canvas-container canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
+  touch-action: none;
+}
+
+/* ==================== ACCESSIBILITY FOCUS VISIBLE ==================== */
+button:focus-visible,
+input:focus-visible,
+.ctrl-btn:focus-visible,
+.season-btn:focus-visible,
+.quality-btn:focus-visible,
+.how-btn:focus-visible,
+.toggle-switch:focus-visible,
+.time-slider:focus-visible,
+.tune-slider:focus-visible {
+  outline: 2px solid #c4653a !important;
+  outline-offset: 2px !important;
 }
 
 /* ==================== TOP LEFT PANEL ==================== */
@@ -97,7 +113,7 @@ html, body, #root {
 }
 
 .eyebrow {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 1.8px;
   text-transform: uppercase;
@@ -591,7 +607,7 @@ html, body, #root {
     font-size: 22px;
   }
   .eyebrow {
-    font-size: 8px;
+    font-size: 11px;
   }
   .top-right-panel {
     top: 16px;
@@ -613,7 +629,10 @@ html, body, #root {
     padding: 0 16px;
   }
   .how-btn {
-    display: none;
+    display: inline-flex;
+    padding: 5px 10px;
+    font-size: 11px;
+    margin-top: 6px;
   }
 }
 
