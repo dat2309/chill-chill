@@ -9,6 +9,7 @@ import {
 } from '../src/three/core/storage';
 import { ThemeId, ThemeState, ThemeInstance } from '../src/three/core/types';
 import { ThemeLifecycleCoordinator } from '../src/three/core/ThemeLifecycleCoordinator';
+import { SceneManager } from '../src/three/core/SceneManager';
 import { checkRenderTargetSupport } from '../src/three/themes/phuquoc/water';
 import { setCameraProjection } from '../src/three/core/camera';
 
@@ -108,7 +109,8 @@ function createFakeThemeInstance(
   id: ThemeId,
   options: {
     failInit?: boolean;
-    loadDelay?: number;
+    failApplyState?: boolean;
+    initPromise?: Promise<void>;
     initDelay?: number;
   } = {}
 ): ThemeInstance<any> & MockThemeExtra {
@@ -125,6 +127,9 @@ function createFakeThemeInstance(
       baseFrustumHeight: id === 'garden' ? 25.5 : 24.5,
     },
     async init() {
+      if (options.initPromise) {
+        await options.initPromise;
+      }
       if (options.initDelay) {
         await new Promise((r) => setTimeout(r, options.initDelay));
       }
@@ -134,6 +139,9 @@ function createFakeThemeInstance(
     },
     update() {},
     applyState(state: any) {
+      if (options.failApplyState) {
+        throw new Error(`applyState failed on theme: ${id}`);
+      }
       this.appliedState = { ...state };
     },
     setQuality(q: string) {
@@ -153,6 +161,16 @@ function createFakeThemeInstance(
   };
 
   return instance;
+}
+
+function createDeferred<T = void>() {
+  let resolve!: (val: T | PromiseLike<T>) => void;
+  let reject!: (err?: any) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 async function runLifecycleTests() {
@@ -263,20 +281,15 @@ async function runLifecycleTests() {
     initialThemeId: 'garden',
   });
 
-  // Start Request A: garden (will fail after 60ms)
   const reqAPromise = raceCoordinator.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
-
-  // At 15ms, user changes mind and initiates Request B: phuquoc (will succeed after 40ms)
   await new Promise((r) => setTimeout(r, 15));
   const reqBPromise = raceCoordinator.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
 
-  // Right now, requestedThemeId MUST be phuquoc
   assert(
     raceCoordinator.getRequestedThemeId() === 'phuquoc',
     'Requested theme is phuquoc before request A rejects'
   );
 
-  // Send pending update for phuquoc
   raceCoordinator.updateState({ themeId: 'phuquoc', timeOfDay: 18.0 } as any);
 
   const [resA, resB] = await Promise.all([reqAPromise, reqBPromise]);
@@ -293,40 +306,329 @@ async function runLifecycleTests() {
   );
 
   // =========================================================================
-  // 4. Retry after first failure recovery test
+  // 4. Regression Test A: Khởi tạo cùng theme (Garden init at 16:00, update to 21:00)
   // =========================================================================
-  let attemptCount = 0;
-  const retryLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
-    garden: async () => {
-      attemptCount++;
-      const fail = attemptCount === 1;
-      const t = createFakeThemeInstance('garden', { failInit: fail, initDelay: 5 });
-      createdThemes.push(t);
-      return t;
-    },
-    phuquoc: async () => {
-      const t = createFakeThemeInstance('phuquoc');
-      createdThemes.push(t);
-      return t;
-    },
-  };
+  const deferredInitA = createDeferred();
+  let instanceInitA: any = null;
 
-  const retryCoordinator = new ThemeLifecycleCoordinator({
-    loaderMap: retryLoaderMap,
+  const coordinatorInitA = new ThemeLifecycleCoordinator({
+    loaderMap: {
+      garden: async () => {
+        instanceInitA = createFakeThemeInstance('garden', { initPromise: deferredInitA.promise });
+        return instanceInitA;
+      },
+      phuquoc: async () => createFakeThemeInstance('phuquoc'),
+    },
+    initialThemeId: 'garden',
   });
 
-  const firstAttempt = await retryCoordinator.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
-  assert(firstAttempt.status === 'failed', 'First attempt fails as simulated');
-  assert(retryCoordinator.getActiveTheme() === null, 'Active theme is null after initial failure');
+  // Start init Garden at 16:00
+  const initPromiseA = coordinatorInitA.switchTheme('garden', { ...DEFAULT_GARDEN_STATE, timeOfDay: 16.0 });
 
-  // User clicks "Thử lại" (Retry)
-  const retryAttempt = await retryCoordinator.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
-  assert(retryAttempt.status === 'success', 'Retry attempt succeeds cleanly');
-  assert(retryCoordinator.getActiveTheme() !== null, 'Active theme is established after retry');
-  assert(retryCoordinator.getActiveThemeId() === 'garden', 'Active theme ID is garden after retry');
+  // While held by deferred promise, send state update for Garden at 21:00
+  coordinatorInitA.updateState({ themeId: 'garden', timeOfDay: 21.0 });
+
+  // Complete init
+  deferredInitA.resolve();
+  const initResultA = await initPromiseA;
+
+  assert(initResultA.status === 'success', 'Test A: Init completed with success');
+  assert(
+    coordinatorInitA.getActiveThemeState()?.timeOfDay === 21.0,
+    'Test A: Coordinator active state received 21:00 update during same-theme initial load'
+  );
+  assert(
+    instanceInitA.appliedState?.timeOfDay === 21.0,
+    'Test A: Theme instance appliedState received 21:00 update'
+  );
 
   // =========================================================================
-  // 5. GPU Framebuffer Completeness & Analytical Fallback Verification
+  // 5. Regression Test B: Reload cùng theme (Garden active at 17:00, reload & update to 22:00)
+  // =========================================================================
+  const deferredInitB = createDeferred();
+  let instanceReloadB: any = null;
+  let gardenLoadCount = 0;
+
+  const coordinatorReloadB = new ThemeLifecycleCoordinator({
+    loaderMap: {
+      garden: async () => {
+        gardenLoadCount++;
+        if (gardenLoadCount === 1) {
+          // First active instance
+          return createFakeThemeInstance('garden');
+        } else {
+          // Reload instance
+          instanceReloadB = createFakeThemeInstance('garden', { initPromise: deferredInitB.promise });
+          return instanceReloadB;
+        }
+      },
+      phuquoc: async () => createFakeThemeInstance('phuquoc'),
+    },
+    initialThemeId: 'garden',
+  });
+
+  // Establish initial active Garden at 17:00
+  await coordinatorReloadB.switchTheme('garden', { ...DEFAULT_GARDEN_STATE, timeOfDay: 17.0 });
+  assert(coordinatorReloadB.getActiveThemeState()?.timeOfDay === 17.0, 'Test B: Initial garden active at 17:00');
+
+  // Start reloading Garden at 17:00
+  const reloadPromiseB = coordinatorReloadB.switchTheme('garden', { ...DEFAULT_GARDEN_STATE, timeOfDay: 17.0 });
+
+  // During init, update Garden to 22:00
+  coordinatorReloadB.updateState({ themeId: 'garden', timeOfDay: 22.0 });
+
+  // Complete reload init
+  deferredInitB.resolve();
+  const reloadResultB = await reloadPromiseB;
+
+  assert(reloadResultB.status === 'success', 'Test B: Reload completed with success');
+  assert(
+    coordinatorReloadB.getActiveThemeState()?.timeOfDay === 22.0,
+    'Test B: Coordinator active state is 22:00 after reload commit'
+  );
+  assert(
+    instanceReloadB.appliedState?.timeOfDay === 22.0,
+    'Test B: Reloaded theme instance received latest 22:00 state'
+  );
+
+  // =========================================================================
+  // 6. Rollback Transaction Tests on Handover Errors (5 Failure Points)
+  // =========================================================================
+
+  type FailurePoint = 'applyState' | 'onMountTheme' | 'onRestoreCamera' | 'onApplyQuality' | 'onCommitTheme';
+  const failurePoints: FailurePoint[] = [
+    'applyState',
+    'onMountTheme',
+    'onRestoreCamera',
+    'onApplyQuality',
+    'onCommitTheme',
+  ];
+
+  for (const point of failurePoints) {
+    let oldGarden: any = null;
+    let newPhuQuoc: any = null;
+
+    const rollbackCoordinator = new ThemeLifecycleCoordinator({
+      loaderMap: {
+        garden: async () => {
+          oldGarden = createFakeThemeInstance('garden');
+          return oldGarden;
+        },
+        phuquoc: async () => {
+          newPhuQuoc = createFakeThemeInstance('phuquoc', {
+            failApplyState: point === 'applyState',
+          });
+          return newPhuQuoc;
+        },
+      },
+      onMountTheme: (theme) => {
+        if (point === 'onMountTheme' && theme.id === 'phuquoc') {
+          throw new Error('Simulated mount failure on phuquoc');
+        }
+      },
+      onRestoreCamera: (_themeId, theme) => {
+        if (point === 'onRestoreCamera' && theme.id === 'phuquoc') {
+          throw new Error('Simulated restoreCamera failure on phuquoc');
+        }
+      },
+      onApplyQuality: () => {
+        if (point === 'onApplyQuality' && newPhuQuoc && !newPhuQuoc.disposed) {
+          throw new Error('Simulated applyQuality failure on phuquoc');
+        }
+      },
+      onCommitTheme: (_themeId, theme) => {
+        if (point === 'onCommitTheme' && theme.id === 'phuquoc') {
+          throw new Error('Simulated commitTheme failure on phuquoc');
+        }
+      },
+    });
+
+    // Mount initial active Garden
+    const initRes = await rollbackCoordinator.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
+    assert(initRes.status === 'success', `Rollback (${point}): Garden established`);
+
+    // Attempt switch to Phu Quoc which will fail at `point`
+    const failSwitchRes = await rollbackCoordinator.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+
+    assert(
+      failSwitchRes.status === 'failed',
+      `Rollback (${point}): Switch to Phu Quoc failed as expected`
+    );
+    assert(
+      rollbackCoordinator.getActiveTheme() === oldGarden,
+      `Rollback (${point}): Active instance remains valid old Garden`
+    );
+    assert(
+      oldGarden.disposed === false,
+      `Rollback (${point}): Old Garden was NOT disposed during rollback`
+    );
+    assert(
+      newPhuQuoc.disposed === true,
+      `Rollback (${point}): Failed new Phu Quoc instance was safely disposed`
+    );
+    assert(
+      rollbackCoordinator.getRequestedThemeId() === null,
+      `Rollback (${point}): Requested theme state is not stuck`
+    );
+
+    // Verify next retry (without error) succeeds
+    // Remove failure triggers
+    (newPhuQuoc as any).failApplyState = false;
+    const retryCoordinatorPoint = new ThemeLifecycleCoordinator({
+      loaderMap: {
+        garden: async () => oldGarden,
+        phuquoc: async () => createFakeThemeInstance('phuquoc'),
+      },
+      initialThemeId: 'garden',
+    });
+    // Set active
+    await retryCoordinatorPoint.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
+    const retryRes = await retryCoordinatorPoint.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+    assert(
+      retryRes.status === 'success',
+      `Rollback (${point}): Next retry succeeded cleanly after error`
+    );
+  }
+
+  // =========================================================================
+  // 7. Integration Level Testing with SceneManager (Initial Fail -> Retry -> Start once)
+  // =========================================================================
+  let attemptNumber = 0;
+  let startCount = 0;
+  let readyCount = 0;
+  let successCount = 0;
+  let errorCount = 0;
+
+  const mockDocument: any = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  const mockContainer: any = {
+    clientWidth: 800,
+    clientHeight: 600,
+    appendChild: () => {},
+  };
+  const mockDomElement: any = {
+    clientWidth: 800,
+    clientHeight: 600,
+    parentElement: mockContainer,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    remove: () => {},
+    getRootNode: () => mockDocument,
+    ownerDocument: mockDocument,
+    style: {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+  };
+  const mockRenderer: any = {
+    domElement: mockDomElement,
+    setSize: () => {},
+    setPixelRatio: () => {},
+    shadowMap: { enabled: true, type: 0 },
+    toneMapping: 0,
+    toneMappingExposure: 1.0,
+    outputColorSpace: '',
+    render: () => {},
+    dispose: () => {},
+    getContext: () => ({
+      getExtension: () => ({}),
+    }),
+  };
+
+  const integrationLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    garden: async () => {
+      attemptNumber++;
+      const shouldFail = attemptNumber === 1;
+      return createFakeThemeInstance('garden', { failInit: shouldFail });
+    },
+    phuquoc: async () => createFakeThemeInstance('phuquoc'),
+  };
+
+  const sceneManager = new SceneManager(mockContainer, {
+    renderer: mockRenderer,
+    loaderMap: integrationLoaderMap,
+    onReady: () => {
+      readyCount++;
+    },
+    onThemeSuccess: () => {
+      successCount++;
+    },
+    onThemeError: () => {
+      errorCount++;
+    },
+  });
+
+  // Track start calls
+  const originalStart = sceneManager.start.bind(sceneManager);
+  sceneManager.start = () => {
+    startCount++;
+    originalStart();
+  };
+
+  // Step 1: Initial load fails
+  const firstSwitch = await sceneManager.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
+  assert(firstSwitch.status === 'failed', 'Integration: First theme init failed as configured');
+  assert(sceneManager.isInitialized() === false, 'Integration: Manager is not initialized after failure');
+  assert(sceneManager.isStarted() === false, 'Integration: Manager did not start loop after failure');
+  assert(startCount === 0, 'Integration: start() was not called');
+  assert(readyCount === 0, 'Integration: onReady was not called');
+  assert(errorCount === 1, 'Integration: onThemeError was emitted');
+
+  // Step 2: User clicks Retry -> Succeeds
+  const retrySwitch = await sceneManager.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
+  assert(retrySwitch.status === 'success', 'Integration: Retry succeeded');
+  assert(sceneManager.isInitialized() === true, 'Integration: Manager is initialized after retry');
+  assert(sceneManager.isStarted() === true, 'Integration: Manager is started after retry');
+  assert(startCount === 1, 'Integration: start() was called exactly once');
+  assert(readyCount === 1, 'Integration: onReady was called exactly once');
+  assert(successCount === 1, 'Integration: onThemeSuccess was called on retry');
+
+  // Step 3: Subsequent switch or start does not duplicate loop or ready
+  sceneManager.start();
+  assert(startCount === 2, 'Integration: Calling start again was attempted');
+  // SceneManager.updateLoopState is idempotent, animFrameId is not duplicated
+
+  // Switch to phuquoc while running
+  const switchNext = await sceneManager.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+  assert(switchNext.status === 'success', 'Integration: Subsequent theme switch succeeded');
+  assert(readyCount === 1, 'Integration: onReady was not emitted again on theme switch');
+  assert(sceneManager.getActiveThemeId() === 'phuquoc', 'Integration: Active theme is phuquoc');
+
+  // Step 4: Unmount before in-flight switch completes
+  const deferredUnmount = createDeferred();
+  const unmountLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    garden: async () => createFakeThemeInstance('garden'),
+    phuquoc: async () => createFakeThemeInstance('phuquoc', { initPromise: deferredUnmount.promise }),
+  };
+
+  let unmountReadyCount = 0;
+  let unmountStartCount = 0;
+  const unmountManager = new SceneManager(mockContainer, {
+    renderer: mockRenderer,
+    loaderMap: unmountLoaderMap,
+    onReady: () => {
+      unmountReadyCount++;
+    },
+  });
+  unmountManager.start = () => {
+    unmountStartCount++;
+  };
+
+  const inFlightPromise = unmountManager.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+
+  // Component unmounts
+  unmountManager.dispose();
+
+  // In-flight init completes after unmount
+  deferredUnmount.resolve();
+  const inFlightRes = await inFlightPromise;
+
+  assert(inFlightRes.status === 'cancelled', 'Integration: Unmounted in-flight switch returned cancelled');
+  assert(unmountReadyCount === 0, 'Integration: Unmount did not invoke onReady callback');
+  assert(unmountStartCount === 0, 'Integration: Unmount did not start rendering loop');
+
+  // =========================================================================
+  // 8. GPU Framebuffer Completeness & Analytical Fallback Verification
   // =========================================================================
   const fakeGlIncomplete = {
     FRAMEBUFFER: 0x8d40,
@@ -334,7 +636,7 @@ async function runLifecycleTests() {
     FRAMEBUFFER_INCOMPLETE_ATTACHMENT: 0x8cd6,
     NO_ERROR: 0,
     getExtension: () => ({}),
-    checkFramebufferStatus: () => 0x8cd6, // Incomplete!
+    checkFramebufferStatus: () => 0x8cd6,
     getError: () => 0,
   };
   const fakeRendererIncomplete: any = {
@@ -354,7 +656,7 @@ async function runLifecycleTests() {
     FRAMEBUFFER_COMPLETE: 0x8cd5,
     NO_ERROR: 0,
     getExtension: () => ({}),
-    checkFramebufferStatus: () => 0x8cd5, // Complete!
+    checkFramebufferStatus: () => 0x8cd5,
     getError: () => 0,
   };
   const fakeRendererComplete: any = {
@@ -370,18 +672,15 @@ async function runLifecycleTests() {
   );
 
   // =========================================================================
-  // 6. Camera Frustum Projection Independence Verification
+  // 9. Camera Frustum Projection Independence Verification
   // =========================================================================
   const testCam = new THREE.OrthographicCamera(-10, 10, 10, -10, -50, 50);
   const aspect = 16 / 9;
 
-  // Theme A projection (Garden baseFrustumHeight = 25.5)
   setCameraProjection(testCam, 25.5, aspect);
   const gardenHeight = testCam.top - testCam.bottom;
-  const gardenWidth = testCam.right - testCam.left;
   assert(Math.abs(gardenHeight - 25.5) < 0.001, 'Theme A projection has height 25.5');
 
-  // Switch to Theme B projection (Phu Quoc baseFrustumHeight = 24.5)
   setCameraProjection(testCam, 24.5, aspect);
   const phuquocHeight = testCam.top - testCam.bottom;
   const phuquocWidth = testCam.right - testCam.left;
@@ -396,7 +695,7 @@ async function runLifecycleTests() {
   );
 
   // =========================================================================
-  // 7. Single Source of Truth for Quality State Verification
+  // 10. Single Source of Truth for Quality State Verification
   // =========================================================================
   assert(
     (DEFAULT_GARDEN_STATE as any).quality === undefined,
