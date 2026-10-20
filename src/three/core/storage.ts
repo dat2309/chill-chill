@@ -49,11 +49,17 @@ export function sanitizeCameraState(raw: any): CameraState | undefined {
   const isFiniteArr = (arr: any[]) => arr.every(n => typeof n === 'number' && Number.isFinite(n));
   if (!isFiniteArr(raw.position) || !isFiniteArr(raw.target)) return undefined;
 
-  // Ensure camera position does not coincide with orbit target
+  // Ensure camera position does not coincide with orbit target or drift off-diorama
   const dx = raw.position[0] - raw.target[0];
   const dy = raw.position[1] - raw.target[1];
   const dz = raw.position[2] - raw.target[2];
-  if (dx * dx + dy * dy + dz * dz < 0.01) return undefined;
+  const distSq = dx * dx + dy * dy + dz * dz;
+  if (distSq < 1.0 || distSq > 10000) return undefined;
+
+  // Orbit target must reside within plausible diorama bounds
+  if (Math.abs(raw.target[0]) > 14 || Math.abs(raw.target[2]) > 14 || raw.target[1] < -5 || raw.target[1] > 20) {
+    return undefined;
+  }
 
   const zoom = Math.max(0.4, Math.min(3.0, raw.zoom));
   const baseFrustumHeight =

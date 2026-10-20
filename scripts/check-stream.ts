@@ -161,6 +161,63 @@ for (const pt of dryLandPoints) {
 }
 assert(landChecksPassed, 'All terrestrial land sample points correctly return isInWater = false', landFailDetails);
 
+// 5. Natural Asymmetric Footprint & Boundary Verification
+import {
+  GARDEN_BOUNDARY_POINTS,
+  GARDEN_BOUNDARY_SAMPLES,
+  isInsideGardenFootprint,
+  GARDEN_FOOTPRINT_BOUNDS,
+  getGardenFootprintRadius,
+} from '../src/three/themes/garden/footprint.js';
+
+assert(
+  GARDEN_BOUNDARY_POINTS.length === GARDEN_BOUNDARY_SAMPLES && GARDEN_BOUNDARY_SAMPLES === 128,
+  `Garden boundary polygon has exactly ${GARDEN_BOUNDARY_SAMPLES} samples`
+);
+
+// Verify closed contour without degenerate gaps
+const pStart = GARDEN_BOUNDARY_POINTS[0];
+const pEnd = GARDEN_BOUNDARY_POINTS[GARDEN_BOUNDARY_POINTS.length - 1];
+const closeGap = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+assert(closeGap < 0.65, `Garden boundary polygon forms a closed contour (gap = ${closeGap.toFixed(3)})`);
+
+// Verify asymmetric natural silhouette (radius varies meaningfully across orientations)
+let minR = Infinity;
+let maxR = -Infinity;
+for (let i = 0; i < 64; i++) {
+  const theta = (i / 64) * Math.PI * 2;
+  const r = getGardenFootprintRadius(theta);
+  if (r < minR) minR = r;
+  if (r > maxR) maxR = r;
+}
+assert(
+  maxR - minR > 1.5,
+  `Garden footprint is custom asymmetric (radius variation: min=${minR.toFixed(2)}, max=${maxR.toFixed(2)}, span=${(maxR - minR).toFixed(2)})`
+);
+
+// Verify all glamping structures, stairs, and props are within footprint
+const gardenProps = [
+  { x: -5.0, z: -2.0, name: 'Dome 1 (Alpine Deck)' },
+  { x: -2.2, z: -1.2, name: 'Dome 2 (Meadow Deck)' },
+  { x: -4.2, z: 0.0,  name: 'Dome 3 (Creekside Deck)' },
+  { x: -1.0, z: -2.5, name: 'A-Frame Cabin' },
+  { x: -3.2, z: -0.8, name: 'Campfire Ring' },
+  { x: -2.2, z: 1.2,  name: 'Stairs Top Landing' },
+  { x: -2.4, z: 2.2,  name: 'Stairs Mid Section' },
+  { x: 2.2,  z: 5.0,  name: 'SUP Board Beach Landing' },
+];
+
+let allPropsInside = true;
+let propFailName = '';
+for (const prop of gardenProps) {
+  if (!isInsideGardenFootprint(prop.x, prop.z, 0.2)) {
+    allPropsInside = false;
+    propFailName = `${prop.name} at (${prop.x}, ${prop.z})`;
+    break;
+  }
+}
+assert(allPropsInside, 'All glamping domes, cabin, campfire, stairs, and props reside safely within natural footprint', propFailName);
+
 // Summary
 const totalPassed = results.filter(r => r.passed).length;
 console.log('----------------------------------------------------');

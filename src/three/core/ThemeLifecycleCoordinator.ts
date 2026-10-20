@@ -95,8 +95,20 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
    * - If an active instance exists, updates matching activeThemeId (or unspecific) are applied directly.
    * - Foreign state never leaks to active theme or unmatching pending requests.
    */
-  updateState(stateOrPatch: Partial<ThemeState<any>>): void {
-    const patchThemeId = (stateOrPatch as any).themeId as ThemeId | undefined;
+  updateState(
+    themeIdOrPatch: ThemeId | Partial<ThemeState<any>>,
+    maybePatch?: Partial<ThemeState<any>>
+  ): void {
+    let patchThemeId: ThemeId | undefined;
+    let stateOrPatch: Partial<ThemeState<any>>;
+
+    if (typeof themeIdOrPatch === 'string') {
+      patchThemeId = themeIdOrPatch as ThemeId;
+      stateOrPatch = maybePatch || {};
+    } else {
+      stateOrPatch = themeIdOrPatch || {};
+      patchThemeId = (stateOrPatch as any).themeId as ThemeId | undefined;
+    }
 
     // 1. Buffer for in-flight request (even if requestedThemeId === activeThemeId)
     if (this.requestedThemeId && (!patchThemeId || patchThemeId === this.requestedThemeId)) {
@@ -153,6 +165,18 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
 
     let newTheme: TTheme | null = null;
     let newThemeMounted = false;
+    let newThemeDisposed = false;
+
+    const disposeNewTheme = () => {
+      if (newTheme && !newThemeDisposed) {
+        newThemeDisposed = true;
+        try {
+          newTheme.dispose();
+        } catch (e) {
+          console.warn('Error disposing new theme:', e);
+        }
+      }
+    };
 
     try {
       const loader = this.options.loaderMap?.[targetThemeId] ?? (THEME_LOADERS[targetThemeId] as any);
@@ -167,7 +191,7 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
       newTheme = loadedTheme;
 
       if (switchToken !== this.currentSwitchToken || this.disposed) {
-        try { loadedTheme.dispose(); } catch {}
+        disposeNewTheme();
         this.pendingStatesByToken.delete(switchToken);
         return { status: 'cancelled' };
       }
@@ -175,7 +199,7 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
       await loadedTheme.init();
 
       if (switchToken !== this.currentSwitchToken || this.disposed) {
-        try { loadedTheme.dispose(); } catch {}
+        disposeNewTheme();
         this.pendingStatesByToken.delete(switchToken);
         return { status: 'cancelled' };
       }
@@ -191,7 +215,7 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
         }
 
         if (switchToken !== this.currentSwitchToken || this.disposed) {
-          try { loadedTheme.dispose(); } catch {}
+          disposeNewTheme();
           this.pendingStatesByToken.delete(switchToken);
           return { status: 'cancelled' };
         }
@@ -219,7 +243,7 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
           if (newThemeMounted) {
             try { this.options.onUnmountTheme?.(loadedTheme); } catch {}
           }
-          try { loadedTheme.dispose(); } catch {}
+          disposeNewTheme();
 
           if (oldTheme) {
             try { this.options.onMountTheme?.(oldTheme); } catch {}
@@ -252,18 +276,20 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
         if (newThemeMounted) {
           try { this.options.onUnmountTheme?.(loadedTheme); } catch {}
         }
-        try { loadedTheme.dispose(); } catch {}
+        disposeNewTheme();
 
         if (oldTheme) {
           try {
             this.options.onMountTheme?.(oldTheme);
-            if (oldThemeState) {
-              oldTheme.applyState(oldThemeState);
+            // Retain the latest state of the active theme, including updates that arrived while in-flight
+            const latestOldState = this.activeThemeState ?? oldThemeState;
+            if (latestOldState) {
+              oldTheme.applyState(latestOldState);
             }
             this.activeTheme = oldTheme;
             this.activeThemeId = oldThemeId;
-            this.activeThemeState = oldThemeState;
-            this.options.onRestoreCamera?.(oldThemeId, oldTheme, oldThemeState || targetState);
+            this.activeThemeState = latestOldState ? { ...latestOldState } : null;
+            this.options.onRestoreCamera?.(oldThemeId, oldTheme, latestOldState || targetState);
           } catch (rollbackErr) {
             console.error('Fatal: Rollback failed:', rollbackErr);
             try { this.options.onUnmountTheme?.(oldTheme); } catch {}
@@ -280,7 +306,7 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
       }
     } catch (err: any) {
       if (newTheme && newTheme !== this.activeTheme) {
-        try { newTheme.dispose(); } catch {}
+        disposeNewTheme();
       }
 
       // Outdated requests that fail must never mutate requestedThemeId or pending state of current requests!

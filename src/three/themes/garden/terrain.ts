@@ -16,6 +16,14 @@ import {
   Season,
   SEASON_PALETTES,
 } from './constants';
+import {
+  GARDEN_CENTER,
+  getGardenBoundaryPoint,
+  isInsideGardenFootprint,
+  GARDEN_BOUNDARY_SAMPLES,
+  GARDEN_BOUNDARY_POINTS,
+  GARDEN_FOOTPRINT_BOUNDS,
+} from './footprint';
 import { fbm2D, ridged2D, SimplexNoise2D, SeededRandom } from './noise';
 
 export type ZoneType = 'mountain' | 'plateau' | 'cliff' | 'bank' | 'stream' | 'hill' | 'out_of_bounds';
@@ -256,7 +264,8 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   }
 
   function sampleTerrain(x: number, z: number): TerrainSample {
-    const inBounds = Math.abs(x) <= halfW - 0.25 && Math.abs(z) <= halfD - 0.25;
+    const inFootprint = isInsideGardenFootprint(x, z);
+    const inBounds = inFootprint && Math.abs(x) <= halfW - 0.25 && Math.abs(z) <= halfD - 0.25;
     const h = getHeightAt(x, z);
     const norm = getNormalAt(x, z);
     const slope = 1.0 - Math.max(0.0, norm.y);
@@ -266,7 +275,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     const shw = getStreamHalfWidth(z);
     const waterY = getWaterSurfaceHeight(z);
 
-    let zone: ZoneType = 'bank';
+    let zone: ZoneType = 'plateau';
     if (!inBounds) {
       zone = 'out_of_bounds';
     } else if (z < -3.5 && h > 2.0) {
@@ -285,7 +294,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   }
 
   function isInStream(x: number, z: number): boolean {
-    if (z < STREAM_BOUNDS.minZ - 0.05 || z > halfD + 0.1) return false;
+    if (!isInsideGardenFootprint(x, z)) return false;
     return isInWater(x, z, 0);
   }
 
@@ -300,7 +309,9 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   const indices: number[] = [];
 
   const tempCol = new THREE.Color();
-  const numTopVerts = (nx + 1) * (nz + 1);
+  const numRings = 48;
+  const numSegments = GARDEN_BOUNDARY_SAMPLES; // 128
+  const numTopVerts = 1 + numRings * numSegments;
 
   const seasonPalettesData: Record<Season, Float32Array> = {
     spring: new Float32Array(numTopVerts * 3),
@@ -369,18 +380,39 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     }
   }
 
-  // 1. Build Top Surface
-  for (let iz = 0; iz <= nz; iz++) {
-    const z = -halfD + (iz / nz) * gridDepth;
-    for (let ix = 0; ix <= nx; ix++) {
-      const x = -halfW + (ix / nx) * gridWidth;
-      const y = heightfield[iz * (nx + 1) + ix];
+  // 1. Build Top Surface (Concentric rings connecting center to natural diorama footprint)
+  const cX = GARDEN_CENTER.x;
+  const cZ = GARDEN_CENTER.y;
+  const cY = getHeightAt(cX, cZ);
+  const cNorm = getNormalAt(cX, cZ);
+
+  positions.push(cX, cY, cZ);
+  normals.push(cNorm.x, cNorm.y, cNorm.z);
+  for (const s of seasonsList) {
+    evaluateSurfaceColor(cX, cY, cZ, cNorm, s, tempCol);
+    seasonPalettesData[s][0] = tempCol.r;
+    seasonPalettesData[s][1] = tempCol.g;
+    seasonPalettesData[s][2] = tempCol.b;
+  }
+  colors.push(
+    seasonPalettesData.spring[0],
+    seasonPalettesData.spring[1],
+    seasonPalettesData.spring[2]
+  );
+
+  for (let ir = 1; ir <= numRings; ir++) {
+    const frac = ir / numRings;
+    for (let it = 0; it < numSegments; it++) {
+      const bPt = GARDEN_BOUNDARY_POINTS[it];
+      const x = cX + frac * (bPt.x - cX);
+      const z = cZ + frac * (bPt.y - cZ);
+      const y = getHeightAt(x, z);
       const norm = getNormalAt(x, z);
 
       positions.push(x, y, z);
       normals.push(norm.x, norm.y, norm.z);
 
-      const vIdx = iz * (nx + 1) + ix;
+      const vIdx = 1 + (ir - 1) * numSegments + it;
       for (const s of seasonsList) {
         evaluateSurfaceColor(x, y, z, norm, s, tempCol);
         seasonPalettesData[s][vIdx * 3] = tempCol.r;
@@ -396,199 +428,136 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     }
   }
 
-  // Top surface quads (Counter-Clockwise winding: geometric normal points UP +Y)
-  for (let iz = 0; iz < nz; iz++) {
-    for (let ix = 0; ix < nx; ix++) {
-      const i00 = iz * (nx + 1) + ix;
-      const i10 = iz * (nx + 1) + (ix + 1);
-      const i01 = (iz + 1) * (nx + 1) + ix;
-      const i11 = (iz + 1) * (nx + 1) + (ix + 1);
+  // Quads for Top Surface
+  // Center to ring 1: triangle fan
+  for (let it = 0; it < numSegments; it++) {
+    const nextIt = (it + 1) % numSegments;
+    indices.push(0, 1 + it, 1 + nextIt);
+  }
+
+  // Ring k to Ring k + 1: quads
+  for (let ir = 1; ir < numRings; ir++) {
+    const ringCurr = 1 + (ir - 1) * numSegments;
+    const ringNext = 1 + ir * numSegments;
+
+    for (let it = 0; it < numSegments; it++) {
+      const nextIt = (it + 1) % numSegments;
+      const i00 = ringCurr + it;
+      const i10 = ringCurr + nextIt;
+      const i01 = ringNext + it;
+      const i11 = ringNext + nextIt;
 
       indices.push(i00, i01, i11);
       indices.push(i00, i11, i10);
     }
   }
 
-  // 2. Build 4 Cut-Earth Side Walls with organic geological strata (NO rapid stripes!)
+  // 2. Continuous Organic Side Walls around Natural Boundary
   const nySide = 12;
   const colSoil = COLORS.terrain.strataSoil;
   const colSubsoil = new THREE.Color(0x6e563b);
   const colRock = COLORS.terrain.strataRock1;
   const colBase = COLORS.base;
 
-  function addCleanSideWall(
-    getPt: (s: number) => { x: number; z: number; yTop: number; u: number },
-    normalVec: THREE.Vector3,
-    slices: number
-  ): void {
-    const baseIdx = positions.length / 3;
+  const boundaryNormals: THREE.Vector2[] = [];
+  for (let it = 0; it < numSegments; it++) {
+    const prevPt = GARDEN_BOUNDARY_POINTS[(it - 1 + numSegments) % numSegments];
+    const nextPt = GARDEN_BOUNDARY_POINTS[(it + 1) % numSegments];
+    const tangent = new THREE.Vector2().subVectors(nextPt, prevPt);
+    const norm = new THREE.Vector2(tangent.y, -tangent.x).normalize();
+    boundaryNormals.push(norm);
+  }
 
-    for (let iy = 0; iy <= nySide; iy++) {
-      const ty = iy / nySide;
-      for (let is = 0; is <= slices; is++) {
-        const s = is / slices;
-        const pt = getPt(s);
-        const y = pt.yTop * (1.0 - ty) + wallCutoffY * ty;
+  const sideBaseIdx = positions.length / 3;
+  for (let iy = 0; iy <= nySide; iy++) {
+    const ty = iy / nySide;
+    for (let it = 0; it < numSegments; it++) {
+      const bPt = GARDEN_BOUNDARY_POINTS[it];
+      const norm2d = boundaryNormals[it];
+      const yTop = getHeightAt(bPt.x, bPt.y);
+      const y = yTop * (1.0 - ty) + wallCutoffY * ty;
 
-        positions.push(pt.x, y, pt.z);
-        normals.push(normalVec.x, normalVec.y, normalVec.z);
+      positions.push(bPt.x, y, bPt.y);
+      normals.push(norm2d.x, 0, norm2d.y);
 
-        // Slow, non-periodic geological strata boundaries
-        const bSoil = pt.yTop - 0.16 - SimplexNoise2D(pt.u * 0.18, 5.0) * 0.04;
-        const bSubsoil = (pt.yTop + wallCutoffY) * 0.50 + SimplexNoise2D(pt.u * 0.15, 15.0) * 0.06;
+      const bSoil = yTop - 0.16 - SimplexNoise2D(it * 0.15, 5.0) * 0.04;
+      const bSubsoil = (yTop + wallCutoffY) * 0.50 + SimplexNoise2D(it * 0.12, 15.0) * 0.06;
 
-        if (y > bSoil) {
-          tempCol.copy(colSoil);
-        } else if (y > bSubsoil) {
-          tempCol.copy(colSubsoil);
-        } else {
-          tempCol.copy(colRock);
-        }
-
-        colors.push(tempCol.r, tempCol.g, tempCol.b);
+      if (y > bSoil) {
+        tempCol.copy(colSoil);
+      } else if (y > bSubsoil) {
+        tempCol.copy(colSubsoil);
+      } else {
+        tempCol.copy(colRock);
       }
-    }
-
-    for (let iy = 0; iy < nySide; iy++) {
-      for (let is = 0; is < slices; is++) {
-        const topLeft = baseIdx + iy * (slices + 1) + is;
-        const topRight = topLeft + 1;
-        const bottomLeft = baseIdx + (iy + 1) * (slices + 1) + is;
-        const bottomRight = bottomLeft + 1;
-
-        indices.push(topLeft, bottomLeft, topRight);
-        indices.push(topRight, bottomLeft, bottomRight);
-      }
+      colors.push(tempCol.r, tempCol.g, tempCol.b);
     }
   }
 
-  // South Wall (Z = +halfD, front cut showing wide stream channel)
-  addCleanSideWall(
-    (s) => {
-      const x = -halfW + s * gridWidth;
-      const z = halfD;
-      const ix = Math.min(Math.round(s * nx), nx);
-      const yTop = heightfield[nz * (nx + 1) + ix];
-      return { x, z, yTop, u: x };
-    },
-    new THREE.Vector3(0, 0, 1),
-    nx
-  );
+  for (let iy = 0; iy < nySide; iy++) {
+    const rowCurr = sideBaseIdx + iy * numSegments;
+    const rowNext = sideBaseIdx + (iy + 1) * numSegments;
 
-  // East Wall (X = +halfW, right side)
-  addCleanSideWall(
-    (s) => {
-      const z = halfD - s * gridDepth;
-      const x = halfW;
-      const iz = Math.min(Math.round((1.0 - s) * nz), nz);
-      const yTop = heightfield[iz * (nx + 1) + nx];
-      return { x, z, yTop, u: z };
-    },
-    new THREE.Vector3(1, 0, 0),
-    nz
-  );
+    for (let it = 0; it < numSegments; it++) {
+      const nextIt = (it + 1) % numSegments;
+      const i00 = rowCurr + it;
+      const i10 = rowCurr + nextIt;
+      const i01 = rowNext + it;
+      const i11 = rowNext + nextIt;
 
-  // North Wall (Z = -halfD, back mountain cut)
-  addCleanSideWall(
-    (s) => {
-      const x = halfW - s * gridWidth;
-      const z = -halfD;
-      const ix = Math.min(Math.round((1.0 - s) * nx), nx);
-      const yTop = heightfield[0 * (nx + 1) + ix];
-      return { x, z, yTop, u: x };
-    },
-    new THREE.Vector3(0, 0, -1),
-    nx
-  );
+      indices.push(i00, i10, i11);
+      indices.push(i00, i11, i01);
+    }
+  }
 
-  // West Wall (X = -halfW, left side)
-  addCleanSideWall(
-    (s) => {
-      const z = -halfD + s * gridDepth;
-      const x = -halfW;
-      const iz = Math.min(Math.round(s * nz), nz);
-      const yTop = heightfield[iz * (nx + 1) + 0];
-      return { x, z, yTop, u: z };
-    },
-    new THREE.Vector3(-1, 0, 0),
-    nz
-  );
-
-  // 3. Rounded Cream Pedestal Bevel & Bottom Face
-  const innerHalfW = halfW - bevelRadius;
-  const innerHalfD = halfD - bevelRadius;
+  // 3. Rounded Cream Pedestal Bevel following the natural perimeter
   const nBevelSteps = 3;
+  const bevelBaseIdx = positions.length / 3;
+  for (let ib = 0; ib <= nBevelSteps; ib++) {
+    const phi = (ib / nBevelSteps) * (Math.PI * 0.5);
+    const y = wallCutoffY - Math.sin(phi) * (wallCutoffY - baseBottomY);
+    const outward = bevelRadius * Math.cos(phi);
+    const nY = -Math.sin(phi);
+    const nOut = Math.cos(phi);
 
-  function addBevelStrip(
-    p0: THREE.Vector2,
-    p1: THREE.Vector2,
-    outDir: THREE.Vector2,
-    slices: number
-  ): void {
-    const baseIdx = positions.length / 3;
+    for (let it = 0; it < numSegments; it++) {
+      const bPt = GARDEN_BOUNDARY_POINTS[it];
+      const norm2d = boundaryNormals[it];
+      const curX = bPt.x + norm2d.x * outward;
+      const curZ = bPt.y + norm2d.y * outward;
 
-    for (let ib = 0; ib <= nBevelSteps; ib++) {
-      const phi = (ib / nBevelSteps) * (Math.PI * 0.5);
-      const y = wallCutoffY - Math.sin(phi) * (wallCutoffY - baseBottomY);
-      const outward = bevelRadius * Math.cos(phi);
-      const nY = -Math.sin(phi);
-      const nOut = Math.cos(phi);
-
-      for (let is = 0; is <= slices; is++) {
-        const s = is / slices;
-        const curX = p0.x * (1.0 - s) + p1.x * s + outDir.x * outward;
-        const curZ = p0.y * (1.0 - s) + p1.y * s + outDir.y * outward;
-
-        positions.push(curX, y, curZ);
-        normals.push(outDir.x * nOut, nY, outDir.y * nOut);
-        colors.push(colBase.r, colBase.g, colBase.b);
-      }
-    }
-
-    for (let ib = 0; ib < nBevelSteps; ib++) {
-      for (let is = 0; is < slices; is++) {
-        const topLeft = baseIdx + ib * (slices + 1) + is;
-        const topRight = topLeft + 1;
-        const bottomLeft = baseIdx + (ib + 1) * (slices + 1) + is;
-        const bottomRight = bottomLeft + 1;
-
-        indices.push(topLeft, bottomLeft, topRight);
-        indices.push(topRight, bottomLeft, bottomRight);
-      }
-    }
-  }
-
-  addBevelStrip(new THREE.Vector2(-innerHalfW, innerHalfD), new THREE.Vector2(innerHalfW, innerHalfD), new THREE.Vector2(0, 1), 24);
-  addBevelStrip(new THREE.Vector2(innerHalfW, innerHalfD), new THREE.Vector2(innerHalfW, -innerHalfD), new THREE.Vector2(1, 0), 20);
-  addBevelStrip(new THREE.Vector2(innerHalfW, -innerHalfD), new THREE.Vector2(-innerHalfW, -innerHalfD), new THREE.Vector2(0, -1), 24);
-  addBevelStrip(new THREE.Vector2(-innerHalfW, -innerHalfD), new THREE.Vector2(-innerHalfW, innerHalfD), new THREE.Vector2(-1, 0), 20);
-
-  // 4. Flat Bottom Face at baseBottomY (-0.70)
-  const botIdx = positions.length / 3;
-  const nGrid = 4;
-  for (let iz = 0; iz <= nGrid; iz++) {
-    const tz = iz / nGrid;
-    const z = -innerHalfD + tz * (2.0 * innerHalfD);
-    for (let ix = 0; ix <= nGrid; ix++) {
-      const tx = ix / nGrid;
-      const x = -innerHalfW + tx * (2.0 * innerHalfW);
-
-      positions.push(x, baseBottomY, z);
-      normals.push(0, -1, 0);
+      positions.push(curX, y, curZ);
+      normals.push(norm2d.x * nOut, nY, norm2d.y * nOut);
       colors.push(colBase.r, colBase.g, colBase.b);
     }
   }
 
-  for (let iz = 0; iz < nGrid; iz++) {
-    for (let ix = 0; ix < nGrid; ix++) {
-      const i00 = botIdx + iz * (nGrid + 1) + ix;
-      const i10 = botIdx + iz * (nGrid + 1) + (ix + 1);
-      const i01 = botIdx + (iz + 1) * (nGrid + 1) + ix;
-      const i11 = botIdx + (iz + 1) * (nGrid + 1) + (ix + 1);
+  for (let ib = 0; ib < nBevelSteps; ib++) {
+    const rowCurr = bevelBaseIdx + ib * numSegments;
+    const rowNext = bevelBaseIdx + (ib + 1) * numSegments;
 
-      indices.push(i00, i11, i10);
-      indices.push(i00, i01, i11);
+    for (let it = 0; it < numSegments; it++) {
+      const nextIt = (it + 1) % numSegments;
+      const i00 = rowCurr + it;
+      const i10 = rowCurr + nextIt;
+      const i01 = rowNext + it;
+      const i11 = rowNext + nextIt;
+
+      indices.push(i00, i10, i11);
+      indices.push(i00, i11, i01);
     }
+  }
+
+  // 4. Flat Sealed Bottom Face at baseBottomY (-0.70)
+  const bottomCenterIdx = positions.length / 3;
+  positions.push(cX, baseBottomY, cZ);
+  normals.push(0, -1, 0);
+  colors.push(colBase.r, colBase.g, colBase.b);
+
+  const bottomRingIdx = bevelBaseIdx + nBevelSteps * numSegments;
+  for (let it = 0; it < numSegments; it++) {
+    const nextIt = (it + 1) % numSegments;
+    indices.push(bottomCenterIdx, bottomRingIdx + nextIt, bottomRingIdx + it);
   }
 
   // Assemble Terrain Mesh
@@ -621,21 +590,52 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   terrainMesh.castShadow = true;
   group.add(terrainMesh);
 
-  // 5. Contact Shadow Plane below sleek pedestal
+  // 5. Contact Shadow conforming directly to natural diorama perimeter
   const shadowCanvas = document.createElement('canvas');
   shadowCanvas.width = 128;
   shadowCanvas.height = 128;
   const ctx = shadowCanvas.getContext('2d')!;
   const radGrad = ctx.createRadialGradient(64, 64, 25, 64, 64, 62);
   radGrad.addColorStop(0.0, 'rgba(42, 34, 24, 0.40)');
-  radGrad.addColorStop(0.55, 'rgba(55, 46, 36, 0.18)');
+  radGrad.addColorStop(0.60, 'rgba(55, 46, 36, 0.18)');
   radGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
   ctx.fillStyle = radGrad;
   ctx.fillRect(0, 0, 128, 128);
 
   const shadowTex = new THREE.CanvasTexture(shadowCanvas);
-  const shadowGeom = new THREE.PlaneGeometry(gridWidth * 1.18, gridDepth * 1.22);
-  shadowGeom.rotateX(-Math.PI / 2);
+  const shadowPositions: number[] = [];
+  const shadowUvs: number[] = [];
+  const shadowIndices: number[] = [];
+  const shadowY = baseBottomY - 0.02;
+
+  shadowPositions.push(cX, shadowY, cZ);
+  shadowUvs.push(0.5, 0.5);
+
+  const dilation = 1.15;
+  const boundSpanX = (GARDEN_FOOTPRINT_BOUNDS.maxX - GARDEN_FOOTPRINT_BOUNDS.minX) * dilation;
+  const boundSpanZ = (GARDEN_FOOTPRINT_BOUNDS.maxZ - GARDEN_FOOTPRINT_BOUNDS.minZ) * dilation;
+
+  for (let it = 0; it < numSegments; it++) {
+    const bPt = GARDEN_BOUNDARY_POINTS[it];
+    const sx = cX + (bPt.x - cX) * dilation;
+    const sz = cZ + (bPt.y - cZ) * dilation;
+    shadowPositions.push(sx, shadowY, sz);
+
+    const u = 0.5 + (sx - cX) / boundSpanX;
+    const v = 0.5 + (sz - cZ) / boundSpanZ;
+    shadowUvs.push(u, v);
+  }
+
+  for (let it = 0; it < numSegments; it++) {
+    const nextIt = (it + 1) % numSegments;
+    shadowIndices.push(0, 1 + it, 1 + nextIt);
+  }
+
+  const shadowGeom = new THREE.BufferGeometry();
+  shadowGeom.setAttribute('position', new THREE.Float32BufferAttribute(shadowPositions, 3));
+  shadowGeom.setAttribute('uv', new THREE.Float32BufferAttribute(shadowUvs, 2));
+  shadowGeom.setIndex(shadowIndices);
+
   const shadowMat = new THREE.MeshBasicMaterial({
     map: shadowTex,
     transparent: true,
@@ -643,7 +643,6 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     depthWrite: false,
   });
   const shadowMesh = new THREE.Mesh(shadowGeom, shadowMat);
-  shadowMesh.position.set(0, baseBottomY - 0.02, 0);
   group.add(shadowMesh);
 
   // 6. Natural Rounded River Boulders (volume, diverse sizes, clustered along margins)

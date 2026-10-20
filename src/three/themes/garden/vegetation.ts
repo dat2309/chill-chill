@@ -8,6 +8,7 @@ import {
   SEASON_PALETTES,
 } from './constants';
 import { SeededRandom, simplexNoise3D } from './noise';
+import { isInsideGardenFootprint } from './footprint';
 
 export interface VegetationSystem {
   group: THREE.Group;
@@ -113,7 +114,7 @@ export function createVegetation(
     const x = vRng.range(-halfW + 1.2, halfW - 1.2);
     const z = vRng.range(-halfD + 1.2, -3.4);
 
-    if (isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.6)) continue;
+    if (!isInsideGardenFootprint(x, z, 0.45) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.6)) continue;
     const h = getHeightAt(x, z);
     if (h < 2.0) continue; // Only on mountain slope
 
@@ -244,7 +245,7 @@ export function createVegetation(
   ];
 
   candidateDecSpots.forEach((spot) => {
-    if (Math.abs(spot.x) > halfW - 0.9 || Math.abs(spot.z) > halfD - 0.9) return;
+    if (!isInsideGardenFootprint(spot.x, spot.z, 0.45) || Math.abs(spot.x) > halfW - 0.9 || Math.abs(spot.z) > halfD - 0.9) return;
     if (isInStream(spot.x, spot.z) || isInsideBuildingExclusion(spot.x, spot.z, 0.4)) return;
     const h = getHeightAt(spot.x, spot.z);
     if (h < WATER_LEVEL + 0.15) return;
@@ -324,7 +325,7 @@ export function createVegetation(
     const x = vRng.range(-halfW + 0.8, halfW - 0.8);
     const z = vRng.range(-halfD + 0.8, halfD - 0.8);
 
-    if (isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.25) || isNearCampActivity(x, z)) continue;
+    if (!isInsideGardenFootprint(x, z, 0.40) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.25) || isNearCampActivity(x, z)) continue;
     const h = getHeightAt(x, z);
     if (h < WATER_LEVEL + 0.05) continue;
     const slope = getSlopeAt(x, z);
@@ -358,7 +359,7 @@ export function createVegetation(
     const vx = vRng.range(-6.2, 0.1);
     const vz = vRng.range(0.85, 1.85);
     const vSlope = getSlopeAt(vx, vz);
-    if (vSlope > 0.35 && !isInStream(vx, vz) && !isInsideBuildingExclusion(vx, vz, 0.2)) {
+    if (vSlope > 0.35 && isInsideGardenFootprint(vx, vz, 0.35) && !isInStream(vx, vz) && !isInsideBuildingExclusion(vx, vz, 0.2)) {
       const vY = getHeightAt(vx, vz);
       dummy.position.set(vx, vY + 0.02, vz);
       dummy.rotation.set(vRng.range(-0.1, 0.1), vRng.range(0, Math.PI * 2), vRng.range(-0.1, 0.1));
@@ -414,7 +415,7 @@ export function createVegetation(
     const fx = bed.cx + Math.cos(ang) * rDist;
     const fz = bed.cz + Math.sin(ang) * rDist;
 
-    if (isInStream(fx, fz) || isInsideBuildingExclusion(fx, fz, 0.08)) continue;
+    if (!isInsideGardenFootprint(fx, fz, 0.30) || isInStream(fx, fz) || isInsideBuildingExclusion(fx, fz, 0.08)) continue;
     const fh = getHeightAt(fx, fz);
     if (fh < WATER_LEVEL + 0.05) continue;
     if (getSlopeAt(fx, fz) > 0.40) continue;
@@ -507,7 +508,7 @@ export function createVegetation(
     const x = vRng.range(-halfW + 0.5, halfW - 0.5);
     const z = vRng.range(-halfD + 0.5, halfD - 0.5);
 
-    if (isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z)) continue;
+    if (!isInsideGardenFootprint(x, z, 0.30) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z)) continue;
     const h = getHeightAt(x, z);
     if (h < WATER_LEVEL + 0.04) continue;
     const slope = getSlopeAt(x, z);
@@ -560,7 +561,7 @@ export function createVegetation(
     const x = vRng.range(-halfW + 0.8, halfW - 0.8);
     const z = vRng.range(0.6, halfD - 0.8);
 
-    if (isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z)) continue;
+    if (!isInsideGardenFootprint(x, z, 0.35) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z)) continue;
     const h = getHeightAt(x, z);
     if (h < WATER_LEVEL + 0.05) continue;
     const slope = getSlopeAt(x, z);

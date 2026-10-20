@@ -102,6 +102,7 @@ assert(
 
 interface MockThemeExtra {
   disposed: boolean;
+  disposeCount: number;
   appliedState: any;
   quality: string;
 }
@@ -118,6 +119,7 @@ function createFakeThemeInstance(
   const instance: ThemeInstance<any> & MockThemeExtra = {
     id,
     disposed: false,
+    disposeCount: 0,
     appliedState: null,
     quality: 'high',
     group: new THREE.Group(),
@@ -158,6 +160,7 @@ function createFakeThemeInstance(
     reactToSplash() {},
     dispose() {
       this.disposed = true;
+      this.disposeCount++;
     },
   };
 
@@ -490,6 +493,84 @@ async function runLifecycleTests() {
       `Rollback (${point}): Next retry succeeded cleanly after error`
     );
   }
+
+  // =========================================================================
+  // 6.b. Rollback Regression: In-flight Active Theme Update & Single Dispose Count
+  // =========================================================================
+  const phuQuocDeferred = createDeferred();
+  let testGardenTheme: any = null;
+  let testPhuQuocTheme: any = null;
+
+  const inFlightUpdateCoordinator = new ThemeLifecycleCoordinator({
+    loaderMap: {
+      garden: async () => {
+        testGardenTheme = createFakeThemeInstance('garden');
+        return testGardenTheme;
+      },
+      phuquoc: async () => {
+        testPhuQuocTheme = createFakeThemeInstance('phuquoc', {
+          initPromise: phuQuocDeferred.promise,
+        });
+        return testPhuQuocTheme;
+      },
+    },
+    onRestoreCamera: (_themeId, theme) => {
+      if (theme.id === 'phuquoc') {
+        throw new Error('Simulated onRestoreCamera failure on phuquoc');
+      }
+    },
+  });
+
+  // 1. Garden starts at timeOfDay = 16
+  await inFlightUpdateCoordinator.switchTheme('garden', {
+    ...DEFAULT_GARDEN_STATE,
+    timeOfDay: 16,
+  });
+  assert(inFlightUpdateCoordinator.getActiveThemeId() === 'garden', 'Initial active theme is garden');
+  assert(
+    inFlightUpdateCoordinator.getActiveThemeState()?.timeOfDay === 16,
+    'Garden initial timeOfDay is 16'
+  );
+
+  // 2. Start loading Phu Quoc (in-flight)
+  const phuQuocSwitchPromise = inFlightUpdateCoordinator.switchTheme('phuquoc', {
+    ...DEFAULT_PHUQUOC_STATE,
+  });
+
+  // 3. While waiting for Phu Quoc, update Garden timeOfDay to 21
+  inFlightUpdateCoordinator.updateState('garden', { timeOfDay: 21 });
+  assert(
+    testGardenTheme.appliedState?.timeOfDay === 21,
+    'Garden appliedState updated to 21 while Phu Quoc is loading'
+  );
+  assert(
+    inFlightUpdateCoordinator.getActiveThemeState()?.timeOfDay === 21,
+    'Coordinator activeThemeState updated to 21 while Phu Quoc is loading'
+  );
+
+  // 4. Complete Phu Quoc init -> enters handover -> onRestoreCamera throws
+  phuQuocDeferred.resolve();
+  const failedSwitchResult = await phuQuocSwitchPromise;
+
+  // 5. Verify rollback results: Garden keeps 21, and Phu Quoc disposeCount === 1
+  assert(failedSwitchResult.status === 'failed', 'Switch to Phu Quoc failed as expected on restore camera');
+  assert(inFlightUpdateCoordinator.getActiveThemeId() === 'garden', 'Active theme rolled back to garden');
+  assert(
+    inFlightUpdateCoordinator.getActiveThemeState()?.timeOfDay === 21,
+    'Rollback preserved latest Garden state (timeOfDay = 21)'
+  );
+  assert(
+    testGardenTheme.appliedState?.timeOfDay === 21,
+    'Garden instance retained timeOfDay = 21 after rollback'
+  );
+  assert(
+    testPhuQuocTheme.disposed === true,
+    'Phu Quoc instance was disposed'
+  );
+  assert(
+    testPhuQuocTheme.disposeCount === 1,
+    `Phu Quoc instance was disposed exactly once (disposeCount = ${testPhuQuocTheme.disposeCount})`
+  );
 
   // =========================================================================
   // 7. Integration Level Testing with SceneManager (Initial Fail -> Retry -> Start once)

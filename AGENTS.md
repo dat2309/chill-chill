@@ -39,3 +39,11 @@ Trước khi coi một chủ đề hoàn tất:
 - Báo riêng kết quả build, kiểm tra logic và xác minh hình ảnh; không dùng build thành công thay cho kiểm tra hình dáng.
 
 Khi bắt đầu chủ đề mới, phải đọc và áp dụng quy tắc này ngay từ bước thiết kế địa hình. Không chờ đến giai đoạn hoàn thiện mới sửa đường bao.
+
+## Quy trình commit và kiểm tra
+
+- Sau khi hoàn thành thay đổi và các kiểm tra phù hợp đạt, tự động tạo local commit với thông điệp mô tả thay đổi.
+- Chỉ commit các file thuộc tác vụ; không gộp thay đổi có sẵn của người dùng.
+- Không push hoặc deploy nếu người dùng chưa yêu cầu rõ.
+- Nếu kiểm tra thất bại, báo nguyên nhân; không tuyên bố hoàn tất.
+

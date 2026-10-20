@@ -280,6 +280,75 @@ assert(
   'Camera state across themes is stored and isolated independently'
 );
 
+// 10. Phu Quoc Natural Asymmetric Footprint & Boundary Verification
+import {
+  PHUQUOC_BOUNDARY_POINTS,
+  PHUQUOC_BOUNDARY_SAMPLES,
+  isInsidePhuQuocFootprint,
+  getPhuQuocFootprintRadius,
+  PHUQUOC_FOOTPRINT_BOUNDS,
+} from '../src/three/themes/phuquoc/footprint';
+
+assert(
+  PHUQUOC_BOUNDARY_POINTS.length === PHUQUOC_BOUNDARY_SAMPLES && PHUQUOC_BOUNDARY_SAMPLES === 128,
+  `Phu Quoc boundary polygon has exactly ${PHUQUOC_BOUNDARY_SAMPLES} samples`
+);
+
+// Verify closed contour
+const pqStart = PHUQUOC_BOUNDARY_POINTS[0];
+const pqEnd = PHUQUOC_BOUNDARY_POINTS[PHUQUOC_BOUNDARY_POINTS.length - 1];
+const pqCloseGap = Math.hypot(pqStart.x - pqEnd.x, pqStart.y - pqEnd.y);
+assert(pqCloseGap < 0.65, `Phu Quoc boundary polygon forms a closed contour (gap = ${pqCloseGap.toFixed(3)})`);
+
+// Verify asymmetric natural coastal silhouette (radius varies meaningfully across orientations)
+let pqMinR = Infinity;
+let pqMaxR = -Infinity;
+for (let i = 0; i < 64; i++) {
+  const theta = (i / 64) * Math.PI * 2;
+  const r = getPhuQuocFootprintRadius(theta);
+  if (r < pqMinR) pqMinR = r;
+  if (r > pqMaxR) pqMaxR = r;
+}
+assert(
+  pqMaxR - pqMinR > 1.8,
+  `Phu Quoc footprint has organic asymmetric bay silhouette (radius: min=${pqMinR.toFixed(2)}, max=${pqMaxR.toFixed(2)}, span=${(pqMaxR - pqMinR).toFixed(2)})`
+);
+
+// Verify that Garden and Phu Quoc have different, custom footprints (NOT the same oval or circle)
+import { getGardenFootprintRadius } from '../src/three/themes/garden/footprint';
+let footprintDiffSum = 0;
+for (let i = 0; i < 32; i++) {
+  const theta = (i / 32) * Math.PI * 2;
+  footprintDiffSum += Math.abs(getGardenFootprintRadius(theta) - getPhuQuocFootprintRadius(theta));
+}
+assert(
+  footprintDiffSum / 32 > 0.6,
+  'Garden and Phu Quoc footprints are distinctly customized and not identical geometries'
+);
+
+// Verify all bungalows, pier, boats, and relaxation spots are within footprint
+const pqStructures = [
+  { x: -5.0, z: -1.6, name: 'Bungalow 1 (West Cove)' },
+  { x: 2.2,  z: -1.8, name: 'Bungalow 2 (East Cove)' },
+  { x: 5.5,  z: -2.8, name: 'Bungalow 3 (East Garden)' },
+  { x: PIER_CONFIG.startX, z: PIER_CONFIG.startZ, name: 'Pier Shore Entrance' },
+  { x: PIER_CONFIG.endX,   z: PIER_CONFIG.endZ,   name: 'Pier Seaward End' },
+  { x: BOAT_SPOTS.thung.x, z: BOAT_SPOTS.thung.z, name: 'Thuyền Thúng' },
+  { x: BOAT_SPOTS.ghe.x,   z: BOAT_SPOTS.ghe.z,   name: 'Ghe Nhỏ' },
+  { x: -2.8, z: 0.2,  name: 'Sun Loungers on Sand' },
+];
+
+let allPqStructuresInside = true;
+let pqStructFail = '';
+for (const s of pqStructures) {
+  if (!isInsidePhuQuocFootprint(s.x, s.z, 0.2)) {
+    allPqStructuresInside = false;
+    pqStructFail = `${s.name} at (${s.x}, ${s.z})`;
+    break;
+  }
+}
+assert(allPqStructuresInside, 'All thatched bungalows, pier, boats, and relaxation spots reside safely within natural footprint', pqStructFail);
+
 // Summary
 const totalPassed = results.filter((r) => r.passed).length;
 console.log('----------------------------------------------------');

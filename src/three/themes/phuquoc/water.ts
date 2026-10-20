@@ -10,6 +10,12 @@ import {
   TideLevel,
 } from './constants';
 import { getWaterLevel, isInWater } from './shoreline';
+import {
+  PHUQUOC_BOUNDARY_POINTS,
+  PHUQUOC_BOUNDARY_SAMPLES,
+  isInsidePhuQuocFootprint,
+  PHUQUOC_FOOTPRINT_BOUNDS,
+} from './footprint';
 
 export interface PhuQuocWaterSystem {
   group: THREE.Group;
@@ -119,112 +125,110 @@ export function createPhuQuocWater(
   let targetTideOffset = 1.0;
   let currentSimTime = 0;
 
-  // --- Water Mesh with Precise Seabed-Anchored Skirt Geometry ---
-  const segX = 120;
+  // --- Water Mesh Conforming Strictly to Natural Diorama Footprint ---
+  const segX = 100;
   const segZ = 60;
+  const minX = PHUQUOC_FOOTPRINT_BOUNDS.minX;
+  const maxX = PHUQUOC_FOOTPRINT_BOUNDS.maxX;
   const minZ = -1.5;
-  const maxZ = halfD;
+  const maxZ = PHUQUOC_FOOTPRINT_BOUNDS.maxZ;
 
   const positions: number[] = [];
   const uvs: number[] = [];
   const terrainHeights: number[] = [];
   const isSkirtBottom: number[] = [];
+  const isSkirt: number[] = [];
   const indices: number[] = [];
 
-  // 1. Surface grid
+  // 1. Surface grid inside the natural footprint
   for (let iz = 0; iz <= segZ; iz++) {
     const tz = iz / segZ;
     const z = minZ + tz * (maxZ - minZ);
     for (let ix = 0; ix <= segX; ix++) {
       const tx = ix / segX;
-      const x = -halfW + tx * DIORAMA_WIDTH;
+      const x = minX + tx * (maxX - minX);
 
       positions.push(x, SEA_LEVEL_BASE, z);
       uvs.push(tx, tz);
       terrainHeights.push(getHeightAt(x, z));
       isSkirtBottom.push(0);
+      isSkirt.push(0);
+    }
+  }
 
-      if (ix < segX && iz < segZ) {
-        const row1 = iz * (segX + 1) + ix;
-        const row2 = (iz + 1) * (segX + 1) + ix;
+  for (let iz = 0; iz < segZ; iz++) {
+    const tz0 = iz / segZ;
+    const tz1 = (iz + 1) / segZ;
+    const z0 = minZ + tz0 * (maxZ - minZ);
+    const z1 = minZ + tz1 * (maxZ - minZ);
+    const midZ = (z0 + z1) * 0.5;
+
+    for (let ix = 0; ix < segX; ix++) {
+      const tx0 = ix / segX;
+      const tx1 = (ix + 1) / segX;
+      const x0 = minX + tx0 * (maxX - minX);
+      const x1 = minX + tx1 * (maxX - minX);
+      const midX = (x0 + x1) * 0.5;
+
+      const row1 = iz * (segX + 1) + ix;
+      const row2 = (iz + 1) * (segX + 1) + ix;
+
+      const h0 = terrainHeights[row1];
+      const h1 = terrainHeights[row1 + 1];
+      const h2 = terrainHeights[row2];
+      const h3 = terrainHeights[row2 + 1];
+      const minH = Math.min(h0, h1, h2, h3);
+
+      // Only emit quad if inside the natural footprint and reaches water
+      if (isInsidePhuQuocFootprint(midX, midZ, 0.0) && minH <= SEA_LEVEL_HIGH + 0.08) {
         indices.push(row1, row2, row1 + 1);
         indices.push(row1 + 1, row2, row2 + 1);
       }
     }
   }
 
-  // 2. Front Cut Vertical Skirt (at Z = maxZ = 8.0)
-  for (let ix = 0; ix < segX; ix++) {
-    const tx0 = ix / segX;
-    const tx1 = (ix + 1) / segX;
-    const x0 = -halfW + tx0 * DIORAMA_WIDTH;
-    const x1 = -halfW + tx1 * DIORAMA_WIDTH;
+  // 2. Natural Boundary Marine Cross-Section Cut Skirt
+  // Along PHUQUOC_BOUNDARY_POINTS where sea meets the diorama perimeter
+  const numSegments = PHUQUOC_BOUNDARY_SAMPLES;
+  for (let it = 0; it < numSegments; it++) {
+    const nextIt = (it + 1) % numSegments;
+    const bPt0 = PHUQUOC_BOUNDARY_POINTS[it];
+    const bPt1 = PHUQUOC_BOUNDARY_POINTS[nextIt];
 
-    const bedH0 = getHeightAt(x0, maxZ);
-    const bedH1 = getHeightAt(x1, maxZ);
+    const bedH0 = getHeightAt(bPt0.x, bPt0.y);
+    const bedH1 = getHeightAt(bPt1.x, bPt1.y);
 
-    const baseIdx = positions.length / 3;
+    if (bedH0 < SEA_LEVEL_HIGH + 0.02 || bedH1 < SEA_LEVEL_HIGH + 0.02) {
+      const baseIdx = positions.length / 3;
 
-    // Top v0, v1 (at water level, moves with tide)
-    positions.push(x0, SEA_LEVEL_BASE, maxZ);
-    uvs.push(tx0, 1.0);
-    terrainHeights.push(bedH0);
-    isSkirtBottom.push(0);
-
-    positions.push(x1, SEA_LEVEL_BASE, maxZ);
-    uvs.push(tx1, 1.0);
-    terrainHeights.push(bedH1);
-    isSkirtBottom.push(0);
-
-    // Bottom v2, v3 (at seabed height, fixed in world space)
-    positions.push(x0, bedH0, maxZ);
-    uvs.push(tx0, 1.0);
-    terrainHeights.push(bedH0);
-    isSkirtBottom.push(1);
-
-    positions.push(x1, bedH1, maxZ);
-    uvs.push(tx1, 1.0);
-    terrainHeights.push(bedH1);
-    isSkirtBottom.push(1);
-
-    indices.push(baseIdx, baseIdx + 2, baseIdx + 1);
-    indices.push(baseIdx + 1, baseIdx + 2, baseIdx + 3);
-  }
-
-  // 3. Side Skirts along West edge (x = -halfW) and East edge (x = halfW)
-  for (let iz = 0; iz < segZ; iz++) {
-    const tz0 = iz / segZ;
-    const tz1 = (iz + 1) / segZ;
-    const z0 = minZ + tz0 * (maxZ - minZ);
-    const z1 = minZ + tz1 * (maxZ - minZ);
-
-    // West skirt (facing -X)
-    const bedHW0 = getHeightAt(-halfW, z0);
-    const bedHW1 = getHeightAt(-halfW, z1);
-    if (bedHW0 < SEA_LEVEL_HIGH || bedHW1 < SEA_LEVEL_HIGH) {
-      const baseIdxW = positions.length / 3;
-      positions.push(-halfW, SEA_LEVEL_BASE, z0);
-      uvs.push(0, tz0);
-      terrainHeights.push(bedHW0);
+      // Top vertices (water level, moves with tide)
+      positions.push(bPt0.x, SEA_LEVEL_BASE, bPt0.y);
+      uvs.push(it / numSegments, 1.0);
+      terrainHeights.push(bedH0);
       isSkirtBottom.push(0);
+      isSkirt.push(1);
 
-      positions.push(-halfW, SEA_LEVEL_BASE, z1);
-      uvs.push(0, tz1);
-      terrainHeights.push(bedHW1);
+      positions.push(bPt1.x, SEA_LEVEL_BASE, bPt1.y);
+      uvs.push((it + 1) / numSegments, 1.0);
+      terrainHeights.push(bedH1);
       isSkirtBottom.push(0);
+      isSkirt.push(1);
 
-      positions.push(-halfW, bedHW0, z0);
-      uvs.push(0, tz0);
-      terrainHeights.push(bedHW0);
+      // Bottom vertices (seabed height, fixed in world space)
+      positions.push(bPt0.x, bedH0, bPt0.y);
+      uvs.push(it / numSegments, 0.0);
+      terrainHeights.push(bedH0);
       isSkirtBottom.push(1);
+      isSkirt.push(1);
 
-      positions.push(-halfW, bedHW1, z1);
-      uvs.push(0, tz1);
-      terrainHeights.push(bedHW1);
+      positions.push(bPt1.x, bedH1, bPt1.y);
+      uvs.push((it + 1) / numSegments, 0.0);
+      terrainHeights.push(bedH1);
       isSkirtBottom.push(1);
+      isSkirt.push(1);
 
-      indices.push(baseIdxW, baseIdxW + 1, baseIdxW + 2);
-      indices.push(baseIdxW + 1, baseIdxW + 3, baseIdxW + 2);
+      indices.push(baseIdx, baseIdx + 2, baseIdx + 1);
+      indices.push(baseIdx + 1, baseIdx + 2, baseIdx + 3);
     }
   }
 
@@ -233,6 +237,7 @@ export function createPhuQuocWater(
   waterGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   waterGeo.setAttribute('aTerrainH', new THREE.Float32BufferAttribute(terrainHeights, 1));
   waterGeo.setAttribute('aSkirtBottom', new THREE.Float32BufferAttribute(isSkirtBottom, 1));
+  waterGeo.setAttribute('aIsSkirt', new THREE.Float32BufferAttribute(isSkirt, 1));
   waterGeo.setIndex(indices);
   waterGeo.computeVertexNormals();
 
@@ -402,6 +407,7 @@ export function createPhuQuocWater(
     vertexShader: `
       attribute float aTerrainH;
       attribute float aSkirtBottom;
+      attribute float aIsSkirt;
       uniform float uTime;
       uniform float uWaterLevel;
       uniform float uTideOffset;
@@ -415,12 +421,14 @@ export function createPhuQuocWater(
       varying vec2 vUv;
       varying float vTerrainH;
       varying float vIsSkirtBottom;
+      varying float vIsSkirt;
       varying vec3 vViewDir;
 
       void main() {
         vUv = uv;
         vTerrainH = aTerrainH;
         vIsSkirtBottom = aSkirtBottom;
+        vIsSkirt = aIsSkirt;
 
         vec3 pos = position;
         
@@ -478,13 +486,13 @@ export function createPhuQuocWater(
       varying vec2 vUv;
       varying float vTerrainH;
       varying float vIsSkirtBottom;
+      varying float vIsSkirt;
       varying vec3 vViewDir;
 
       void main() {
-        // Skirt face styling
-        if (vIsSkirtBottom > 0.5 || (vWorldPos.y < uWaterLevel - 0.02 && (vWorldPos.z > 7.95 || vWorldPos.x < -9.95))) {
-          // Front and side translucent cut: crystal deep teal
-          gl_FragColor = vec4(uDeepColor * 0.7, 0.85);
+        // Natural boundary cut cross-section styling
+        if (vIsSkirt > 0.5) {
+          gl_FragColor = vec4(uDeepColor * 0.72, 0.88);
           return;
         }
 

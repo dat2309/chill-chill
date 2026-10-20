@@ -321,8 +321,11 @@ export class SceneManager {
    * Apply partial state updates to the currently active theme.
    * State is verified to match activeThemeId, preventing foreign theme state leakage.
    */
-  updateState(stateOrPatch: Partial<ThemeState<any>>): void {
-    this.coordinator.updateState(stateOrPatch);
+  updateState(
+    themeIdOrPatch: ThemeId | Partial<ThemeState<any>>,
+    maybePatch?: Partial<ThemeState<any>>
+  ): void {
+    this.coordinator.updateState(themeIdOrPatch, maybePatch);
   }
 
   setQuality(quality: Quality): void {

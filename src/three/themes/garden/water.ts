@@ -15,6 +15,7 @@ import {
   isInWater as checkIsInWater,
   getTideOffset,
 } from './streamProfile';
+import { isInsideGardenFootprint } from './footprint';
 
 export interface WaterSystem {
   group: THREE.Group;
@@ -398,8 +399,12 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
 
       const minH = Math.min(h0, h1, h2, h3);
       if (minH <= waterY + 0.06) {
-        indices.push(i0, i2, i1);
-        indices.push(i1, i2, i3);
+        const quadX = (positions[i0 * 3] + positions[i3 * 3]) * 0.5;
+        const quadZ = (positions[i0 * 3 + 2] + positions[i3 * 3 + 2]) * 0.5;
+        if (isInsideGardenFootprint(quadX, quadZ, -0.05)) {
+          indices.push(i0, i2, i1);
+          indices.push(i1, i2, i3);
+        }
       }
     }
   }
@@ -443,8 +448,10 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
     const t1 = frontBaseIdx + (ix + 1) * 2 + 0;
     const b1 = frontBaseIdx + (ix + 1) * 2 + 1;
 
-    // Only draw quads where water exists
-    if (terrainHeights[t0] < waterSurfaceYEnd + 0.04 || terrainHeights[t1] < waterSurfaceYEnd + 0.04) {
+    // Only draw quads where water exists and is within the natural footprint
+    const midX = (positions[t0 * 3] + positions[t1 * 3]) * 0.5;
+    if ((terrainHeights[t0] < waterSurfaceYEnd + 0.04 || terrainHeights[t1] < waterSurfaceYEnd + 0.04) &&
+        isInsideGardenFootprint(midX, zEnd, -0.2)) {
       indices.push(t0, b0, t1);
       indices.push(t1, b0, b1);
     }

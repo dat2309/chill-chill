@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PHUQUOC_COLORS, PhuQuocSeason, SEED } from './constants';
 import { getDistanceToShore, isInWater } from './shoreline';
+import { isInsidePhuQuocFootprint } from './footprint';
 import { SeededRandom } from '../../core/noise';
 
 export interface PhuQuocVegetationSystem {
@@ -172,8 +173,8 @@ export function createPhuQuocVegetation(
   }
 
   palmPositions.forEach((p) => {
-    // Ensure not in water
-    if (!isInWater(p.x, p.z)) {
+    // Ensure inside natural footprint and not in water
+    if (isInsidePhuQuocFootprint(p.x, p.z, 0.40) && !isInWater(p.x, p.z)) {
       createPalmTree(p.x, p.z, p.leanAngle, p.leanDir);
     }
   });
@@ -193,11 +194,11 @@ export function createPhuQuocVegetation(
   const dummy = new THREE.Object3D();
   let placedPines = 0;
 
-  for (let i = 0; i < pineCount * 3 && placedPines < pineCount; i++) {
+  for (let i = 0; i < pineCount * 5 && placedPines < pineCount; i++) {
     const px = rng.range(-9.0, 9.0);
     const pz = rng.range(-7.5, -3.2);
 
-    if (getDistanceToShore(px, pz) > 4.0 && !isInWater(px, pz)) {
+    if (isInsidePhuQuocFootprint(px, pz, 0.45) && getDistanceToShore(px, pz) > 4.0 && !isInWater(px, pz)) {
       const py = getHeightAt(px, pz);
       const scale = rng.range(0.8, 1.4);
 
@@ -216,6 +217,8 @@ export function createPhuQuocVegetation(
       placedPines++;
     }
   }
+  pineTrunkMesh.count = Math.max(1, placedPines);
+  pineCanopyMesh.count = Math.max(1, placedPines);
   pineTrunkMesh.instanceMatrix.needsUpdate = true;
   pineCanopyMesh.instanceMatrix.needsUpdate = true;
   vegGroup.add(pineTrunkMesh);
@@ -229,11 +232,11 @@ export function createPhuQuocVegetation(
   bushMesh.castShadow = true;
 
   let placedBushes = 0;
-  for (let i = 0; i < bushCount * 3 && placedBushes < bushCount; i++) {
+  for (let i = 0; i < bushCount * 5 && placedBushes < bushCount; i++) {
     const bx = rng.range(-9.2, 9.2);
     const bz = rng.range(-6.5, 2.0);
 
-    if (getDistanceToShore(bx, bz) > 0.5 && !isInWater(bx, bz)) {
+    if (isInsidePhuQuocFootprint(bx, bz, 0.40) && getDistanceToShore(bx, bz) > 0.5 && !isInWater(bx, bz)) {
       const by = getHeightAt(bx, bz);
       const bScale = rng.range(0.5, 1.1);
 
@@ -245,6 +248,7 @@ export function createPhuQuocVegetation(
       placedBushes++;
     }
   }
+  bushMesh.count = Math.max(1, placedBushes);
   bushMesh.instanceMatrix.needsUpdate = true;
   vegGroup.add(bushMesh);
 
@@ -271,6 +275,7 @@ export function createPhuQuocVegetation(
     const oz = rng.range(-center.r, center.r);
     const bx = center.x + ox;
     const bz = center.z + oz;
+    if (!isInsidePhuQuocFootprint(bx, bz, 0.30)) continue;
     const by = getHeightAt(bx, bz) + rng.range(0.3, 1.2);
 
     dummy.position.set(bx, by, bz);
@@ -281,6 +286,7 @@ export function createPhuQuocVegetation(
     bougMesh.setMatrixAt(placedBoug, dummy.matrix);
     placedBoug++;
   }
+  bougMesh.count = Math.max(1, placedBoug);
   bougMesh.instanceMatrix.needsUpdate = true;
   vegGroup.add(bougMesh);
 
