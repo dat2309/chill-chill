@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { SceneState, DEFAULT_STATE, Season, TideLevel } from './constants';
+import { SceneState, DEFAULT_STATE, Season, Quality } from './constants';
 import { createTerrain, TerrainSystem } from './terrain';
 import { createWater, WaterSystem } from './water';
 import { createArchitecture, ArchitectureSystem } from './architecture';
@@ -24,29 +24,48 @@ export class SceneManager {
   state: SceneState = { ...DEFAULT_STATE };
   private clock = new THREE.Clock();
   private animFrameId = 0;
+  private isPaused = false;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private isPointerOnUI = false;
   private isPointerDown = false;
   private isDragging = false;
   private pointerDownPos = new THREE.Vector2();
+
   private frameCount = 0;
   private fpsAccum = 0;
   private currentFps = 60;
+  private lowFpsSeconds = 0;
+  private qualityDowngraded = false;
   private onFpsUpdate: ((fps: number) => void) | null = null;
+  private onQualityChange: ((quality: Quality) => void) | null = null;
+
   private prevSeason: Season = DEFAULT_STATE.season;
   private seasonBlend = 1;
   private seasonBlendTarget = 1;
   private disposed = false;
 
-  // Isometric viewpoint: from (+X, +Y, +Z) looking down at model
-  // Calibrated reset framing with generous margin around base, trees, mountain peaks, and above bottom toolbar
+  private resizeObserver: ResizeObserver | null = null;
+  private intersectionObserver: IntersectionObserver | null = null;
+
+  // Isometric viewpoint: looking down from (+X, +Y, +Z)
   private initialTarget = new THREE.Vector3(-0.4, 0.45, 0.0);
   private initialCameraPos = new THREE.Vector3(26.0, 23.0, 26.0);
-  private baseFrustumHeight = 25.5;
 
-  constructor(container: HTMLElement, onFps: (fps: number) => void) {
-    this.onFpsUpdate = onFps;
+  constructor(
+    container: HTMLElement,
+    onFps?: (fps: number) => void,
+    onQualityChange?: (quality: Quality) => void
+  ) {
+    this.onFpsUpdate = onFps ?? null;
+    this.onQualityChange = onQualityChange ?? null;
+
+    // Check prefers-reduced-motion
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.state.autoRotate = false;
+      this.state.windStrength = 0.1;
+      this.state.flowSpeed = 0.25;
+    }
 
     // Renderer with transparent canvas so CSS paper-cream background shows through
     this.renderer = new THREE.WebGLRenderer({
@@ -63,24 +82,20 @@ export class SceneManager {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
 
-    // Scene: leave background null for transparent paper canvas
+    // Scene
     this.scene = new THREE.Scene();
     this.scene.background = null;
 
-    // Orthographic Camera fitted cleanly to diorama bounds with breathing room
-    const aspect = container.clientWidth / container.clientHeight;
-    let frustumH = this.baseFrustumHeight;
-    if (aspect < 1.35) {
-      frustumH = this.baseFrustumHeight / Math.min(1.0, aspect * 0.78);
-    }
-
+    // Initial orthographic camera; will be calibrated precisely via fitCameraToBounds()
+    const aspect = container.clientWidth / Math.max(1, container.clientHeight);
+    const initialFrustumH = 26.0;
     this.camera = new THREE.OrthographicCamera(
-      (-frustumH * aspect) / 2,
-      (frustumH * aspect) / 2,
-      frustumH / 2,
-      -frustumH / 2,
-      -60,
-      120
+      (-initialFrustumH * aspect) / 2,
+      (initialFrustumH * aspect) / 2,
+      initialFrustumH / 2,
+      -initialFrustumH / 2,
+      -70,
+      140
     );
     this.camera.position.copy(this.initialCameraPos);
 
@@ -92,30 +107,55 @@ export class SceneManager {
     this.controls.minZoom = 0.55;
     this.controls.maxZoom = 2.2;
     this.controls.maxPolarAngle = Math.PI * 0.44; // Prevent viewing through bottom
-    this.controls.minPolarAngle = Math.PI * 0.16; // Prevent vertical top-down distortion
+    this.controls.minPolarAngle = Math.PI * 0.16; // Prevent vertical distortion
     this.controls.update();
 
     // Event listeners
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
-    window.addEventListener('resize', this.onResize);
+
+    const canvas = this.renderer.domElement;
+    canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
+
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+
+    // ResizeObserver on container for exact fluid viewport tracking
+    this.resizeObserver = new ResizeObserver(() => {
+      this.fitCameraToBounds();
+    });
+    this.resizeObserver.observe(container);
+
+    // IntersectionObserver to pause rendering when offscreen
+    this.intersectionObserver = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (entry && entry.isIntersecting) {
+        this.resume();
+      } else {
+        this.pause();
+      }
+    });
+    this.intersectionObserver.observe(container);
   }
 
   async init(): Promise<void> {
     try {
       this.terrain = createTerrain(this.scene);
+      await new Promise((r) => requestAnimationFrame(r));
 
       this.water = createWater(
         this.renderer,
         this.scene,
         this.terrain.getHeightAt
       );
+      await new Promise((r) => requestAnimationFrame(r));
 
       this.architecture = createArchitecture(
         this.scene,
         this.terrain.getHeightAt
       );
+      await new Promise((r) => requestAnimationFrame(r));
 
       this.vegetation = createVegetation(
         this.scene,
@@ -124,14 +164,17 @@ export class SceneManager {
         this.terrain.isInStream,
         this.terrain.isOnPlateau
       );
+      await new Promise((r) => requestAnimationFrame(r));
 
       this.fish = createFish(
         this.scene,
         this.terrain.getHeightAt,
         this.terrain.isInStream
       );
+      await new Promise((r) => requestAnimationFrame(r));
 
       this.lighting = createLighting(this.scene);
+      this.lighting.setupEmissiveMeshes(this.scene);
 
       // Apply initial Spring 16:30 state
       this.lighting.update(this.state);
@@ -140,19 +183,56 @@ export class SceneManager {
       this.vegetation.updateSeason(this.state.season, 1);
       this.architecture.updateSeason(this.state.season, 1);
 
+      // Fit camera to diorama bounds
+      this.fitCameraToBounds();
     } catch (e) {
-      console.error('Failed to initialize scene:', e);
+      console.error('SceneManager init error:', e);
       throw e;
     }
   }
 
   start(): void {
+    if (this.disposed) return;
+    this.clock.start();
+    this.isPaused = false;
+    this.animate();
+  }
+
+  pause(): void {
+    if (this.isPaused) return;
+    this.isPaused = true;
+    cancelAnimationFrame(this.animFrameId);
+    this.clock.stop();
+  }
+
+  resume(): void {
+    if (!this.isPaused || this.disposed) return;
+    this.isPaused = false;
     this.clock.start();
     this.animate();
   }
 
+  private onVisibilityChange = (): void => {
+    if (document.hidden) {
+      this.pause();
+    } else {
+      this.resume();
+    }
+  };
+
+  private onContextLost = (e: Event): void => {
+    e.preventDefault();
+    this.pause();
+    console.warn('WebGL context lost.');
+  };
+
+  private onContextRestored = (): void => {
+    console.info('WebGL context restored.');
+    this.resume();
+  };
+
   private animate = (): void => {
-    if (this.disposed) return;
+    if (this.disposed || this.isPaused) return;
     this.animFrameId = requestAnimationFrame(this.animate);
 
     const dt = Math.min(this.clock.getDelta(), 0.1);
@@ -166,6 +246,25 @@ export class SceneManager {
       this.frameCount = 0;
       this.fpsAccum = 0;
       this.onFpsUpdate?.(this.currentFps);
+
+      // Auto quality degradation if FPS < 30 for ~3 seconds
+      if (this.currentFps < 30) {
+        this.lowFpsSeconds += 0.5;
+        if (this.lowFpsSeconds >= 3.0 && !this.qualityDowngraded) {
+          if (this.state.quality === 'high') {
+            this.updateState({ quality: 'medium' });
+            this.onQualityChange?.('medium');
+            this.lowFpsSeconds = 0;
+          } else if (this.state.quality === 'medium') {
+            this.updateState({ quality: 'low' });
+            this.onQualityChange?.('low');
+            this.qualityDowngraded = true;
+            this.lowFpsSeconds = 0;
+          }
+        }
+      } else {
+        this.lowFpsSeconds = Math.max(0, this.lowFpsSeconds - 0.25);
+      }
     }
 
     // Season blend interpolation
@@ -185,7 +284,7 @@ export class SceneManager {
     this.water?.update(dt, elapsed, this.state);
     this.architecture?.update(dt, elapsed, this.state.timeOfDay);
     this.vegetation?.update(dt, elapsed, this.state.windStrength);
-    this.fish?.update(dt, elapsed, this.water?.getWaterLevel() ?? 0.35);
+    this.fish?.update(dt, elapsed, this.water?.getWaterLevel() ?? 0.28);
     this.lighting?.update(this.state);
 
     // Sync water shader sun direction
@@ -197,25 +296,93 @@ export class SceneManager {
       }
     }
 
-    // Night emissive lighting on architecture
-    if (this.architecture && this.lighting) {
-      const nightFactor = this.state.timeOfDay > 18 || this.state.timeOfDay < 6
-        ? Math.min(1, Math.abs(this.state.timeOfDay > 12 ? this.state.timeOfDay - 18 : this.state.timeOfDay + 6) / 2)
-        : 0;
-      for (const mesh of this.architecture.emissiveMeshes) {
-        const mat = mesh.material as THREE.MeshStandardMaterial;
-        if (mat.emissive) {
-          mat.emissiveIntensity = nightFactor * 0.9;
-        }
-      }
-    }
-
     this.renderer.render(this.scene, this.camera);
   };
 
+  /**
+   * Fits camera frustum precisely to diorama bounding box,
+   * leaving comfortable breathing room for header title, time slider, and bottom controls.
+   */
+  fitCameraToBounds(): void {
+    const parent = this.renderer.domElement.parentElement;
+    if (!parent) return;
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
+    if (w <= 0 || h <= 0) return;
+    const aspect = w / h;
+
+    // Calculate content bounding box excluding shadow planes and helpers
+    const box = new THREE.Box3();
+    let meshCount = 0;
+    this.scene.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        const name = (mesh.name || '').toLowerCase();
+        if (name.includes('shadow') || name.includes('helper')) return;
+        if (!mesh.geometry) return;
+        if (!mesh.visible) return;
+        mesh.geometry.computeBoundingBox();
+        if (mesh.geometry.boundingBox) {
+          const mBox = mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
+          box.union(mBox);
+          meshCount++;
+        }
+      }
+    });
+
+    if (meshCount === 0 || box.isEmpty()) {
+      box.set(new THREE.Vector3(-10.2, -0.75, -8.2), new THREE.Vector3(10.2, 5.2, 8.2));
+    }
+
+    this.camera.updateMatrixWorld();
+    const invCamMat = this.camera.matrixWorldInverse;
+
+    const corners = [
+      new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+    ];
+
+    let minViewX = Infinity;
+    let maxViewX = -Infinity;
+    let minViewY = Infinity;
+    let maxViewY = -Infinity;
+
+    for (const c of corners) {
+      c.applyMatrix4(invCamMat);
+      if (c.x < minViewX) minViewX = c.x;
+      if (c.x > maxViewX) maxViewX = c.x;
+      if (c.y < minViewY) minViewY = c.y;
+      if (c.y > maxViewY) maxViewY = c.y;
+    }
+
+    const viewWidth = maxViewX - minViewX;
+    const viewHeight = maxViewY - minViewY;
+
+    // Padding for UI overlays (title top, bottom bar)
+    const paddingX = 1.16;
+    const paddingY = 1.28;
+
+    const reqHeightFromY = viewHeight * paddingY;
+    const reqHeightFromX = (viewWidth * paddingX) / aspect;
+    const frustumH = Math.max(reqHeightFromY, reqHeightFromX, 23.5);
+
+    this.camera.left = (-frustumH * aspect) / 2;
+    this.camera.right = (frustumH * aspect) / 2;
+    this.camera.top = frustumH / 2;
+    this.camera.bottom = -frustumH / 2;
+    this.camera.updateProjectionMatrix();
+
+    this.renderer.setSize(w, h);
+  }
+
   setDebugMode(debug: boolean): void {
     if (debug) {
-      // Magenta background to immediately expose any missing triangles, holes or gaps
       this.scene.background = new THREE.Color(0xff00ff);
       this.terrain?.setDebug(true);
       if (this.vegetation) this.vegetation.group.visible = false;
@@ -264,7 +431,6 @@ export class SceneManager {
     this.setDebugMode(false);
     this.camera.position.copy(this.initialCameraPos);
     this.camera.zoom = 1.0;
-    this.camera.updateProjectionMatrix();
     this.controls.target.copy(this.initialTarget);
     this.controls.update();
 
@@ -275,6 +441,8 @@ export class SceneManager {
     this.vegetation?.updateSeason(this.state.season, 1);
     this.architecture?.updateSeason(this.state.season, 1);
     this.lighting?.update(this.state);
+
+    this.fitCameraToBounds();
   }
 
   private onPointerMove = (e: PointerEvent): void => {
@@ -294,7 +462,10 @@ export class SceneManager {
       const hits = this.raycaster.intersectObject(this.water.mesh);
       if (hits.length > 0) {
         const pt = hits[0].point;
-        this.water.addRipple(pt.x, pt.z, 0.18 * this.state.rippleStrength);
+        // Verify point is inside submerged water before creating ripple
+        if (this.water.isInWater(pt.x, pt.z)) {
+          this.water.addRipple(pt.x, pt.z, 0.18 * this.state.rippleStrength);
+        }
       }
     }
   };
@@ -314,8 +485,11 @@ export class SceneManager {
       const hits = this.raycaster.intersectObject(this.water.mesh);
       if (hits.length > 0) {
         const pt = hits[0].point;
-        this.water.addRipple(pt.x, pt.z, 0.65 * this.state.rippleStrength);
-        this.fish?.reactToRipple(pt.x, pt.z);
+        // Verify point is inside submerged water before creating ripple
+        if (this.water.isInWater(pt.x, pt.z)) {
+          this.water.addRipple(pt.x, pt.z, 0.65 * this.state.rippleStrength);
+          this.fish?.reactToRipple(pt.x, pt.z);
+        }
       }
     }
     this.isPointerDown = false;
@@ -326,34 +500,21 @@ export class SceneManager {
     this.isPointerOnUI = v;
   }
 
-  private onResize = (): void => {
-    const parent = this.renderer.domElement.parentElement;
-    if (!parent) return;
-    const w = parent.clientWidth;
-    const h = parent.clientHeight;
-    const aspect = w / h;
-
-    let frustumH = this.baseFrustumHeight;
-    if (aspect < 1.35) {
-      frustumH = this.baseFrustumHeight / Math.min(1.0, aspect * 0.78);
-    }
-
-    this.camera.left = (-frustumH * aspect) / 2;
-    this.camera.right = (frustumH * aspect) / 2;
-    this.camera.top = frustumH / 2;
-    this.camera.bottom = -frustumH / 2;
-    this.camera.updateProjectionMatrix();
-
-    this.renderer.setSize(w, h);
-  };
-
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.animFrameId);
-    this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
-    this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
-    this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
-    window.removeEventListener('resize', this.onResize);
+
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+
+    const canvas = this.renderer.domElement;
+    canvas.removeEventListener('pointermove', this.onPointerMove);
+    canvas.removeEventListener('pointerdown', this.onPointerDown);
+    canvas.removeEventListener('pointerup', this.onPointerUp);
+    canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+
+    this.resizeObserver?.disconnect();
+    this.intersectionObserver?.disconnect();
 
     this.terrain?.dispose();
     this.water?.dispose();
@@ -364,6 +525,6 @@ export class SceneManager {
 
     this.controls.dispose();
     this.renderer.dispose();
-    this.renderer.domElement.remove();
+    canvas.remove();
   }
 }
