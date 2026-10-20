@@ -265,9 +265,16 @@ export default function UI({
         <div className="webgl-error" role="alert" style={{ zIndex: 180 }}>
           <h2>Không thể tải chủ đề</h2>
           <p>{themeError}</p>
-          <div style={{ display: 'flex', gap: 10, marginTop: 12, justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="ctrl-btn active" onClick={onRetryTheme}>
               Thử lại
+            </button>
+            <button
+              className="ctrl-btn"
+              onClick={() => window.location.reload()}
+              title="Tải lại toàn bộ trang web"
+            >
+              Tải lại trang (F5)
             </button>
             {onCancelThemeError && requestedThemeId && requestedThemeId !== activeThemeId && (
               <button className="ctrl-btn" onClick={onCancelThemeError}>
