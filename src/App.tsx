@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Scene from './components/Scene';
 import UI from './components/UI';
-import { ThemeId, ThemeState, Quality } from './three/core/types';
+import { ThemeId, ThemeState, Quality, SavedCameraState } from './three/core/types';
 import {
   loadPersistedAppState,
   savePersistedAppState,
@@ -24,8 +24,12 @@ export default function App() {
   const managerRef = useRef<SceneManager | null>(null);
 
   const activeThemeId = persisted.activeThemeId;
-  const currentThemeState =
+  const rawThemeState =
     activeThemeId === 'garden' ? persisted.gardenState : persisted.phuquocState;
+  const currentThemeState = {
+    ...rawThemeState,
+    quality: persisted.shared.quality,
+  };
 
   // Persist state on change
   useEffect(() => {
@@ -63,21 +67,54 @@ export default function App() {
     });
   }, []);
 
-  const handleQualityChange = useCallback(
-    (quality: Quality) => {
-      handleChange({ quality });
-    },
-    [handleChange]
-  );
+  const handleQualityChange = useCallback((quality: Quality) => {
+    setPersisted((prev) => ({
+      ...prev,
+      shared: {
+        ...prev.shared,
+        quality,
+      },
+    }));
+    managerRef.current?.setQuality(quality);
+  }, []);
+
+  const handleCameraChange = useCallback((themeId: ThemeId, camera: SavedCameraState) => {
+    setPersisted((prev) => {
+      const nextCamera = { ...prev.camera, [themeId]: camera };
+      if (themeId === 'garden') {
+        return {
+          ...prev,
+          camera: nextCamera,
+          gardenState: { ...prev.gardenState, cameraState: camera },
+        };
+      } else {
+        return {
+          ...prev,
+          camera: nextCamera,
+          phuquocState: { ...prev.phuquocState, cameraState: camera },
+        };
+      }
+    });
+  }, []);
 
   // Theme-isolated reset: only resets the ACTIVE theme to its default state
   const handleReset = useCallback(() => {
     const defaultState = getThemeDefaultState(activeThemeId);
     setPersisted((prev) => {
+      const nextCamera = { ...prev.camera };
+      delete nextCamera[activeThemeId];
       if (prev.activeThemeId === 'garden') {
-        return { ...prev, gardenState: { ...DEFAULT_GARDEN_STATE } };
+        return {
+          ...prev,
+          camera: nextCamera,
+          gardenState: { ...DEFAULT_GARDEN_STATE, cameraState: undefined },
+        };
       } else {
-        return { ...prev, phuquocState: { ...DEFAULT_PHUQUOC_STATE } };
+        return {
+          ...prev,
+          camera: nextCamera,
+          phuquocState: { ...DEFAULT_PHUQUOC_STATE, cameraState: undefined },
+        };
       }
     });
     managerRef.current?.resetCurrentTheme(defaultState);
@@ -141,6 +178,7 @@ export default function App() {
         onFps={handleFps}
         onQualityChange={handleQualityChange}
         onThemeLoadingChange={handleThemeLoadingChange}
+        onCameraChange={handleCameraChange}
         managerRef={managerRef}
       />
       <div

@@ -16,6 +16,11 @@ export type Season = GardenSeason | PhuQuocSeason;
 export type TideLevel = 'low' | 'high';
 export type Quality = 'low' | 'medium' | 'high';
 
+export type SwitchThemeResult =
+  | { status: 'success' }
+  | { status: 'cancelled' }
+  | { status: 'failed'; error: Error };
+
 export interface SavedCameraState {
   position: [number, number, number];
   target: [number, number, number];
@@ -50,6 +55,7 @@ export interface PersistedAppState {
   gardenState: ThemeState<'garden'>;
   phuquocState: ThemeState<'phuquoc'>;
   shared: SharedOptions;
+  camera?: Partial<Record<ThemeId, SavedCameraState>>;
 }
 
 export interface SeasonInfo<S extends string = string> {
@@ -103,6 +109,8 @@ export interface ThemeInstance<T extends ThemeId = ThemeId> {
   reactToSplash(worldX: number, worldZ: number): void;
   getTideOffset?(): number;
   getWaterLevel?(): number;
+  setQuality?(quality: Quality): void;
+  setForceAnalyticalFallback?(force: boolean): void;
   setDebugMode?(debug: boolean): void;
   dispose(): void;
 }

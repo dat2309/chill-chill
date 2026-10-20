@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { SceneManager } from '../three/core/SceneManager';
-import { ThemeId, ThemeState, Quality } from '../three/core/types';
+import { ThemeId, ThemeState, Quality, SavedCameraState } from '../three/core/types';
 
 interface SceneProps {
   themeId: ThemeId;
@@ -10,6 +10,7 @@ interface SceneProps {
   onFps: (fps: number) => void;
   onQualityChange?: (quality: Quality) => void;
   onThemeLoadingChange?: (loading: boolean, error?: Error | null) => void;
+  onCameraChange?: (themeId: ThemeId, camera: SavedCameraState) => void;
   managerRef: React.MutableRefObject<SceneManager | null>;
 }
 
@@ -21,6 +22,7 @@ export default function Scene({
   onFps,
   onQualityChange,
   onThemeLoadingChange,
+  onCameraChange,
   managerRef,
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,7 +47,6 @@ export default function Scene({
       return;
     }
 
-    // Release preflight context immediately
     const loseContextExt = gl.getExtension('WEBGL_lose_context');
     if (loseContextExt) {
       loseContextExt.loseContext();
@@ -54,21 +55,27 @@ export default function Scene({
 
     let unmounted = false;
     let manager: SceneManager | null = null;
+
     try {
       manager = new SceneManager(container, {
         onFpsUpdate: onFps,
         onQualityChange,
         onThemeLoadingChange,
+        onCameraChange,
       });
       managerRef.current = manager;
 
       manager
-        .switchTheme(themeId, themeState)
-        .then(() => {
+        .switchTheme(themeId, themeState, themeState.cameraState)
+        .then((result) => {
           if (unmounted) return;
-          manager?.start();
-          isInitializedRef.current = true;
-          onReady();
+          if (result.status === 'success') {
+            manager?.start();
+            isInitializedRef.current = true;
+            onReady();
+          } else if (result.status === 'failed') {
+            onError(`Lỗi khởi tạo cảnh 3D: ${result.error.message}`);
+          }
         })
         .catch((e: Error) => {
           if (unmounted) return;
@@ -100,7 +107,16 @@ export default function Scene({
     if (!isInitializedRef.current || !managerRef.current) return;
     if (currentThemeIdRef.current !== themeId) {
       currentThemeIdRef.current = themeId;
-      managerRef.current.switchTheme(themeId, themeState);
+      managerRef.current
+        .switchTheme(themeId, themeState, themeState.cameraState)
+        .then((result) => {
+          if (result.status === 'failed') {
+            onError(`Lỗi chuyển đổi chủ đề: ${result.error.message}`);
+          }
+        })
+        .catch((err) => {
+          onError(`Lỗi chuyển đổi chủ đề: ${err.message || String(err)}`);
+        });
     }
   }, [themeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
