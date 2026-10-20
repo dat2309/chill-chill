@@ -4,59 +4,62 @@ import { ThemeMetadata, ThemeCameraPreset } from '../../core/types';
 export const PHUQUOC_METADATA: ThemeMetadata<'phuquoc'> = {
   id: 'phuquoc',
   name: 'Phu Quoc Sunset Bay',
-  tagline: 'Emerald Waters & Sunset Palms',
-  eyebrow: 'TROPICAL BAY & EMERALD WATERS',
-  description: 'A tranquil tropical bay on Phu Quoc island with curved white sand, thatched roof bungalows, wooden jetty, and vibrant sunset skies.',
-  badges: ['Phu Quoc Bay', 'Sunset Pier', 'Coral Cove'],
+  tagline: 'A fictional coastal retreat inspired by Ông Lang, Phú Quốc.',
+  eyebrow: 'A FICTIONAL COASTAL RETREAT INSPIRED BY ÔNG LANG',
+  description: 'A peaceful coastal diorama inspired by the natural bays of Ông Lang, Phú Quốc, featuring curved sandy shorelines interspersed with coastal rocks, thatched bungalows, a wooden jetty, and glowing western sunsets over the Gulf of Thailand.',
+  badges: ['Ông Lang Inspiration', 'Western Sunset', 'Coastal Rocks & Palms'],
   seasons: [
     { id: 'dry', label: '☀️', icon: '☀️', name: 'Mùa khô (Dry)' },
     { id: 'rainy', label: '🌧️', icon: '🌧️', name: 'Mùa mưa (Rainy)' },
   ],
-  defaultTime: 17.75, // 17:45 Sunset
+  defaultTime: 17.75, // 17:45 experiential sunset preset
   defaultSeason: 'dry',
   previewGradient: 'linear-gradient(135deg, #ff7e5f 0%, #feb47b 45%, #20b2aa 100%)',
   howItMade: [
     {
       icon: '🏝️',
-      title: 'Shoreline & Coastal Terrain',
-      content: 'The coastal bay is shaped by an analytical crescent shoreline with a parabolic seabed dropping into clear turquoise waters. Granite headlands and coconut palms are distributed using procedural slope and sand proximity masks.',
+      title: 'Ông Lang Coastline & Beach Profile',
+      content: 'Modeled after the alternating sand coves and coastal rock outcroppings typical of Ông Lang beach. The mathematical elevation profile transitions smoothly from submerged seabed through the swash zone to the upper beach terrace with zero step discontinuities.',
     },
     {
       icon: '🌊',
-      title: 'Tropical Ocean & Marine Shader',
-      content: 'The sea shader implements exponential Beer–Lambert absorption specifically tuned for tropical waters (absorbing red wavelengths first to reveal emerald greens and deep teals). Schlick Fresnel reflections capture the evening rose-violet sunset horizon.',
+      title: 'Tropical Ocean & Physical Beer–Lambert Absorption',
+      content: 'The ocean surface implements true exponential Beer–Lambert light absorption (exp(-depth * coeff)), selectively absorbing long red wavelengths first while allowing emerald-teal tones to penetrate. Schlick Fresnel reflection calculates sky color bounce with a fixed-seabed cut skirt.',
     },
     {
       icon: '🛶',
-      title: 'Traditional Boats',
-      content: 'Features a Vietnamese woven bamboo coracle (thuyền thúng) and coastal wooden fishing skiff (ghe nhỏ) floating with buoyant physics and natural wave pitch/roll.',
+      title: 'Traditional Coastal Boats',
+      content: 'Includes a Vietnamese circular woven-bamboo coracle (thuyền thúng) with pitch coating and a wooden coastal skiff (ghe nhỏ) with red trim and traditional painted bow eyes, floating with buoyancy and gentle swell rocking.',
     },
     {
       icon: '🛖',
-      title: 'Thatched Bungalows & Pier',
-      content: 'Eco-resort bungalows on stilts with thatched palm frond roofs and bamboo lattice walls. A heavy-timber wooden jetty extends out into the emerald sea with pilings anchored to the seabed.',
+      title: 'Thatched Bungalows & Jetty',
+      content: 'Fictional resort architecture featuring thatched-roof bungalows raised on wooden stilts above high-tide level, woven bamboo walls, evening lanterns with cached emissive glow, and a rustic wooden pier whose pilings embed into the seabed.',
     },
     {
       icon: '🌴',
-      title: 'Tropical Vegetation',
-      content: 'Procedural coconut palms with curved segmented trunks and arching fronds, coastal whistling pines (phi lao), and cascading pink bougainvillea (hoa giấy) blooming over granite crags.',
+      title: 'Tropical Coastal Flora',
+      content: 'Procedural curved coconut palms leaning seaward with pinnate frond crowns, coastal whistling pines (phi lao) on the low rear knolls, and pink bougainvillea (hoa giấy) blooming over coastal rock clusters.',
     },
     {
       icon: '🌧️',
-      title: 'Tropical Weather System',
-      content: 'Simulates the monsoon rainy season with procedural raindrop particles, wind-tossed palm canopies, and wet sand/thatch darkening with a smooth 1.8s seasonal transition.',
+      title: 'Two Seasons & Variable Weather',
+      content: 'The Dry season features clear skies and calm waters. The Rainy season simulates monsoon conditions with slender falling rain streaks, wave chop, darkened damp thatch, and smooth 1.8s transitions with reduced-motion support.',
     },
     {
       icon: '🌅',
-      title: 'Sunset Atmosphere',
-      content: 'Golden hour at 17:45 with radiant pink, peach, and lavender sky gradients, specular sunset glint across the water surface, and warm glowing lanterns in the bungalows.',
+      title: 'Western Sunset & Dynamic Sky',
+      content: 'With the sea facing West (-X), 17:45 serves as an experiential sunset preset, casting warm golden-rose illumination across the bay, specular surface glint, and soft twilight sky gradients transitioning smoothly across 0–24h.',
     },
   ],
 };
 
+// Coordinate convention:
+// +X = East (inland low hills), -X = West (sea & sunset)
+// +Z = North, -Z = South, +Y = Up
 export const PHUQUOC_CAMERA_PRESET: ThemeCameraPreset = {
   position: new THREE.Vector3(25.0, 21.0, 27.0),
-  target: new THREE.Vector3(0.0, 0.45, 0.6),
+  target: new THREE.Vector3(-0.5, 0.45, 0.4),
   baseFrustumHeight: 25.0,
   minPolarAngle: Math.PI * 0.16,
   maxPolarAngle: Math.PI * 0.44,

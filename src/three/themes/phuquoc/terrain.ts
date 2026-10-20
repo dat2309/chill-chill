@@ -342,21 +342,26 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
   const dummy = new THREE.Object3D();
   let placedBoulders = 0;
 
-  for (let i = 0; i < boulderCount * 3 && placedBoulders < boulderCount; i++) {
-    // Concentrate on eastern headland (x > 3.0) and a few along shore
+  for (let i = 0; i < boulderCount * 4 && placedBoulders < boulderCount; i++) {
+    // Coastal rocks: central dividing spit (x around 0), west headland (x < -6.8), or east headland (x > 6.0)
     let bx: number, bz: number;
-    if (rng.next() < 0.75) {
+    const r = rng.next();
+    if (r < 0.40) {
+      // Central rock spit dividing the two coves
+      bx = rng.range(-1.2, 1.2);
+      bz = rng.range(0.8, 3.2);
+    } else if (r < 0.70) {
       // East headland
-      bx = rng.range(3.2, 8.5);
-      bz = rng.range(0.0, 7.0);
+      bx = rng.range(6.2, 8.8);
+      bz = rng.range(-1.0, 5.5);
     } else {
-      // Western beach edge
-      bx = rng.range(-9.0, -6.5);
-      bz = rng.range(1.5, 4.5);
+      // West headland
+      bx = rng.range(-9.0, -6.8);
+      bz = rng.range(0.5, 5.0);
     }
 
     const by = sampleHeight(bx, bz);
-    const scale = rng.range(0.6, 1.8);
+    const scale = rng.range(0.6, 1.7);
     dummy.position.set(bx, by + scale * 0.15, bz);
     dummy.rotation.set(rng.range(0, 0.4), rng.range(0, Math.PI * 2), rng.range(0, 0.4));
     dummy.scale.set(scale * rng.range(0.8, 1.2), scale * 0.8, scale * rng.range(0.8, 1.2));

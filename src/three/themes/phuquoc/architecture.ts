@@ -222,14 +222,14 @@ export function createPhuQuocArchitecture(
   const loungerGeo = new THREE.BoxGeometry(0.45, 0.06, 1.0);
   geometriesToDispose.push(loungerGeo);
 
-  const lounger1Pos = new THREE.Vector3(-3.2, getHeightAt(-3.2, 0.8) + 0.08, 0.8);
+  const lounger1Pos = new THREE.Vector3(-3.6, getHeightAt(-3.6, 0.4) + 0.08, 0.4);
   const lounger1 = new THREE.Mesh(loungerGeo, loungerMat);
   lounger1.position.copy(lounger1Pos);
   lounger1.rotation.set(-0.25, 0.3, 0);
   lounger1.castShadow = true;
   archGroup.add(lounger1);
 
-  const lounger2Pos = new THREE.Vector3(-2.6, getHeightAt(-2.6, 1.0) + 0.08, 1.0);
+  const lounger2Pos = new THREE.Vector3(-3.0, getHeightAt(-3.0, 0.6) + 0.08, 0.6);
   const lounger2 = new THREE.Mesh(loungerGeo, loungerMat);
   lounger2.position.copy(lounger2Pos);
   lounger2.rotation.set(-0.25, 0.25, 0);
@@ -242,8 +242,8 @@ export function createPhuQuocArchitecture(
   const poleGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.3, 8);
   geometriesToDispose.push(poleGeo);
   const pole = new THREE.Mesh(poleGeo, umbrellaPoleMat);
-  const umbX = -2.9;
-  const umbZ = 0.5;
+  const umbX = -3.3;
+  const umbZ = 0.3;
   const umbY = getHeightAt(umbX, umbZ) + 0.65;
   pole.position.set(umbX, umbY, umbZ);
   pole.rotation.z = -0.08;
@@ -261,10 +261,10 @@ export function createPhuQuocArchitecture(
   canopy.castShadow = true;
   archGroup.add(canopy);
 
-  // C. Beached SUP Board (Ván SUP trên mép cát)
+  // C. Beached SUP Board (Ván SUP trên mép cát vịnh phía Đông)
   const supGeo = new THREE.CylinderGeometry(0.22, 0.26, 1.6, 12);
   geometriesToDispose.push(supGeo);
-  supGeo.scale(0.8, 1.0, 0.12); // flatten into board
+  supGeo.scale(0.8, 1.0, 0.12);
   supGeo.rotateX(Math.PI / 2);
 
   const supMat = new THREE.MeshLambertMaterial({
@@ -273,13 +273,47 @@ export function createPhuQuocArchitecture(
   materialsToDispose.push(supMat);
 
   const supMesh = new THREE.Mesh(supGeo, supMat);
-  const supX = 0.8;
-  const supZ = 1.8;
+  const supX = 2.8;
+  const supZ = 1.4;
   const supY = getHeightAt(supX, supZ) + 0.05;
   supMesh.position.set(supX, supY, supZ);
   supMesh.rotation.set(0.12, 0.6, -0.08);
   supMesh.castShadow = true;
   archGroup.add(supMesh);
+
+  // D. Beach Hammock (Võng mắc giữa 2 cọc tre bên rìa rặng dừa)
+  const hamX1 = -4.5;
+  const hamZ1 = -0.6;
+  const hamX2 = -3.5;
+  const hamZ2 = -0.8;
+  const hamY1 = getHeightAt(hamX1, hamZ1);
+  const hamY2 = getHeightAt(hamX2, hamZ2);
+
+  const hamPostGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.2, 8);
+  geometriesToDispose.push(hamPostGeo);
+  const post1 = new THREE.Mesh(hamPostGeo, postMat);
+  post1.position.set(hamX1, hamY1 + 0.6, hamZ1);
+  post1.rotation.z = 0.1;
+  archGroup.add(post1);
+
+  const post2 = new THREE.Mesh(hamPostGeo, postMat);
+  post2.position.set(hamX2, hamY2 + 0.6, hamZ2);
+  post2.rotation.z = -0.1;
+  archGroup.add(post2);
+
+  // Curved hammock fabric
+  const hamCurve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(hamX1, hamY1 + 0.85, hamZ1),
+    new THREE.Vector3((hamX1 + hamX2) / 2, (hamY1 + hamY2) / 2 + 0.35, (hamZ1 + hamZ2) / 2),
+    new THREE.Vector3(hamX2, hamY2 + 0.85, hamZ2)
+  );
+  const hamGeo = new THREE.TubeGeometry(hamCurve, 12, 0.14, 6, false);
+  geometriesToDispose.push(hamGeo);
+  const hamMat = new THREE.MeshLambertMaterial({ color: 0xdfd3be });
+  materialsToDispose.push(hamMat);
+  const hamMesh = new THREE.Mesh(hamGeo, hamMat);
+  hamMesh.castShadow = true;
+  archGroup.add(hamMesh);
 
   return {
     group: archGroup,

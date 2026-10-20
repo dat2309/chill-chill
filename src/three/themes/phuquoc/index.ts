@@ -111,6 +111,12 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     };
 
     // Subsystem updates
+    const scene = (this.group.parent as THREE.Scene) || undefined;
+    this.lighting?.update(pqState, scene);
+    if (this.lighting && this.water) {
+      this.water.setSunLighting(this.lighting.sunDirection, this.lighting.sunColor, this.lighting.skyColor);
+    }
+
     this.water?.update(dt, elapsed, state.windStrength, state.flowSpeed);
     this.architecture?.update(dt, elapsed, state.timeOfDay);
     this.boats?.update(
@@ -123,7 +129,6 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     this.vegetation?.update(dt, elapsed, state.windStrength);
     this.fish?.update(dt, elapsed, this.water?.getWaterLevel() ?? 0.3);
     this.weather?.update(dt, elapsed, state.windStrength);
-    this.lighting?.update(pqState, this.group.parent as any || new THREE.Scene());
   }
 
   getContentBounds(): THREE.Box3 {
@@ -152,8 +157,13 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     return box;
   }
 
+  getTideOffset(): number {
+    return this.water ? this.water.getTideOffset() : 0;
+  }
+
   isInWater(worldX: number, worldZ: number): boolean {
-    return isInWater(worldX, worldZ);
+    const tideOffset = this.water ? this.water.getTideOffset() : 0;
+    return isInWater(worldX, worldZ, tideOffset);
   }
 
   addRipple(worldX: number, worldZ: number, strength: number): void {
