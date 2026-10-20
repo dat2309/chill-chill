@@ -8,24 +8,49 @@ export const TERRAIN_RES = 240;
 export const WATER_RES = 256;
 export const SEED = 42;
 
+import { STREAM_BOUNDS, BASE_WATER_LEVEL, TIDE_OFFSETS, getTideOffset } from './streamProfile';
+
 // Layout zones (world coordinates, origin at center of diorama base)
-// Stream runs from middle-right towards front edge (+Z)
-// Glamping plateau is middle-left (-X, mid Z)
-// Mountains and evergreen forest at negative Z (back)
-export const STREAM_Z_START = -7.5; // Stream begins in rear mountain gorge
-export const STREAM_Z_END = DIORAMA_DEPTH / 2; // 8.0 (front edge)
+export const STREAM_Z_START = STREAM_BOUNDS.minZ; // -7.5 (mountain gorge source)
+export const STREAM_Z_END = STREAM_BOUNDS.maxZ; // 8.0 (front edge)
 export const STREAM_CENTER_X = 1.8;
 
 export const GLAMPING_CENTER_X = -3.5;
 export const GLAMPING_CENTER_Z = -1.2;
 export const PLATEAU_HEIGHT = 1.35; // Lowered from 2.05 to create gentle, organic valley
 
-export const WATER_LEVEL = 0.28;
-export const WATER_LEVEL_LOW = 0.18;
-export const WATER_LEVEL_HIGH = 0.36;
+export const WATER_LEVEL = BASE_WATER_LEVEL; // 0.28 (base elevation in foreground basin)
+export const WATER_LEVEL_LOW = BASE_WATER_LEVEL + TIDE_OFFSETS.low; // 0.19
+export const WATER_LEVEL_HIGH = BASE_WATER_LEVEL + TIDE_OFFSETS.high; // 0.35
+
+export { STREAM_BOUNDS, BASE_WATER_LEVEL, TIDE_OFFSETS, getTideOffset };
 
 export const BASE_BOTTOM_Y = -0.70; // Sleek, thin diorama slab (reduced from -1.50)
 export const WALL_CUTOFF_Y = -0.52;
+
+/**
+ * Returns a smooth factor in [0, 1] representing nightfall:
+ * - 0.0 during daytime (06:00 - 18:00)
+ * - Rises smoothly from 18:00 to 21:00 (sunset -> night)
+ * - 1.0 throughout deep night (21:00 - 04:30)
+ * - Fades smoothly from 04:30 to 06:00 (dawn -> sunrise)
+ */
+export function getNightFactor(timeOfDay: number): number {
+  const t = ((timeOfDay % 24) + 24) % 24;
+  if (t >= 6.0 && t <= 18.0) {
+    return 0.0;
+  }
+  if (t > 18.0 && t < 21.0) {
+    const s = (t - 18.0) / 3.0;
+    return s * s * (3.0 - 2.0 * s);
+  }
+  if (t >= 21.0 || t <= 4.5) {
+    return 1.0;
+  }
+  // Dawn: 4.5 to 6.0
+  const s = (6.0 - t) / 1.5;
+  return s * s * (3.0 - 2.0 * s);
+}
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 export type TideLevel = 'low' | 'high';

@@ -42,54 +42,30 @@ export interface TerrainSystem {
   dispose(): void;
 }
 
-/**
- * Centerline X of the stream along Z.
- * Curves naturally from mountain foot down to front edge.
- */
-export function getStreamCenter(z: number): number {
-  if (z < 0.0) {
-    const t = (z + 8.0) / 8.0; // 0 at z = -8, 1 at z = 0
-    return 3.2 * (1.0 - t) + 1.35 * t + Math.sin(t * Math.PI) * 0.35;
-  } else {
-    const t = z / 8.0; // 0 at z = 0, 1 at z = 8
-    return 1.35 + Math.sin(t * Math.PI * 0.95) * 1.15 + t * 0.65;
-  }
-}
+import {
+  getStreamCenter,
+  getStreamHalfWidth,
+  getStreamWidth,
+  getWaterSurfaceHeight,
+  getStreamBedHeight,
+  isInWater,
+  STREAM_BOUNDS,
+  BASE_WATER_LEVEL,
+} from './streamProfile';
 
-/**
- * Stream channel half-width along Z.
- * Narrow mountain gorge upstream (0.85 - 1.30), expanding into a wide open alpine basin in foreground (4.40).
- */
-export function getStreamHalfWidth(z: number): number {
-  if (z < 0.0) {
-    const t = (z + 8.0) / 8.0;
-    return 0.85 + t * 0.45; // 0.85 in mountain pass, widening to 1.30 at campsite edge
-  } else {
-    const t = z / 8.0;
-    // Widens dramatically in foreground from 1.30 to 4.40 at front edge (occupies ~44% of foreground)
-    return 1.30 + t * t * 3.10;
-  }
-}
+export {
+  getStreamCenter,
+  getStreamHalfWidth,
+  getStreamWidth,
+  getWaterSurfaceHeight,
+  getStreamBedHeight,
+  isInWater,
+  STREAM_BOUNDS,
+};
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = Math.min(Math.max((x - edge0) / (edge1 - edge0), 0.0), 1.0);
   return t * t * (3.0 - 2.0 * t);
-}
-
-/**
- * Elevation Y of the water surface along Z.
- * - Flat alpine basin in foreground (z >= 0.8) at WATER_LEVEL (0.28)
- * - Upstream mountain cascade (z: 0.0 to 0.8) dropping from 0.65 to 0.28
- * - Upper mountain gorge (z: -7.5 to 0.0) descending from 1.75 down to 0.65
- */
-export function getWaterSurfaceHeight(z: number): number {
-  if (z >= 0.8) return WATER_LEVEL;
-  if (z >= 0.0) {
-    const t = z / 0.8;
-    return THREE.MathUtils.lerp(0.65, WATER_LEVEL, t * t * (3.0 - 2.0 * t));
-  }
-  const t = Math.max(0.0, Math.min(1.0, (z + 7.5) / 7.5));
-  return THREE.MathUtils.lerp(1.75, 0.65, t);
 }
 
 /**
@@ -170,6 +146,19 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
     currentZone = 'bank';
   }
 
+  // Ensure gorge and cascade banks rise naturally above stream elevation in upper mountain reaches
+  if (z < 0.2) {
+    const scx_bank = getStreamCenter(z);
+    const shw_bank = getStreamHalfWidth(z);
+    const dist_bank = Math.abs(x - scx_bank);
+    const waterY_bank = getWaterSurfaceHeight(z);
+    if (dist_bank >= shw_bank * 0.90) {
+      const liftFactor = smoothstep(shw_bank * 0.90, shw_bank * 1.6, dist_bank);
+      const minBankH = waterY_bank + 0.12 + liftFactor * 0.40;
+      baseH = Math.max(baseH, minBankH);
+    }
+  }
+
   // 5. Continuous Stream Channel Carving (from mountain pass at z = -7.5 to front edge at z = 8.0)
   const scx = getStreamCenter(z);
   const distToStream = Math.abs(x - scx);
@@ -179,14 +168,14 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   // Parabolic channel profile
   const channelProfile = smoothstep(shw * 1.15, shw * 0.18, distToStream);
 
-  // Riverbed sits consistently ~0.18 below water surface along centerline
-  const targetBedH = (waterSurfaceY - 0.18) + SimplexNoise2D(x * 1.4 + 12.0, z * 1.4 + 12.0) * 0.025;
+  // Riverbed sits consistently below water surface along profile
+  const targetBedH = getStreamBedHeight(x, z) + SimplexNoise2D(x * 1.4 + 12.0, z * 1.4 + 12.0) * 0.02;
 
   let finalH = baseH;
   if (channelProfile > 0.001) {
     finalH = THREE.MathUtils.lerp(baseH, Math.min(baseH, targetBedH), channelProfile);
 
-    if (distToStream < shw * 0.90 || finalH <= waterSurfaceY + 0.02) {
+    if (isInWater(x, z, 0) || distToStream < shw * 0.90 || finalH <= waterSurfaceY + 0.02) {
       currentZone = 'stream';
     } else if (distToStream < shw * 1.25) {
       currentZone = 'bank';
@@ -282,11 +271,11 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
       zone = 'out_of_bounds';
     } else if (z < -3.5 && h > 2.0) {
       zone = 'mountain';
-    } else if (x >= -7.2 && x <= -0.6 && z >= -3.2 && z <= 0.85 && h >= 1.20 && slope < 0.20) {
+    } else if (x >= -7.5 && x <= -0.4 && z >= -3.5 && z <= 1.2 && h >= 1.15 && slope < 0.22) {
       zone = 'plateau';
-    } else if (x <= 0.6 && z >= 0.7 && z <= 2.5 && slope > 0.26) {
+    } else if (x <= 0.8 && z >= 0.5 && z <= 2.6 && slope > 0.25) {
       zone = 'cliff';
-    } else if (distToStream < shw * 0.92 || h <= waterY + 0.02) {
+    } else if (isInWater(x, z, 0) || distToStream < shw * 0.92 || h <= waterY + 0.02) {
       zone = 'stream';
     } else if (x > 1.2) {
       zone = 'bank';
@@ -296,13 +285,8 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   }
 
   function isInStream(x: number, z: number): boolean {
-    if (z < -7.5 || z > halfD + 0.1) return false;
-    const scx = getStreamCenter(z);
-    const dist = Math.abs(x - scx);
-    const shw = getStreamHalfWidth(z);
-    const waterY = getWaterSurfaceHeight(z);
-    const h = getHeightAt(x, z);
-    return dist < shw * 0.92 || h <= waterY + 0.02;
+    if (z < STREAM_BOUNDS.minZ - 0.05 || z > halfD + 0.1) return false;
+    return isInWater(x, z, 0);
   }
 
   function isOnPlateau(x: number, z: number): boolean {
@@ -677,7 +661,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   boulderGeom.computeVertexNormals();
 
   const boulderMat = new THREE.MeshStandardMaterial({
-    color: 0x9c958a, // Warm mountain granite
+    color: 0xffffff, // White base so instanceColor reflects exact rock tint without double-multiplying
     roughness: 0.82,
     metalness: 0.02,
     flatShading: false,
@@ -724,6 +708,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   pebbleGeom.computeVertexNormals();
 
   const pebbleMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, // White base so instanceColor reflects exact pebble palette
     roughness: 0.70,
     metalness: 0.04,
     flatShading: true,
@@ -746,15 +731,16 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   const pRng = new SeededRandom(2026);
   let pPlaced = 0;
   let pAttempts = 0;
-  while (pPlaced < pebbleCount && pAttempts < 1500) {
+  while (pPlaced < pebbleCount && pAttempts < 2000) {
     pAttempts++;
-    const z = pRng.range(1.0, halfD - 0.4);
+    const z = pRng.range(STREAM_BOUNDS.minZ + 0.4, halfD - 0.4);
     const scx = getStreamCenter(z);
     const shw = getStreamHalfWidth(z);
     const x = scx + pRng.range(-shw * 0.82, shw * 0.82);
 
+    const waterY = getWaterSurfaceHeight(z);
     const h = getHeightAt(x, z);
-    if (h > WATER_LEVEL + 0.03) continue;
+    if (h > waterY + 0.03) continue;
 
     const scale = pRng.range(0.4, 1.1);
     bDummy.position.set(x, h + 0.02 * scale, z);

@@ -1,7 +1,15 @@
 import * as THREE from 'three';
-import { WATER_LEVEL, STREAM_Z_START, STREAM_CENTER_X, DIORAMA_DEPTH } from './constants';
+import { WATER_LEVEL, DIORAMA_DEPTH } from './constants';
 import { rng, SeededRandom, simplexNoise2D } from './noise';
-import { getStreamCenter } from './terrain';
+import {
+  STREAM_BOUNDS,
+  getStreamCenter,
+  getStreamHalfWidth,
+  getWaterSurfaceHeight,
+  getWaterDepth,
+  isInWater,
+  BASE_WATER_LEVEL,
+} from './streamProfile';
 
 export interface FishSystem {
   group: THREE.Group;
@@ -255,23 +263,26 @@ export function createFish(
   const fishes: FishInstanceData[] = [];
   const dummy = new THREE.Object3D();
 
-  const streamMinZ = STREAM_Z_START + 0.6;
-  const streamMaxZ = (DIORAMA_DEPTH / 2) - 0.6;
+  // Fish swim in calm deep waters from lower cascades through the wide foreground basin
+  const streamMinZ = 0.2;
+  const streamMaxZ = (DIORAMA_DEPTH / 2) - 0.7;
 
   for (let i = 0; i < NUM_FISH; i++) {
     let posZ = fishRng.range(streamMinZ, streamMaxZ);
-    let posX = getStreamCenter(posZ) + fishRng.range(-0.5, 0.5);
+    let posX = getStreamCenter(posZ) + fishRng.range(-0.8, 0.8);
 
-    for (let attempt = 0; attempt < 30; attempt++) {
-      if (isInStream(posX, posZ) && getHeightAt(posX, posZ) < WATER_LEVEL - 0.03) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (isInWater(posX, posZ, 0) && getWaterDepth(posX, posZ, 0) > 0.08) {
         break;
       }
       posZ = fishRng.range(streamMinZ, streamMaxZ);
-      posX = getStreamCenter(posZ) + fishRng.range(-0.6, 0.6);
+      const halfW = getStreamHalfWidth(posZ);
+      posX = getStreamCenter(posZ) + fishRng.range(-halfW * 0.6, halfW * 0.6);
     }
 
     const groundH = getHeightAt(posX, posZ);
-    const posY = THREE.MathUtils.clamp((groundH + WATER_LEVEL) * 0.5, groundH + 0.04, WATER_LEVEL - 0.03);
+    const localWaterH = getWaterSurfaceHeight(posZ, 0);
+    const posY = THREE.MathUtils.clamp((groundH + localWaterH) * 0.5, groundH + 0.04, localWaterH - 0.03);
 
     const angle = fishRng.range(0, Math.PI * 2);
     const baseSpeed = fishRng.range(0.32, 0.55);
@@ -377,13 +388,17 @@ export function createFish(
         const probeRightX = fish.position.x + rightDirX * probeDist;
         const probeRightZ = fish.position.z + rightDirZ * probeDist;
 
-        const aheadInStream = isInStream(probeAheadX, probeAheadZ);
-        const aheadDepth = waterLevel - getHeightAt(probeAheadX, probeAheadZ);
+        const localWaterLevel = getWaterSurfaceHeight(fish.position.z);
+        const aheadInWater = isInWater(probeAheadX, probeAheadZ);
+        const aheadWaterH = getWaterSurfaceHeight(probeAheadZ);
+        const aheadDepth = aheadWaterH - getHeightAt(probeAheadX, probeAheadZ);
 
-        if (!aheadInStream || aheadDepth < 0.04) {
+        if (!aheadInWater || aheadDepth < 0.04) {
           // Ahead is blocked by bank or shallow water
-          const leftOk = isInStream(probeLeftX, probeLeftZ) && (waterLevel - getHeightAt(probeLeftX, probeLeftZ) >= 0.04);
-          const rightOk = isInStream(probeRightX, probeRightZ) && (waterLevel - getHeightAt(probeRightX, probeRightZ) >= 0.04);
+          const leftWaterH = getWaterSurfaceHeight(probeLeftZ);
+          const leftOk = isInWater(probeLeftX, probeLeftZ) && (leftWaterH - getHeightAt(probeLeftX, probeLeftZ) >= 0.04);
+          const rightWaterH = getWaterSurfaceHeight(probeRightZ);
+          const rightOk = isInWater(probeRightX, probeRightZ) && (rightWaterH - getHeightAt(probeRightX, probeRightZ) >= 0.04);
 
           if (leftOk && !rightOk) {
             steer.x += leftDirX * 2.5;
@@ -406,7 +421,7 @@ export function createFish(
         }
 
         // Strong recovery if fish ever wanders outside stream
-        if (!isInStream(fish.position.x, fish.position.z)) {
+        if (!isInWater(fish.position.x, fish.position.z)) {
           const curCenter = getStreamCenter(fish.position.z);
           steer.x += (curCenter - fish.position.x) * 4.5;
         }
@@ -436,10 +451,10 @@ export function createFish(
         fish.position.x += fish.velocity.x * safeDt;
         fish.position.z += fish.velocity.z * safeDt;
 
-        // 6. Depth management: stay between terrain height and waterLevel - 0.03
+        // 6. Depth management: stay between terrain height and localWaterLevel - 0.03
         const terrainHeight = getHeightAt(fish.position.x, fish.position.z);
         const safeMinY = terrainHeight + 0.03;
-        const safeMaxY = waterLevel - 0.03;
+        const safeMaxY = localWaterLevel - 0.03;
 
         let targetY: number;
         if (safeMaxY > safeMinY) {
@@ -451,12 +466,12 @@ export function createFish(
             safeMaxY
           );
         } else {
-          targetY = (terrainHeight + waterLevel) * 0.5;
+          targetY = (terrainHeight + localWaterLevel) * 0.5;
         }
 
         fish.velocity.y = (targetY - fish.position.y) * 3.5;
         fish.position.y += fish.velocity.y * safeDt;
-        fish.position.y = THREE.MathUtils.clamp(fish.position.y, terrainHeight + 0.015, waterLevel - 0.015);
+        fish.position.y = THREE.MathUtils.clamp(fish.position.y, terrainHeight + 0.015, localWaterLevel - 0.015);
 
         // 7. Update InstancedMesh transform matrix
         const headingDirX = fish.velocity.x;

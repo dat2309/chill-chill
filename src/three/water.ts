@@ -1,18 +1,20 @@
 import * as THREE from 'three';
 import {
-  DIORAMA_WIDTH,
-  DIORAMA_DEPTH,
-  WATER_LEVEL,
-  WATER_LEVEL_LOW,
-  WATER_LEVEL_HIGH,
   WATER_RES,
-  STREAM_Z_START,
-  STREAM_Z_END,
   COLORS,
   SceneState,
   TideLevel,
 } from './constants';
-import { getStreamCenter, getStreamHalfWidth, getWaterSurfaceHeight } from './terrain';
+import {
+  STREAM_BOUNDS,
+  BASE_WATER_LEVEL,
+  getStreamCenter,
+  getStreamHalfWidth,
+  getWaterSurfaceHeight,
+  getStreamBedHeight,
+  isInWater as checkIsInWater,
+  getTideOffset,
+} from './streamProfile';
 
 export interface WaterSystem {
   group: THREE.Group;
@@ -21,10 +23,18 @@ export interface WaterSystem {
   addRipple(worldX: number, worldZ: number, strength: number): void;
   setTide(tide: TideLevel, smooth?: boolean): void;
   getWaterLevel(): number;
+  getTideOffset(): number;
+  isInWater(x: number, z: number): boolean;
   dispose(): void;
 }
 
-const RIPPLE_BOUNDS = new THREE.Vector4(-3.5, 0.7, 7.5, 8.2);
+// Bounding box for GPU ripple simulation covering the entire stream
+const RIPPLE_BOUNDS = new THREE.Vector4(
+  STREAM_BOUNDS.minX,
+  STREAM_BOUNDS.minZ,
+  STREAM_BOUNDS.maxX,
+  STREAM_BOUNDS.maxZ
+);
 const MAX_ANALYTICAL_RIPPLES = 20;
 
 // GPU Ping-Pong Simulation Shaders
@@ -70,10 +80,10 @@ const dropFragmentShader = `
   varying vec2 vUv;
 
   void main() {
-    float dist = distance(vUv, uCenter);
-    float drop = max(0.0, 1.0 - dist / uRadius);
-    drop = 0.5 - 0.5 * cos(drop * 3.14159265);
-    gl_FragColor = vec4(drop * uStrength, 0.0, 0.0, 1.0);
+    float d = distance(vUv, uCenter);
+    float factor = exp(-d * d / (uRadius * uRadius * 0.5));
+    float impulse = factor * uStrength;
+    gl_FragColor = vec4(impulse, 0.0, 0.0, 1.0);
   }
 `;
 
@@ -83,6 +93,7 @@ const waterVertexShader = `
 
   uniform float uTime;
   uniform float uWaterLevel;
+  uniform float uTideOffset;
   uniform sampler2D uRippleMap;
   uniform float uUseGpuRipples;
   uniform vec4 uRippleBounds;
@@ -121,6 +132,13 @@ const waterVertexShader = `
     vIsFrontCut = aIsFrontCut;
 
     vec3 pos = position;
+
+    // Surface vertices and front skirt top vertices rise/fall with tide;
+    // front skirt bottom vertices remain anchored to the riverbed in world space.
+    if (aIsFrontCut < 0.5 || uv.y > 0.5) {
+      pos.y += uTideOffset;
+    }
+
     vec4 initialWorld = modelMatrix * vec4(pos, 1.0);
 
     vec2 ripUv = (initialWorld.xz - uRippleBounds.xy) / (uRippleBounds.zw - uRippleBounds.xy);
@@ -218,71 +236,100 @@ const waterFragmentShader = `
       float hR = texture2D(uRippleMap, uvClamped + vec2(texel.x, 0.0)).r;
       float hD = texture2D(uRippleMap, uvClamped - vec2(0.0, texel.y)).r;
       float hU = texture2D(uRippleMap, uvClamped + vec2(0.0, texel.y)).r;
-      norm += vec3((hL - hR) * 1.5, 0.0, (hD - hU) * 1.5);
+
+      vec3 dX = vec3(2.0 * texel.x * 20.0, (hR - hL) * 1.8, 0.0);
+      vec3 dZ = vec3(0.0, (hU - hD) * 1.8, 2.0 * texel.y * 16.0);
+      norm = normalize(cross(dZ, dX));
     } else {
-      float eps = 0.06;
-      float hX1 = computeAnalyticalRipples(vWorldPosition.xz + vec2(eps, 0.0), uTime);
-      float hX0 = computeAnalyticalRipples(vWorldPosition.xz - vec2(eps, 0.0), uTime);
-      float hZ1 = computeAnalyticalRipples(vWorldPosition.xz + vec2(0.0, eps), uTime);
-      float hZ0 = computeAnalyticalRipples(vWorldPosition.xz - vec2(0.0, eps), uTime);
-      norm += vec3((hX0 - hX1) / (2.0 * eps), 0.0, (hZ0 - hZ1) / (2.0 * eps)) * 1.0;
+      float eps = 0.05;
+      float rL = computeAnalyticalRipples(vWorldPosition.xz - vec2(eps, 0.0), uTime);
+      float rR = computeAnalyticalRipples(vWorldPosition.xz + vec2(eps, 0.0), uTime);
+      float rD = computeAnalyticalRipples(vWorldPosition.xz - vec2(0.0, eps), uTime);
+      float rU = computeAnalyticalRipples(vWorldPosition.xz + vec2(0.0, eps), uTime);
+
+      vec3 dX = vec3(2.0 * eps, (rR - rL), 0.0);
+      vec3 dZ = vec3(0.0, (rU - rD), 2.0 * eps);
+      norm = normalize(cross(dZ, dX));
     }
 
-    // Gentle downstream stream ripples
-    float flowZ = uTime * uFlowSpeed * 1.4;
-    float f1 = sin(vWorldPosition.x * 3.5 + vWorldPosition.z * 1.8 + flowZ) * 0.035;
-    float f2 = cos(vWorldPosition.x * 5.2 - vWorldPosition.z * 2.4 + flowZ * 1.2) * 0.025;
-    norm.x += (f1 - f2) * (0.5 + uWindStrength * 0.5);
-    norm.z += (f1 + f2) * (0.5 + uWindStrength * 0.5);
+    // Micro flow ripples along stream
+    float flowTime = uTime * (0.8 + uFlowSpeed * 0.8);
+    float n1 = sin(vWorldPosition.x * 6.5 + vWorldPosition.z * 3.5 + flowTime * 1.4);
+    float n2 = cos(vWorldPosition.x * 11.0 - vWorldPosition.z * 5.0 + flowTime * 2.1);
+    float flowPerturb = (n1 * 0.035 + n2 * 0.02) * (0.5 + uWindStrength * 0.6);
 
+    norm.x += flowPerturb;
+    norm.z += flowPerturb * 0.6;
     return normalize(norm);
   }
 
   void main() {
-    float depth = vDepth;
-    if (depth < 0.001) discard;
+    // Treat zero or negative depth as dry ground
+    if (vDepth <= 0.003 && vIsFrontCut < 0.5) {
+      discard;
+    }
 
     vec3 N = getWaterNormal();
     vec3 V = normalize(vViewDir);
-
-    // 1. Crystal mountain water: shallow is luminous turquoise, deepens into teal
-    float depthFactor = clamp(depth / 0.28, 0.0, 1.0);
-    vec3 waterColor = mix(uWaterColor, uDeepColor, smoothstep(0.10, 0.85, depthFactor));
-
-    // 2. Schlick Fresnel reflection
-    float F0 = 0.025;
-    float NdotV = clamp(dot(N, V), 0.0, 1.0);
-    float fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 4.5);
-
-    vec3 R = reflect(-V, N);
-    vec3 skyColor = mix(uSkyHorizonColor, uSkyZenithColor, clamp(R.y * 0.65 + 0.35, 0.0, 1.0));
-    vec3 surfaceColor = mix(waterColor, skyColor, fresnel * 0.40);
-
-    // 3. Sun specular sparkles
     vec3 L = normalize(uSunDirection);
+
+    // Beer-Lambert absorption
+    vec3 absorptionCoeff = vec3(1.1, 0.35, 0.12);
+    vec3 transmission = exp(-vDepth * absorptionCoeff * 5.2);
+
+    vec3 shallowCol = uWaterColor;
+    vec3 deepCol = uDeepColor;
+    float depthFactor = 1.0 - exp(-vDepth * 3.8);
+    vec3 waterBodyColor = mix(shallowCol, deepCol, depthFactor);
+
+    // Water clarity
+    vec3 baseCol = mix(waterBodyColor, shallowCol * 0.85, transmission.r * 0.3);
+
+    // Specular Blinn-Phong highlight
     vec3 H = normalize(L + V);
-    float NdotH = max(dot(N, H), 0.0);
-    float specular = pow(NdotH, 48.0);
-    vec3 spec = uSunColor * specular * uSunIntensity * 0.55;
-    surfaceColor += spec;
+    float NdotH = max(0.0, dot(N, H));
+    float shininess = 72.0;
+    float specular = pow(NdotH, shininess) * uSunIntensity;
 
-    // 4. Subtle, delicate foam: at upstream cascade and rapids (z in [-0.8, 1.2])
-    float foam = 0.0;
-    if (vWorldPosition.z < 1.3 && vIsFrontCut < 0.5) {
-      float cascadeFactor = smoothstep(1.2, 0.3, vWorldPosition.z) * smoothstep(-1.2, -0.1, vWorldPosition.z);
-      float rapidNoise = sin(vWorldPosition.x * 16.0 + uTime * 5.0) * cos(vWorldPosition.z * 18.0 - uTime * 6.0);
-      foam = cascadeFactor * smoothstep(0.38, 0.90, rapidNoise) * 0.35;
+    // Fresnel reflection
+    float F0 = 0.03;
+    float cosTheta = max(0.0, dot(N, V));
+    float fresnel = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+
+    // Sky reflection
+    vec3 skyReflect = mix(uSkyHorizonColor, uSkyZenithColor, max(0.0, N.y));
+
+    // Foam calculation
+    float shoreFoam = smoothstep(0.07, 0.005, vDepth) * 0.65;
+
+    // Animated rapids foam in upper cascade zone (z in [-2.5, 0.5])
+    float cascadeRapidFoam = 0.0;
+    if (vWorldPosition.z >= -2.5 && vWorldPosition.z <= 0.8 && vIsFrontCut < 0.5) {
+      float cascadeZ = (vWorldPosition.z - (-2.5)) / 3.3;
+      float rapidNoise = sin(vWorldPosition.x * 12.0 + vWorldPosition.z * 18.0 - uTime * 6.5)
+                       * cos(vWorldPosition.x * 7.0 - uTime * 4.2);
+      cascadeRapidFoam = smoothstep(0.15, 0.85, rapidNoise) * (1.0 - abs(cascadeZ - 0.5) * 1.6) * 0.55;
     }
-    surfaceColor = mix(surfaceColor, uFoamColor, foam);
 
-    // 5. Alpha transparency:
-    // Shallow water is clear (alpha ~0.38) revealing bed pebbles & fish.
-    // Deep pools fade to ~0.72.
-    float alpha = mix(0.38, 0.72, smoothstep(0.01, 0.24, depth));
-    alpha = mix(alpha, 0.88, foam);
-    alpha *= smoothstep(0.0, 0.02, depth);
+    float foamTotal = clamp(shoreFoam + cascadeRapidFoam, 0.0, 1.0);
 
-    gl_FragColor = vec4(surfaceColor, alpha);
+    // Final color compositing
+    vec3 color = mix(baseCol, skyReflect, fresnel * 0.65);
+    color += uSunColor * specular * 0.85;
+    color = mix(color, uFoamColor, foamTotal);
+
+    // Clean alpha gradient
+    float alpha;
+    if (vIsFrontCut > 0.5) {
+      // Solid cut profile for diorama slab cross section
+      alpha = 0.94;
+      color = mix(uDeepColor * 0.85, uWaterColor, vUv.y);
+    } else {
+      alpha = mix(0.72, 0.95, depthFactor);
+      alpha = max(alpha, foamTotal * 0.88);
+    }
+
+    gl_FragColor = vec4(color, alpha);
   }
 `;
 
@@ -304,8 +351,8 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
   const isFrontCut = new Float32Array(totalVerts);
   const indices: number[] = [];
 
-  const zStart = -7.5; // Originates in rear mountain gorge
-  const zEnd = DIORAMA_DEPTH * 0.5; // 8.0 (front edge)
+  const zStart = STREAM_BOUNDS.minZ; // -7.5
+  const zEnd = STREAM_BOUNDS.maxZ;   // 8.0 (front edge)
 
   // 1. Surface grid
   for (let iz = 0; iz <= segmentsZ; iz++) {
@@ -318,8 +365,7 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
     for (let ix = 0; ix <= segmentsX; ix++) {
       const tX = ix / segmentsX;
       const x = centerX - halfWidth + tX * (halfWidth * 2.0);
-      // Local y relative to mesh.position.y (which is WATER_LEVEL)
-      const y = waterSurfaceY - WATER_LEVEL;
+      const y = waterSurfaceY;
 
       const idx = iz * (segmentsX + 1) + ix;
       positions[idx * 3 + 0] = x;
@@ -359,31 +405,31 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
   }
 
   // 2. Vertical Front Cross-Section Skirt at z = 8.0
-  // Extends from water surface Y = 0.0 down to riverbed profile Y = -(WATER_LEVEL - bedY)
+  // Extends from water surface Y down to riverbed profile Y in world space
   const frontBaseIdx = numSurfaceVerts;
   const lastZRow = segmentsZ * (segmentsX + 1);
+  const waterSurfaceYEnd = getWaterSurfaceHeight(zEnd);
 
   for (let ix = 0; ix <= segmentsX; ix++) {
     const surfIdx = lastZRow + ix;
     const x = positions[surfIdx * 3 + 0];
     const z = zEnd;
     const bedH = terrainHeights[surfIdx];
-    const depthBelowSurface = Math.max(0.0, WATER_LEVEL - bedH);
 
-    // Top vertex of front skirt (at water surface)
+    // Top vertex of front skirt (at water surface, uv.y = 1.0)
     const topIdx = frontBaseIdx + ix * 2 + 0;
     positions[topIdx * 3 + 0] = x;
-    positions[topIdx * 3 + 1] = 0.0;
+    positions[topIdx * 3 + 1] = waterSurfaceYEnd;
     positions[topIdx * 3 + 2] = z;
     uvs[topIdx * 2 + 0] = ix / segmentsX;
     uvs[topIdx * 2 + 1] = 1.0;
     terrainHeights[topIdx] = bedH;
     isFrontCut[topIdx] = 1.0;
 
-    // Bottom vertex of front skirt (at riverbed)
+    // Bottom vertex of front skirt (at riverbed, uv.y = 0.0)
     const botIdx = frontBaseIdx + ix * 2 + 1;
     positions[botIdx * 3 + 0] = x;
-    positions[botIdx * 3 + 1] = -depthBelowSurface;
+    positions[botIdx * 3 + 1] = bedH; // World riverbed height!
     positions[botIdx * 3 + 2] = z;
     uvs[botIdx * 2 + 0] = ix / segmentsX;
     uvs[botIdx * 2 + 1] = 0.0;
@@ -398,7 +444,7 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
     const b1 = frontBaseIdx + (ix + 1) * 2 + 1;
 
     // Only draw quads where water exists
-    if (terrainHeights[t0] < WATER_LEVEL || terrainHeights[t1] < WATER_LEVEL) {
+    if (terrainHeights[t0] < waterSurfaceYEnd + 0.04 || terrainHeights[t1] < waterSurfaceYEnd + 0.04) {
       indices.push(t0, b0, t1);
       indices.push(t1, b0, b1);
     }
@@ -422,10 +468,10 @@ export function createWater(
   const group = new THREE.Group();
   group.name = 'WaterSystem';
 
-  let currentWaterLevel = WATER_LEVEL;
-  let targetWaterLevel = WATER_LEVEL;
+  let currentTideOffset = getTideOffset('high');
+  let targetTideOffset = currentTideOffset;
+  let startTideOffset = currentTideOffset;
   let tideTransition = 1.0;
-  let startWaterLevel = WATER_LEVEL;
   const TIDE_DURATION = 1.8;
 
   interface PendingRipple {
@@ -450,8 +496,8 @@ export function createWater(
 
   const geometry = createStreamGeometry(getHeightAt);
 
-  const isWebGL2 = !!renderer.capabilities.isWebGL2;
-  let gpuSimulationSupported = true;
+  const isWebGL2 = Boolean(renderer.capabilities.isWebGL2);
+  let gpuSimulationSupported = false;
 
   const rtType = isWebGL2 ? THREE.HalfFloatType : THREE.UnsignedByteType;
   const rtOptions: THREE.RenderTargetOptions = {
@@ -506,15 +552,28 @@ export function createWater(
   const dropQuad = new THREE.Mesh(simGeometry, dropMaterial);
   dropScene.add(dropQuad);
 
+  // Robust capability test using checkFramebufferStatus
   try {
+    const gl = renderer.getContext();
     const prevRT = renderer.getRenderTarget();
+    renderer.setRenderTarget(currentRT);
+    renderer.render(simScene, simCamera);
+    const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (fbStatus === gl.FRAMEBUFFER_COMPLETE) {
+      gpuSimulationSupported = true;
+    } else {
+      console.warn('GPU ripple simulation not supported by framebuffer status:', fbStatus);
+      gpuSimulationSupported = false;
+    }
+
+    // Initialize simulation fields deterministically to zero state
     renderer.setRenderTarget(currentRT);
     renderer.clearColor();
     renderer.setRenderTarget(nextRT);
     renderer.clearColor();
     renderer.setRenderTarget(prevRT);
   } catch (err) {
-    console.warn('Analytical ripple fallback', err);
+    console.warn('GPU ripple simulation fallback to analytical ripples:', err);
     gpuSimulationSupported = false;
   }
 
@@ -523,7 +582,8 @@ export function createWater(
     uSunDirection: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
     uSunColor: { value: new THREE.Color(1.0, 0.96, 0.90) },
     uSunIntensity: { value: 1.0 },
-    uWaterLevel: { value: currentWaterLevel },
+    uWaterLevel: { value: BASE_WATER_LEVEL + currentTideOffset },
+    uTideOffset: { value: currentTideOffset },
     uRippleMap: { value: currentRT.texture },
     uUseGpuRipples: { value: gpuSimulationSupported ? 1.0 : 0.0 },
     uRippleBounds: { value: RIPPLE_BOUNDS.clone() },
@@ -549,22 +609,25 @@ export function createWater(
 
   const mesh = new THREE.Mesh(geometry, waterMaterial);
   mesh.name = 'WaterSurfaceMesh';
-  mesh.position.y = currentWaterLevel;
+  // Mesh is anchored at world origin; tide offset is applied in vertex shader
+  mesh.position.set(0, 0, 0);
   group.add(mesh);
   scene.add(group);
 
   let currentElapsed = 0;
+  let simAccumulator = 0.0;
+  const FIXED_TIMESTEP = 1.0 / 60.0;
 
   function addRipple(worldX: number, worldZ: number, strength: number): void {
     const uvX = (worldX - RIPPLE_BOUNDS.x) / (RIPPLE_BOUNDS.z - RIPPLE_BOUNDS.x);
     const uvY = (worldZ - RIPPLE_BOUNDS.y) / (RIPPLE_BOUNDS.w - RIPPLE_BOUNDS.y);
 
-    if (uvX >= 0.0 && uvX <= 1.0 && uvY >= 0.0 && uvY <= 1.0) {
+    if (uvX >= -0.05 && uvX <= 1.05 && uvY >= -0.05 && uvY <= 1.05) {
       if (gpuSimulationSupported) {
         pendingRipples.push({
-          uv: new THREE.Vector2(uvX, uvY),
-          radius: 0.038,
-          strength: Math.min(0.65, strength),
+          uv: new THREE.Vector2(THREE.MathUtils.clamp(uvX, 0.01, 0.99), THREE.MathUtils.clamp(uvY, 0.01, 0.99)),
+          radius: 0.032,
+          strength: Math.min(0.85, strength * 0.95),
         });
       } else {
         const idx = analyticalIdx % MAX_ANALYTICAL_RIPPLES;
@@ -580,22 +643,30 @@ export function createWater(
   }
 
   function setTide(tide: TideLevel, smooth: boolean = true): void {
-    const target = tide === 'high' ? WATER_LEVEL_HIGH : WATER_LEVEL_LOW;
+    const target = getTideOffset(tide);
     if (!smooth) {
-      currentWaterLevel = target;
-      targetWaterLevel = target;
+      currentTideOffset = target;
+      targetTideOffset = target;
       tideTransition = 1.0;
-      mesh.position.y = target;
-      waterUniforms.uWaterLevel.value = target;
+      waterUniforms.uTideOffset.value = target;
+      waterUniforms.uWaterLevel.value = BASE_WATER_LEVEL + target;
     } else {
-      startWaterLevel = currentWaterLevel;
-      targetWaterLevel = target;
+      startTideOffset = currentTideOffset;
+      targetTideOffset = target;
       tideTransition = 0.0;
     }
   }
 
   function getWaterLevel(): number {
-    return currentWaterLevel;
+    return BASE_WATER_LEVEL + currentTideOffset;
+  }
+
+  function getTideOffsetVal(): number {
+    return currentTideOffset;
+  }
+
+  function isInWater(x: number, z: number): boolean {
+    return checkIsInWater(x, z, currentTideOffset);
   }
 
   function update(dt: number, elapsed: number, state: SceneState): void {
@@ -604,9 +675,9 @@ export function createWater(
     if (tideTransition < 1.0) {
       tideTransition = Math.min(1.0, tideTransition + dt / TIDE_DURATION);
       const s = tideTransition * tideTransition * (3.0 - 2.0 * tideTransition);
-      currentWaterLevel = THREE.MathUtils.lerp(startWaterLevel, targetWaterLevel, s);
-      mesh.position.y = currentWaterLevel;
-      waterUniforms.uWaterLevel.value = currentWaterLevel;
+      currentTideOffset = THREE.MathUtils.lerp(startTideOffset, targetTideOffset, s);
+      waterUniforms.uTideOffset.value = currentTideOffset;
+      waterUniforms.uWaterLevel.value = BASE_WATER_LEVEL + currentTideOffset;
     }
 
     waterUniforms.uTime.value = elapsed;
@@ -614,10 +685,13 @@ export function createWater(
     waterUniforms.uWindStrength.value = state.windStrength;
 
     if (gpuSimulationSupported) {
+      simAccumulator += Math.min(dt, 0.1);
+
       const prevRT = renderer.getRenderTarget();
       const prevAutoClear = renderer.autoClear;
       renderer.autoClear = false;
 
+      // Inject any pending impulses
       while (pendingRipples.length > 0) {
         const rip = pendingRipples.pop()!;
         dropMaterial.uniforms.uCenter.value.copy(rip.uv);
@@ -628,13 +702,18 @@ export function createWater(
         renderer.render(dropScene, simCamera);
       }
 
-      simMaterial.uniforms.uTexture.value = currentRT.texture;
-      renderer.setRenderTarget(nextRT);
-      renderer.render(simScene, simCamera);
+      // Step simulation using fixed timestep
+      while (simAccumulator >= FIXED_TIMESTEP) {
+        simMaterial.uniforms.uTexture.value = currentRT.texture;
+        renderer.setRenderTarget(nextRT);
+        renderer.render(simScene, simCamera);
 
-      const temp = currentRT;
-      currentRT = nextRT;
-      nextRT = temp;
+        const temp = currentRT;
+        currentRT = nextRT;
+        nextRT = temp;
+
+        simAccumulator -= FIXED_TIMESTEP;
+      }
 
       waterUniforms.uRippleMap.value = currentRT.texture;
       renderer.setRenderTarget(prevRT);
@@ -657,6 +736,8 @@ export function createWater(
     addRipple,
     setTide,
     getWaterLevel,
+    getTideOffset: getTideOffsetVal,
+    isInWater,
     dispose() {
       geometry.dispose();
       waterMaterial.dispose();
