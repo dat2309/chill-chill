@@ -21,8 +21,12 @@ export interface SceneManagerOptions {
   onQualityChange?: (quality: Quality) => void;
   onThemeLoadingChange?: (loading: boolean, error?: Error | null) => void;
   onCameraChange?: (themeId: ThemeId, camera: SavedCameraState) => void;
+  onReady?: () => void;
+  onThemeSuccess?: (themeId: ThemeId) => void;
+  onThemeError?: (error: Error) => void;
   initialQuality?: Quality;
   loaderMap?: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>;
+  renderer?: THREE.WebGLRenderer;
 }
 
 export class SceneManager {
@@ -51,7 +55,8 @@ export class SceneManager {
   private isDragging = false;
   private pointerDownPos = new THREE.Vector2();
 
-  // FPS & Performance
+  // Lifecycle & Performance
+  private initialized = false;
   private frameCount = 0;
   private fpsAccum = 0;
   private currentFps = 60;
@@ -61,6 +66,9 @@ export class SceneManager {
   private onFpsUpdate: ((fps: number) => void) | null = null;
   private onQualityChange: ((quality: Quality) => void) | null = null;
   private onCameraChange: ((themeId: ThemeId, camera: SavedCameraState) => void) | null = null;
+  private onReadyCallback: (() => void) | null = null;
+  private onThemeSuccessCallback: ((themeId: ThemeId) => void) | null = null;
+  private onThemeErrorCallback: ((error: Error) => void) | null = null;
 
   // Observers
   private resizeObserver: ResizeObserver | null = null;
@@ -70,21 +78,28 @@ export class SceneManager {
     this.onFpsUpdate = options.onFpsUpdate ?? null;
     this.onQualityChange = options.onQualityChange ?? null;
     this.onCameraChange = options.onCameraChange ?? null;
+    this.onReadyCallback = options.onReady ?? null;
+    this.onThemeSuccessCallback = options.onThemeSuccess ?? null;
+    this.onThemeErrorCallback = options.onThemeError ?? null;
     this.currentQuality = options.initialQuality ?? 'high';
 
-    // WebGL Renderer
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: 'high-performance',
-    });
+    // WebGL Renderer (allow injected renderer for headless testing)
+    this.renderer =
+      options.renderer ??
+      new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance',
+      });
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.applyQuality(this.currentQuality);
-    container.appendChild(this.renderer.domElement);
+    if (!this.renderer.domElement.parentElement) {
+      container.appendChild(this.renderer.domElement);
+    }
 
     // Scene
     this.scene = new THREE.Scene();
@@ -154,20 +169,26 @@ export class SceneManager {
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
 
-    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.onVisibilityChange);
+    }
 
     // Observers
-    this.resizeObserver = new ResizeObserver(() => {
-      this.handleResize();
-    });
-    this.resizeObserver.observe(container);
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.handleResize();
+      });
+      this.resizeObserver.observe(container);
+    }
 
-    this.intersectionObserver = new IntersectionObserver((entries) => {
-      const entry = entries[0];
-      this.isIntersecting = !!entry?.isIntersecting;
-      this.updateLoopState();
-    });
-    this.intersectionObserver.observe(container);
+    if (typeof IntersectionObserver !== 'undefined') {
+      this.intersectionObserver = new IntersectionObserver((entries) => {
+        const entry = entries[0];
+        this.isIntersecting = !!entry?.isIntersecting;
+        this.updateLoopState();
+      });
+      this.intersectionObserver.observe(container);
+    }
   }
 
   getActiveThemeId(): ThemeId {
@@ -249,8 +270,20 @@ export class SceneManager {
     this.controls.update();
   }
 
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  isStarted(): boolean {
+    return this.isRunning;
+  }
+
   /**
-   * Switch active diorama theme with strict cancellation, robust error boundaries, and camera calibration.
+   * Unified transition pipeline for initial load, theme switching, and retry.
+   * Guarantees:
+   * - Starts renderer on first success exactly once without duplicate RAF loops.
+   * - Emits onReady and onThemeSuccess callbacks on commit.
+   * - Emits onThemeError on failure without leaving permanent WebGL error.
    */
   async switchTheme(
     targetThemeId: ThemeId,
@@ -266,7 +299,22 @@ export class SceneManager {
       this.themeCameraStates.set(activeThemeId, this.getCameraState());
     }
 
-    return this.coordinator.switchTheme(targetThemeId, targetState, initialCamera);
+    const result = await this.coordinator.switchTheme(targetThemeId, targetState, initialCamera);
+
+    if (this.disposed) return { status: 'cancelled' };
+
+    if (result.status === 'success') {
+      if (!this.initialized) {
+        this.initialized = true;
+        this.start();
+        this.onReadyCallback?.();
+      }
+      this.onThemeSuccessCallback?.(targetThemeId);
+    } else if (result.status === 'failed') {
+      this.onThemeErrorCallback?.(result.error);
+    }
+
+    return result;
   }
 
   /**
@@ -285,14 +333,15 @@ export class SceneManager {
 
   private applyQuality(quality: Quality): void {
     this.currentQuality = quality;
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
     if (quality === 'low') {
       this.renderer.setPixelRatio(1);
       this.renderer.shadowMap.enabled = false;
     } else if (quality === 'medium') {
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+      this.renderer.setPixelRatio(Math.min(dpr, 1.25));
       this.renderer.shadowMap.enabled = true;
     } else {
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.renderer.setPixelRatio(Math.min(dpr, 2));
       this.renderer.shadowMap.enabled = true;
     }
   }
@@ -323,12 +372,12 @@ export class SceneManager {
       !this.isContextLost;
 
     if (shouldRun) {
-      if (this.animFrameId === 0) {
+      if (this.animFrameId === 0 && typeof requestAnimationFrame !== 'undefined') {
         this.clock.getDelta(); // flush delta to avoid sudden time jumps
         this.animFrameId = requestAnimationFrame(this.animate);
       }
     } else {
-      if (this.animFrameId !== 0) {
+      if (this.animFrameId !== 0 && typeof cancelAnimationFrame !== 'undefined') {
         cancelAnimationFrame(this.animFrameId);
         this.animFrameId = 0;
       }
@@ -540,13 +589,19 @@ export class SceneManager {
 
   dispose(): void {
     this.disposed = true;
+    this.initialized = false;
     this.isRunning = false;
-    if (this.animFrameId !== 0) {
+    this.onReadyCallback = null;
+    this.onThemeSuccessCallback = null;
+    this.onThemeErrorCallback = null;
+    if (this.animFrameId !== 0 && typeof cancelAnimationFrame !== 'undefined') {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = 0;
     }
 
-    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    }
 
     const canvas = this.renderer.domElement;
     canvas.removeEventListener('pointermove', this.onPointerMove);

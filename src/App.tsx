@@ -172,6 +172,7 @@ export default function App() {
   }, []);
 
   const handleThemeError = useCallback((err: Error) => {
+    setLoading(false);
     setThemeLoading(false);
     setThemeError(err.message || 'Lỗi khi tải cảnh 3D');
   }, []);
@@ -179,6 +180,7 @@ export default function App() {
   const handleThemeLoadingChange = useCallback((isLoading: boolean, err?: Error | null) => {
     setThemeLoading(isLoading);
     if (err) {
+      setLoading(false);
       setThemeError(err.message || 'Lỗi khi tải cảnh 3D');
     } else {
       setThemeError(null);
@@ -194,16 +196,8 @@ export default function App() {
         ? { ...persisted.gardenState, quality: persisted.shared.quality }
         : { ...persisted.phuquocState, quality: persisted.shared.quality };
 
-    if (managerRef.current) {
-      managerRef.current.switchTheme(targetId, targetState).then((result) => {
-        if (result.status === 'success') {
-          handleThemeSuccess(targetId);
-        } else if (result.status === 'failed') {
-          handleThemeError(result.error);
-        }
-      });
-    }
-  }, [requestedThemeId, activeThemeId, persisted, handleThemeSuccess, handleThemeError]);
+    managerRef.current?.switchTheme(targetId, targetState);
+  }, [requestedThemeId, activeThemeId, persisted]);
 
   const handleCancelThemeError = useCallback(() => {
     setRequestedThemeId(null);

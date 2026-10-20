@@ -32,7 +32,7 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
   private activeThemeState: ThemeState<any> | null = null;
 
   private requestedThemeId: ThemeId | null = null;
-  private pendingStates = new Map<ThemeId, ThemeState<any>>();
+  private pendingStatesByToken = new Map<number, { themeId: ThemeId; state: ThemeState<any> }>();
   private currentSwitchToken = 0;
   private currentQuality: Quality = 'high';
   private disposed = false;
@@ -61,9 +61,12 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
     return this.activeThemeState ? { ...this.activeThemeState } : null;
   }
 
-  getPendingState(themeId: ThemeId): ThemeState<any> | undefined {
-    const s = this.pendingStates.get(themeId);
-    return s ? { ...s } : undefined;
+  getPendingState(themeId?: ThemeId): ThemeState<any> | undefined {
+    const entry = this.pendingStatesByToken.get(this.currentSwitchToken);
+    if (entry && (!themeId || entry.themeId === themeId)) {
+      return { ...entry.state };
+    }
+    return undefined;
   }
 
   getCurrentQuality(): Quality {
@@ -87,36 +90,43 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
   }
 
   /**
-   * Update active theme state with strict runtime themeId boundary checks.
-   * If state update belongs to an in-flight requested theme, it is safely buffered in pendingStates.
+   * Update state with strict boundaries and request-scoped pending buffering.
+   * - If there is an in-flight request, updates matching requestedThemeId (or unspecific) are buffered into pending state.
+   * - If an active instance exists, updates matching activeThemeId (or unspecific) are applied directly.
+   * - Foreign state never leaks to active theme or unmatching pending requests.
    */
   updateState(stateOrPatch: Partial<ThemeState<any>>): void {
-    const targetThemeId = (stateOrPatch as any).themeId as ThemeId | undefined;
+    const patchThemeId = (stateOrPatch as any).themeId as ThemeId | undefined;
 
-    // Boundary check: foreign state never penetrates active theme
-    if (targetThemeId && targetThemeId !== this.activeThemeId) {
-      if (targetThemeId === this.requestedThemeId) {
-        const cur = this.pendingStates.get(targetThemeId);
-        this.pendingStates.set(targetThemeId, { ...(cur ?? {}), ...stateOrPatch } as any);
+    // 1. Buffer for in-flight request (even if requestedThemeId === activeThemeId)
+    if (this.requestedThemeId && (!patchThemeId || patchThemeId === this.requestedThemeId)) {
+      const pendingEntry = this.pendingStatesByToken.get(this.currentSwitchToken);
+      if (pendingEntry) {
+        pendingEntry.state = { ...pendingEntry.state, ...stateOrPatch };
       }
-      return;
     }
 
-    if (!this.activeTheme || !this.activeThemeState) return;
+    // 2. Apply to current active instance if themeId matches active theme
+    if (this.activeTheme && this.activeThemeState) {
+      if (!patchThemeId || patchThemeId === this.activeThemeId) {
+        const prevState = { ...this.activeThemeState };
+        Object.assign(this.activeThemeState, stateOrPatch);
 
-    const prevState = { ...this.activeThemeState };
-    Object.assign(this.activeThemeState, stateOrPatch);
+        if (stateOrPatch.quality && stateOrPatch.quality !== prevState.quality) {
+          this.setQuality(stateOrPatch.quality);
+        }
 
-    if (stateOrPatch.quality && stateOrPatch.quality !== prevState.quality) {
-      this.setQuality(stateOrPatch.quality);
+        this.activeTheme.applyState(this.activeThemeState);
+      }
     }
-
-    this.activeTheme.applyState(this.activeThemeState);
   }
 
   /**
-   * Asynchronously switches active diorama theme with strict token-based cancellation,
-   * preserving pending updates and guaranteeing atomic commits with zero frame loss.
+   * Asynchronously switches active diorama theme with full transactional rollback.
+   * If any mount, camera, quality, commit, or state step fails:
+   * - The new theme is unmounted and disposed cleanly.
+   * - The old theme and its state/camera are fully restored.
+   * - activeTheme never points to a disposed instance.
    */
   async switchTheme(
     targetThemeId: ThemeId,
@@ -128,12 +138,22 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
     const switchToken = ++this.currentSwitchToken;
     this.requestedThemeId = targetThemeId;
 
-    // Merge targetState with any already buffered pending state
-    const existingPending = this.pendingStates.get(targetThemeId);
-    this.pendingStates.set(targetThemeId, { ...(existingPending ?? {}), ...targetState });
+    // Preserve any existing buffered state for this token or seed with targetState
+    const existingEntry = this.pendingStatesByToken.get(switchToken);
+    this.pendingStatesByToken.set(switchToken, {
+      themeId: targetThemeId,
+      state: { ...(existingEntry?.state ?? {}), ...targetState },
+    });
     this.options.onThemeLoadingChange?.(true, null);
 
+    // Snapshot existing active theme for transactional rollback
+    const oldTheme = this.activeTheme;
+    const oldThemeId = this.activeThemeId;
+    const oldThemeState = this.activeThemeState ? { ...this.activeThemeState } : null;
+
     let newTheme: TTheme | null = null;
+    let newThemeMounted = false;
+
     try {
       const loader = this.options.loaderMap?.[targetThemeId] ?? (THEME_LOADERS[targetThemeId] as any);
       if (!loader) {
@@ -148,6 +168,7 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
 
       if (switchToken !== this.currentSwitchToken || this.disposed) {
         try { loadedTheme.dispose(); } catch {}
+        this.pendingStatesByToken.delete(switchToken);
         return { status: 'cancelled' };
       }
 
@@ -155,56 +176,121 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
 
       if (switchToken !== this.currentSwitchToken || this.disposed) {
         try { loadedTheme.dispose(); } catch {}
+        this.pendingStatesByToken.delete(switchToken);
         return { status: 'cancelled' };
       }
 
-      const latestState = this.pendingStates.get(targetThemeId) ?? targetState;
-      loadedTheme.applyState(latestState);
-      if (loadedTheme.setQuality) {
-        loadedTheme.setQuality(this.currentQuality);
-      }
+      // Handover Transaction Block
+      try {
+        const reqEntry = this.pendingStatesByToken.get(switchToken);
+        const latestState = reqEntry ? reqEntry.state : targetState;
 
-      if (switchToken !== this.currentSwitchToken || this.disposed) {
+        loadedTheme.applyState(latestState);
+        if (loadedTheme.setQuality) {
+          loadedTheme.setQuality(this.currentQuality);
+        }
+
+        if (switchToken !== this.currentSwitchToken || this.disposed) {
+          try { loadedTheme.dispose(); } catch {}
+          this.pendingStatesByToken.delete(switchToken);
+          return { status: 'cancelled' };
+        }
+
+        // Unmount old theme without disposing yet
+        if (oldTheme) {
+          this.options.onUnmountTheme?.(oldTheme);
+        }
+
+        // Mount new theme
+        this.options.onMountTheme?.(loadedTheme);
+        newThemeMounted = true;
+
+        // Restore camera
+        this.options.onRestoreCamera?.(targetThemeId, loadedTheme, latestState, initialCamera);
+
+        // Apply quality
+        this.options.onApplyQuality?.(this.currentQuality);
+
+        // Commit callback
+        this.options.onCommitTheme?.(targetThemeId, loadedTheme, latestState);
+
+        // Final cancellation check before retiring old theme
+        if (switchToken !== this.currentSwitchToken || this.disposed) {
+          if (newThemeMounted) {
+            try { this.options.onUnmountTheme?.(loadedTheme); } catch {}
+          }
+          try { loadedTheme.dispose(); } catch {}
+
+          if (oldTheme) {
+            try { this.options.onMountTheme?.(oldTheme); } catch {}
+          }
+          this.pendingStatesByToken.delete(switchToken);
+          return { status: 'cancelled' };
+        }
+
+        // Transaction successful: retire old theme cleanly
+        if (oldTheme) {
+          try { oldTheme.dispose(); } catch (e) {
+            console.warn('Error disposing retired theme:', e);
+          }
+        }
+
+        // Commit active references
+        this.activeTheme = loadedTheme;
+        this.activeThemeId = targetThemeId;
+        this.activeThemeState = { ...latestState };
+
+        if (switchToken === this.currentSwitchToken) {
+          this.requestedThemeId = null;
+          this.pendingStatesByToken.delete(switchToken);
+          this.options.onThemeLoadingChange?.(false, null);
+        }
+
+        return { status: 'success' };
+      } catch (handoverError: any) {
+        // Rollback transaction upon failure during handover
+        if (newThemeMounted) {
+          try { this.options.onUnmountTheme?.(loadedTheme); } catch {}
+        }
         try { loadedTheme.dispose(); } catch {}
-        return { status: 'cancelled' };
+
+        if (oldTheme) {
+          try {
+            this.options.onMountTheme?.(oldTheme);
+            if (oldThemeState) {
+              oldTheme.applyState(oldThemeState);
+            }
+            this.activeTheme = oldTheme;
+            this.activeThemeId = oldThemeId;
+            this.activeThemeState = oldThemeState;
+            this.options.onRestoreCamera?.(oldThemeId, oldTheme, oldThemeState || targetState);
+          } catch (rollbackErr) {
+            console.error('Fatal: Rollback failed:', rollbackErr);
+            try { this.options.onUnmountTheme?.(oldTheme); } catch {}
+            try { oldTheme.dispose(); } catch {}
+            this.activeTheme = null;
+            this.activeThemeState = null;
+          }
+        } else {
+          this.activeTheme = null;
+          this.activeThemeState = null;
+        }
+
+        throw handoverError;
       }
-
-      // Atomically unmount and dispose old theme
-      if (this.activeTheme) {
-        this.options.onUnmountTheme?.(this.activeTheme);
-        try { this.activeTheme.dispose(); } catch {}
-        this.activeTheme = null;
-      }
-
-      // Commit new active theme
-      this.activeTheme = loadedTheme;
-      this.activeThemeId = targetThemeId;
-      this.activeThemeState = { ...latestState };
-
-      this.options.onMountTheme?.(loadedTheme);
-      this.options.onCommitTheme?.(targetThemeId, loadedTheme, latestState);
-      this.options.onRestoreCamera?.(targetThemeId, loadedTheme, latestState, initialCamera);
-      this.options.onApplyQuality?.(this.currentQuality);
-
-      if (switchToken === this.currentSwitchToken) {
-        this.requestedThemeId = null;
-        this.pendingStates.delete(targetThemeId);
-        this.options.onThemeLoadingChange?.(false, null);
-      }
-
-      return { status: 'success' };
     } catch (err: any) {
-      if (newTheme) {
+      if (newTheme && newTheme !== this.activeTheme) {
         try { newTheme.dispose(); } catch {}
       }
 
-      // Crucial: Old/outdated request failures must never mutate requestedThemeId or pending state of current requests!
+      // Outdated requests that fail must never mutate requestedThemeId or pending state of current requests!
       if (switchToken !== this.currentSwitchToken || this.disposed) {
+        this.pendingStatesByToken.delete(switchToken);
         return { status: 'cancelled' };
       }
 
       this.requestedThemeId = null;
-      this.pendingStates.delete(targetThemeId);
+      this.pendingStatesByToken.delete(switchToken);
       const errorObj = err instanceof Error ? err : new Error(String(err));
       this.options.onThemeLoadingChange?.(false, errorObj);
       return { status: 'failed', error: errorObj };
@@ -215,7 +301,7 @@ export class ThemeLifecycleCoordinator<TTheme extends ThemeInstance<any> = Theme
     this.disposed = true;
     this.currentSwitchToken++;
     this.requestedThemeId = null;
-    this.pendingStates.clear();
+    this.pendingStatesByToken.clear();
 
     if (this.activeTheme) {
       this.options.onUnmountTheme?.(this.activeTheme);

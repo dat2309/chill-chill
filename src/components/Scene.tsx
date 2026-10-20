@@ -33,7 +33,6 @@ export default function Scene({
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const currentThemeIdRef = useRef<ThemeId>(themeId);
-  const isInitializedRef = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -59,41 +58,24 @@ export default function Scene({
     }
     testCanvas.remove();
 
-    let unmounted = false;
     let manager: SceneManager | null = null;
 
     try {
+      // SceneManager is the single source of truth for the diorama lifecycle
       manager = new SceneManager(container, {
         initialQuality,
         onFpsUpdate: onFps,
         onQualityChange,
         onThemeLoadingChange,
         onCameraChange,
+        onReady,
+        onThemeSuccess,
+        onThemeError,
       });
       managerRef.current = manager;
 
-      manager
-        .switchTheme(themeId, themeState, themeState.cameraState)
-        .then((result) => {
-          if (unmounted) return;
-          if (result.status === 'success') {
-            if (!isInitializedRef.current) {
-              manager?.start();
-              isInitializedRef.current = true;
-              onReady();
-            }
-            onThemeSuccess?.(themeId);
-          } else if (result.status === 'failed') {
-            onThemeError?.(result.error);
-          }
-        })
-        .catch((e: Error) => {
-          if (unmounted) return;
-          console.error(e);
-          onThemeError?.(e);
-        });
+      manager.switchTheme(themeId, themeState, themeState.cameraState);
     } catch (e: any) {
-      if (unmounted) return;
       console.error(e);
       onWebglError(`Không thể khởi tạo WebGL 3D: ${e?.message ?? e}`);
       manager?.dispose();
@@ -101,12 +83,10 @@ export default function Scene({
     }
 
     return () => {
-      unmounted = true;
       if (manager) {
         manager.dispose();
       }
       managerRef.current = null;
-      isInitializedRef.current = false;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -115,24 +95,7 @@ export default function Scene({
     if (!managerRef.current) return;
     if (currentThemeIdRef.current !== themeId) {
       currentThemeIdRef.current = themeId;
-      managerRef.current
-        .switchTheme(themeId, themeState, themeState.cameraState)
-        .then((result) => {
-          if (result.status === 'success') {
-            if (!isInitializedRef.current) {
-              managerRef.current?.start();
-              isInitializedRef.current = true;
-              onReady();
-            }
-            onThemeSuccess?.(themeId);
-          } else if (result.status === 'failed') {
-            onThemeError?.(result.error);
-          }
-        })
-        .catch((err) => {
-          const errObj = err instanceof Error ? err : new Error(String(err));
-          onThemeError?.(errObj);
-        });
+      managerRef.current.switchTheme(themeId, themeState, themeState.cameraState);
     }
   }, [themeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
