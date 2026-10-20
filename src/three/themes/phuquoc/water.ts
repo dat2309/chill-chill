@@ -22,6 +22,7 @@ export interface PhuQuocWaterSystem {
   setSunLighting(sunDir: THREE.Vector3, sunCol: THREE.Color, skyCol: THREE.Color): void;
   setForceAnalyticalFallback?(force: boolean): void;
   isUsingGpuSimulation?(): boolean;
+  onContextRestored?(): void;
   dispose(): void;
 }
 
@@ -34,33 +35,68 @@ interface AnalyticalRipple {
 
 const MAX_ANALYTICAL_RIPPLES = 10;
 
-function checkRenderTargetSupport(
+export function checkRenderTargetSupport(
   renderer: THREE.WebGLRenderer,
   type: THREE.TextureDataType
 ): boolean {
   let testTarget: THREE.WebGLRenderTarget | null = null;
+  const prevRT = renderer.getRenderTarget();
   try {
+    const gl = renderer.getContext() as WebGLRenderingContext | WebGL2RenderingContext | null;
+    if (!gl) return false;
+
+    // Check extensions based on WebGL capabilities
+    const isWebGL2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+    if (type === THREE.FloatType) {
+      if (isWebGL2) {
+        if (!gl.getExtension('EXT_color_buffer_float')) return false;
+      } else {
+        if (!gl.getExtension('OES_texture_float')) return false;
+      }
+    } else if (type === THREE.HalfFloatType) {
+      if (isWebGL2) {
+        if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) {
+          // May still be supported or require extension
+        }
+      } else {
+        if (!gl.getExtension('OES_texture_half_float')) return false;
+      }
+    }
+
     testTarget = new THREE.WebGLRenderTarget(16, 16, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
       type,
     });
-    const prevRT = renderer.getRenderTarget();
+
     renderer.setRenderTarget(testTarget);
+
+    // Framebuffer completeness validation
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      return false;
+    }
+
     renderer.clear();
-    renderer.setRenderTarget(prevRT);
-    testTarget.dispose();
+
+    const err = gl.getError();
+    if (err !== gl.NO_ERROR) {
+      return false;
+    }
+
     return true;
   } catch {
+    return false;
+  } finally {
+    try {
+      renderer.setRenderTarget(prevRT);
+    } catch {}
     if (testTarget) {
       try {
         testTarget.dispose();
-      } catch {
-        // Ignore
-      }
+      } catch {}
     }
-    return false;
   }
 }
 
@@ -676,6 +712,28 @@ export function createPhuQuocWater(
     },
     isUsingGpuSimulation() {
       return useGpuSimulation;
+    },
+    onContextRestored() {
+      if (useGpuSimulation && rtA && rtB) {
+        try {
+          const prevRT = renderer.getRenderTarget();
+          const prevClearColor = new THREE.Color();
+          renderer.getClearColor(prevClearColor);
+          const prevClearAlpha = renderer.getClearAlpha();
+          try {
+            renderer.setClearColor(0x000000, 0);
+            renderer.setRenderTarget(rtA);
+            renderer.clear();
+            renderer.setRenderTarget(rtB);
+            renderer.clear();
+          } finally {
+            renderer.setRenderTarget(prevRT);
+            renderer.setClearColor(prevClearColor, prevClearAlpha);
+          }
+        } catch (e) {
+          console.warn('Failed to re-clear simulation targets on context restored:', e);
+        }
+      }
     },
     dispose() {
       waterGeo.dispose();

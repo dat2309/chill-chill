@@ -206,6 +206,10 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     return this.water ? this.water.getWaterLevel() : 0.3;
   }
 
+  onContextRestored(): void {
+    this.water?.onContextRestored?.();
+  }
+
   dispose(): void {
     this.terrain?.dispose();
     this.water?.dispose();
