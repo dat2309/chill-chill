@@ -9,8 +9,8 @@ import {
   getStreamBedHeight,
   getWaterDepth,
   isInWater,
-} from '../src/three/streamProfile.js';
-import { computeRawTerrainHeight } from '../src/three/terrain.js';
+} from '../src/three/themes/garden/streamProfile.js';
+import { computeRawTerrainHeight } from '../src/three/themes/garden/terrain.js';
 
 interface TestResult {
   name: string;

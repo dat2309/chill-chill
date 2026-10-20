@@ -58,6 +58,44 @@ for (let x = -10; x <= 10; x += 0.2) {
 }
 assert(shoreContinuous, 'Shoreline crescent curve is smooth and continuous across [-10, 10]');
 
+// 1b. C0 and C1 Continuity Across Waterline Boundary (dist = 0) and Terrace Boundary (dist = 4.5)
+let c0WaterlineContinuous = true;
+let c1WaterlineContinuous = true;
+let c0TerraceContinuous = true;
+const eps = 0.002;
+
+for (let x = -8.0; x <= 8.0; x += 0.5) {
+  const sz = getShoreZ(x);
+
+  // Waterline boundary: z = sz (dist = 0)
+  const hWaterSide = getTerrainHeight(x, sz + eps);
+  const hSandSide = getTerrainHeight(x, sz - eps);
+  const diffC0Water = Math.abs(hWaterSide - hSandSide);
+  if (diffC0Water > 0.005) {
+    c0WaterlineContinuous = false;
+  }
+
+  // Slope check (C1 continuity): slope along Z on sand vs water side at boundary
+  const hCenter = getTerrainHeight(x, sz);
+  const slopeSand = (hCenter - hSandSide) / eps;
+  const slopeWater = (hWaterSide - hCenter) / eps;
+  if (Math.abs(slopeSand - slopeWater) > 0.05) {
+    c1WaterlineContinuous = false;
+  }
+
+  // Terrace boundary: z = sz - 4.5 (dist = 4.5)
+  const tz = sz - 4.5;
+  const hBeachSide = getTerrainHeight(x, tz + eps);
+  const hTerraceSide = getTerrainHeight(x, tz - eps);
+  if (Math.abs(hBeachSide - hTerraceSide) > 0.005) {
+    c0TerraceContinuous = false;
+  }
+}
+
+assert(c0WaterlineContinuous, 'C0 continuity across waterline boundary (no vertical cliff or step at dist=0)');
+assert(c1WaterlineContinuous, 'C1 derivative smoothness across waterline boundary');
+assert(c0TerraceContinuous, 'C0 continuity across beach-to-terrace boundary (dist=4.5)');
+
 // 2. Water Depth & Intertidal Elevations (Low and High Tides)
 const tides = [
   { name: 'Low Tide', offset: -1.0, level: SEA_LEVEL_LOW },
@@ -149,11 +187,15 @@ const thung = BOAT_SPOTS.thung;
 const thungInWater = isInWater(thung.x, thung.z, 0);
 const thungDepth = getWaterDepth(thung.x, thung.z, 0);
 assert(thungInWater && thungDepth > thung.draft + 0.1, 'Thuyền Thúng floats freely in the bay with clearance above seabed');
+const thungLowDepth = getWaterDepth(thung.x, thung.z, -1.0);
+assert(thungLowDepth > thung.draft + 0.02, 'Thuyền Thúng retains positive draft clearance even at Low Tide');
 
 const ghe = BOAT_SPOTS.ghe;
 const gheInWater = isInWater(ghe.x, ghe.z, 0);
 const gheDepth = getWaterDepth(ghe.x, ghe.z, 0);
 assert(gheInWater && gheDepth > ghe.draft + 0.1, 'Ghe Nhỏ floats freely with sufficient water depth in coastal bay');
+const gheLowDepth = getWaterDepth(ghe.x, ghe.z, -1.0);
+assert(gheLowDepth > ghe.draft + 0.02, 'Ghe Nhỏ retains positive draft clearance even at Low Tide');
 
 // 7. State & Season Isolation (Discriminated Unions & Sanitization)
 // A. Invalid season on Phu Quoc (e.g. 'winter' passed to phuquoc) must fallback to 'dry'
