@@ -12,6 +12,7 @@ import { ThemeLifecycleCoordinator } from '../src/three/core/ThemeLifecycleCoord
 import { SceneManager } from '../src/three/core/SceneManager';
 import { checkRenderTargetSupport } from '../src/three/themes/phuquoc/water';
 import { setCameraProjection } from '../src/three/core/camera';
+import { loadThemeWithRetry } from '../src/three/themes/registry';
 
 interface TestResult {
   name: string;
@@ -714,6 +715,44 @@ async function runLifecycleTests() {
   assert(
     coordinator.getCurrentQuality() === 'medium',
     'Coordinator setQuality updates current quality setting'
+  );
+
+  // =========================================================================
+  // 11. Dynamic Chunk Loading & Stale Module Recovery Verification
+  // =========================================================================
+  let dynamicChunkAttempts = 0;
+  const resilientModule = await loadThemeWithRetry(async () => {
+    dynamicChunkAttempts++;
+    if (dynamicChunkAttempts < 2) {
+      throw new TypeError('Failed to fetch dynamically imported module: https://chill-chill-orpin.vercel.app/assets/index-b6HVVwdd.js');
+    }
+    return { status: 'module_loaded_successfully' };
+  }, 2, 10);
+
+  assert(
+    (resilientModule as any).status === 'module_loaded_successfully',
+    'loadThemeWithRetry successfully recovers on retry when initial dynamic chunk fetch fails'
+  );
+  assert(
+    dynamicChunkAttempts === 2,
+    'loadThemeWithRetry retried the failed dynamic import chunk'
+  );
+
+  let failingAttempts = 0;
+  let caughtError: Error | null = null;
+  try {
+    await loadThemeWithRetry(async () => {
+      failingAttempts++;
+      throw new TypeError('Failed to fetch dynamically imported module: https://chill-chill-orpin.vercel.app/assets/index-b6HVVwdd.js');
+    }, 1, 10);
+  } catch (err: any) {
+    caughtError = err;
+  }
+
+  assert(failingAttempts === 2, 'Exhausts retries before throwing error');
+  assert(
+    caughtError !== null && caughtError.message.includes('Phiên bản ứng dụng đã có cập nhật mới'),
+    'loadThemeWithRetry provides friendly guidance when dynamic chunk is permanently missing'
   );
 
   // Summary
