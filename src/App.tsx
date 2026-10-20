@@ -15,6 +15,7 @@ import { THEME_METADATA_MAP } from './three/themes/registry';
 export default function App() {
   // Load persisted multi-theme state
   const [persisted, setPersisted] = useState(() => loadPersistedAppState());
+  const [requestedThemeId, setRequestedThemeId] = useState<ThemeId | null>(null);
   const [loading, setLoading] = useState(true);
   const [themeLoading, setThemeLoading] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
@@ -23,11 +24,21 @@ export default function App() {
 
   const managerRef = useRef<SceneManager | null>(null);
 
+  // Active theme is strictly what is currently committed and active in 3D
   const activeThemeId = persisted.activeThemeId;
   const rawThemeState =
     activeThemeId === 'garden' ? persisted.gardenState : persisted.phuquocState;
   const currentThemeState = {
     ...rawThemeState,
+    quality: persisted.shared.quality,
+  };
+
+  // Target theme for Scene component (in-flight request or committed active)
+  const targetThemeId = requestedThemeId || activeThemeId;
+  const rawTargetThemeState =
+    targetThemeId === 'garden' ? persisted.gardenState : persisted.phuquocState;
+  const sceneThemeState = {
+    ...rawTargetThemeState,
     quality: persisted.shared.quality,
   };
 
@@ -44,29 +55,6 @@ export default function App() {
     }
   }, [activeThemeId]);
 
-  // Handle active theme state change
-  const handleChange = useCallback((patch: Partial<ThemeState<any>>) => {
-    setPersisted((prev) => {
-      if (prev.activeThemeId === 'garden') {
-        return {
-          ...prev,
-          gardenState: {
-            ...prev.gardenState,
-            ...patch,
-          },
-        };
-      } else {
-        return {
-          ...prev,
-          phuquocState: {
-            ...prev.phuquocState,
-            ...patch,
-          },
-        };
-      }
-    });
-  }, []);
-
   const handleQualityChange = useCallback((quality: Quality) => {
     setPersisted((prev) => ({
       ...prev,
@@ -77,6 +65,36 @@ export default function App() {
     }));
     managerRef.current?.setQuality(quality);
   }, []);
+
+  // Handle active theme state change: strip quality so it never pollutes theme-specific states
+  const handleChange = useCallback(
+    (patch: Partial<ThemeState<any>>) => {
+      const { quality, ...themePatch } = patch;
+      if (quality) {
+        handleQualityChange(quality);
+      }
+      setPersisted((prev) => {
+        if (prev.activeThemeId === 'garden') {
+          return {
+            ...prev,
+            gardenState: {
+              ...prev.gardenState,
+              ...themePatch,
+            },
+          };
+        } else {
+          return {
+            ...prev,
+            phuquocState: {
+              ...prev.phuquocState,
+              ...themePatch,
+            },
+          };
+        }
+      });
+    },
+    [handleQualityChange]
+  );
 
   const handleCameraChange = useCallback((themeId: ThemeId, camera: SavedCameraState) => {
     setPersisted((prev) => {
@@ -120,29 +138,42 @@ export default function App() {
     managerRef.current?.resetCurrentTheme(defaultState);
   }, [activeThemeId]);
 
-  // Theme selection
+  // Request theme switch: does NOT immediately overwrite persisted.activeThemeId
   const handleSelectTheme = useCallback(
     (newThemeId: ThemeId) => {
-      if (newThemeId === activeThemeId) return;
+      if (newThemeId === activeThemeId && !themeError) return;
+      setRequestedThemeId(newThemeId);
       setThemeLoading(true);
       setThemeError(null);
-      setPersisted((prev) => ({
-        ...prev,
-        activeThemeId: newThemeId,
-      }));
     },
-    [activeThemeId]
+    [activeThemeId, themeError]
   );
+
+  const handleThemeSuccess = useCallback((committedThemeId: ThemeId) => {
+    setPersisted((prev) => ({
+      ...prev,
+      activeThemeId: committedThemeId,
+    }));
+    setRequestedThemeId(null);
+    setLoading(false);
+    setThemeLoading(false);
+    setThemeError(null);
+  }, []);
 
   const handleReady = useCallback(() => {
     setLoading(false);
     setThemeLoading(false);
   }, []);
 
-  const handleError = useCallback((msg: string) => {
+  const handleWebglError = useCallback((msg: string) => {
     setWebglError(msg);
     setLoading(false);
     setThemeLoading(false);
+  }, []);
+
+  const handleThemeError = useCallback((err: Error) => {
+    setThemeLoading(false);
+    setThemeError(err.message || 'Lỗi khi tải cảnh 3D');
   }, []);
 
   const handleThemeLoadingChange = useCallback((isLoading: boolean, err?: Error | null) => {
@@ -156,10 +187,29 @@ export default function App() {
 
   const handleRetryTheme = useCallback(() => {
     setThemeError(null);
+    setThemeLoading(true);
+    const targetId = requestedThemeId || activeThemeId;
+    const targetState =
+      targetId === 'garden'
+        ? { ...persisted.gardenState, quality: persisted.shared.quality }
+        : { ...persisted.phuquocState, quality: persisted.shared.quality };
+
     if (managerRef.current) {
-      managerRef.current.switchTheme(activeThemeId, currentThemeState);
+      managerRef.current.switchTheme(targetId, targetState).then((result) => {
+        if (result.status === 'success') {
+          handleThemeSuccess(targetId);
+        } else if (result.status === 'failed') {
+          handleThemeError(result.error);
+        }
+      });
     }
-  }, [activeThemeId, currentThemeState]);
+  }, [requestedThemeId, activeThemeId, persisted, handleThemeSuccess, handleThemeError]);
+
+  const handleCancelThemeError = useCallback(() => {
+    setRequestedThemeId(null);
+    setThemeError(null);
+    setThemeLoading(false);
+  }, []);
 
   const handleFps = useCallback((f: number) => {
     setFps(f);
@@ -171,10 +221,13 @@ export default function App() {
       onPointerEnter={() => managerRef.current?.setPointerOnUI(false)}
     >
       <Scene
-        themeId={activeThemeId}
-        themeState={currentThemeState}
+        themeId={targetThemeId}
+        themeState={sceneThemeState}
+        initialQuality={persisted.shared.quality}
         onReady={handleReady}
-        onError={handleError}
+        onWebglError={handleWebglError}
+        onThemeError={handleThemeError}
+        onThemeSuccess={handleThemeSuccess}
         onFps={handleFps}
         onQualityChange={handleQualityChange}
         onThemeLoadingChange={handleThemeLoadingChange}
@@ -187,8 +240,11 @@ export default function App() {
       >
         <UI
           activeThemeId={activeThemeId}
+          requestedThemeId={requestedThemeId}
           state={currentThemeState}
+          quality={persisted.shared.quality}
           onChange={handleChange}
+          onQualityChange={handleQualityChange}
           onReset={handleReset}
           onSelectTheme={handleSelectTheme}
           fps={fps}
@@ -196,6 +252,7 @@ export default function App() {
           themeLoading={themeLoading}
           themeError={themeError}
           onRetryTheme={handleRetryTheme}
+          onCancelThemeError={handleCancelThemeError}
           webglError={webglError}
         />
       </div>

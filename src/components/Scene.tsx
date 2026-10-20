@@ -5,8 +5,11 @@ import { ThemeId, ThemeState, Quality, SavedCameraState } from '../three/core/ty
 interface SceneProps {
   themeId: ThemeId;
   themeState: ThemeState<any>;
+  initialQuality?: Quality;
   onReady: () => void;
-  onError: (msg: string) => void;
+  onWebglError: (msg: string) => void;
+  onThemeError?: (err: Error) => void;
+  onThemeSuccess?: (themeId: ThemeId) => void;
   onFps: (fps: number) => void;
   onQualityChange?: (quality: Quality) => void;
   onThemeLoadingChange?: (loading: boolean, error?: Error | null) => void;
@@ -17,8 +20,11 @@ interface SceneProps {
 export default function Scene({
   themeId,
   themeState,
+  initialQuality,
   onReady,
-  onError,
+  onWebglError,
+  onThemeError,
+  onThemeSuccess,
   onFps,
   onQualityChange,
   onThemeLoadingChange,
@@ -43,7 +49,7 @@ export default function Scene({
     }
 
     if (!gl) {
-      onError('Trình duyệt hoặc phần cứng không hỗ trợ WebGL. Vui lòng bật tăng tốc phần cứng hoặc dùng trình duyệt hiện đại.');
+      onWebglError('Trình duyệt hoặc phần cứng không hỗ trợ WebGL. Vui lòng bật tăng tốc phần cứng hoặc dùng trình duyệt hiện đại.');
       return;
     }
 
@@ -58,6 +64,7 @@ export default function Scene({
 
     try {
       manager = new SceneManager(container, {
+        initialQuality,
         onFpsUpdate: onFps,
         onQualityChange,
         onThemeLoadingChange,
@@ -70,24 +77,25 @@ export default function Scene({
         .then((result) => {
           if (unmounted) return;
           if (result.status === 'success') {
-            manager?.start();
-            isInitializedRef.current = true;
-            onReady();
+            if (!isInitializedRef.current) {
+              manager?.start();
+              isInitializedRef.current = true;
+              onReady();
+            }
+            onThemeSuccess?.(themeId);
           } else if (result.status === 'failed') {
-            onError(`Lỗi khởi tạo cảnh 3D: ${result.error.message}`);
+            onThemeError?.(result.error);
           }
         })
         .catch((e: Error) => {
           if (unmounted) return;
           console.error(e);
-          onError(`Lỗi khởi tạo cảnh 3D: ${e.message}`);
-          manager?.dispose();
-          managerRef.current = null;
+          onThemeError?.(e);
         });
     } catch (e: any) {
       if (unmounted) return;
       console.error(e);
-      onError(`Không thể khởi tạo WebGL 3D: ${e?.message ?? e}`);
+      onWebglError(`Không thể khởi tạo WebGL 3D: ${e?.message ?? e}`);
       manager?.dispose();
       managerRef.current = null;
     }
@@ -104,25 +112,33 @@ export default function Scene({
 
   // Handle dynamic theme switching
   useEffect(() => {
-    if (!isInitializedRef.current || !managerRef.current) return;
+    if (!managerRef.current) return;
     if (currentThemeIdRef.current !== themeId) {
       currentThemeIdRef.current = themeId;
       managerRef.current
         .switchTheme(themeId, themeState, themeState.cameraState)
         .then((result) => {
-          if (result.status === 'failed') {
-            onError(`Lỗi chuyển đổi chủ đề: ${result.error.message}`);
+          if (result.status === 'success') {
+            if (!isInitializedRef.current) {
+              managerRef.current?.start();
+              isInitializedRef.current = true;
+              onReady();
+            }
+            onThemeSuccess?.(themeId);
+          } else if (result.status === 'failed') {
+            onThemeError?.(result.error);
           }
         })
         .catch((err) => {
-          onError(`Lỗi chuyển đổi chủ đề: ${err.message || String(err)}`);
+          const errObj = err instanceof Error ? err : new Error(String(err));
+          onThemeError?.(errObj);
         });
     }
   }, [themeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync active theme state updates
   useEffect(() => {
-    if (!isInitializedRef.current || !managerRef.current) return;
+    if (!managerRef.current) return;
     managerRef.current.updateState(themeState);
   }, [themeState]); // eslint-disable-line react-hooks/exhaustive-deps
 

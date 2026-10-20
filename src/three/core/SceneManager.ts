@@ -9,13 +9,20 @@ import {
   SavedCameraState,
 } from './types';
 import { THEME_LOADERS } from '../themes/registry';
-import { fitOrthographicCameraToBounds } from './camera';
+import {
+  fitOrthographicCameraToBounds,
+  calculateBaseFrustumHeight,
+  setCameraProjection,
+} from './camera';
+import { ThemeLifecycleCoordinator } from './ThemeLifecycleCoordinator';
 
 export interface SceneManagerOptions {
   onFpsUpdate?: (fps: number) => void;
   onQualityChange?: (quality: Quality) => void;
   onThemeLoadingChange?: (loading: boolean, error?: Error | null) => void;
   onCameraChange?: (themeId: ThemeId, camera: SavedCameraState) => void;
+  initialQuality?: Quality;
+  loaderMap?: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>;
 }
 
 export class SceneManager {
@@ -24,13 +31,7 @@ export class SceneManager {
   readonly renderer: THREE.WebGLRenderer;
   readonly controls: OrbitControls;
 
-  private activeTheme: ThemeInstance<any> | null = null;
-  private activeThemeId: ThemeId = 'garden';
-  private activeThemeState: ThemeState<any> | null = null;
-
-  // Explicit theme switch request management
-  private requestedThemeId: ThemeId | null = null;
-  private pendingStates = new Map<ThemeId, ThemeState<any>>();
+  readonly coordinator: ThemeLifecycleCoordinator;
   private themeCameraStates = new Map<ThemeId, SavedCameraState>();
 
   private clock = new THREE.Clock();
@@ -50,9 +51,6 @@ export class SceneManager {
   private isDragging = false;
   private pointerDownPos = new THREE.Vector2();
 
-  // Switch theme cancellation token
-  private currentSwitchToken = 0;
-
   // FPS & Performance
   private frameCount = 0;
   private fpsAccum = 0;
@@ -62,7 +60,6 @@ export class SceneManager {
   private currentQuality: Quality = 'high';
   private onFpsUpdate: ((fps: number) => void) | null = null;
   private onQualityChange: ((quality: Quality) => void) | null = null;
-  private onThemeLoadingChange: ((loading: boolean, error?: Error | null) => void) | null = null;
   private onCameraChange: ((themeId: ThemeId, camera: SavedCameraState) => void) | null = null;
 
   // Observers
@@ -72,8 +69,8 @@ export class SceneManager {
   constructor(container: HTMLElement, options: SceneManagerOptions = {}) {
     this.onFpsUpdate = options.onFpsUpdate ?? null;
     this.onQualityChange = options.onQualityChange ?? null;
-    this.onThemeLoadingChange = options.onThemeLoadingChange ?? null;
     this.onCameraChange = options.onCameraChange ?? null;
+    this.currentQuality = options.initialQuality ?? 'high';
 
     // WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({
@@ -81,13 +78,12 @@ export class SceneManager {
       alpha: true,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
-    this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.applyQuality(this.currentQuality);
     container.appendChild(this.renderer.domElement);
 
     // Scene
@@ -121,11 +117,33 @@ export class SceneManager {
     this.controls.update();
 
     this.controls.addEventListener('end', () => {
-      if (this.activeTheme && this.activeThemeId) {
+      const activeId = this.coordinator.getActiveThemeId();
+      if (this.coordinator.getActiveTheme() && activeId) {
         const cam = this.getCameraState();
-        this.themeCameraStates.set(this.activeThemeId, cam);
-        this.onCameraChange?.(this.activeThemeId, cam);
+        this.themeCameraStates.set(activeId, cam);
+        this.onCameraChange?.(activeId, cam);
       }
+    });
+
+    // Theme Lifecycle Coordinator
+    this.coordinator = new ThemeLifecycleCoordinator({
+      renderer: this.renderer,
+      loaderMap: options.loaderMap ?? THEME_LOADERS,
+      initialQuality: this.currentQuality,
+      onThemeLoadingChange: options.onThemeLoadingChange,
+      onMountTheme: (theme) => {
+        this.scene.add(theme.group);
+      },
+      onUnmountTheme: (theme) => {
+        this.scene.remove(theme.group);
+      },
+      onRestoreCamera: (themeId, theme, state, initialCamera) => {
+        const savedCam = initialCamera || this.themeCameraStates.get(themeId) || state.cameraState;
+        this.restoreCameraForTheme(themeId, theme, savedCam);
+      },
+      onApplyQuality: (quality) => {
+        this.applyQuality(quality);
+      },
     });
 
     // Event listeners
@@ -153,22 +171,28 @@ export class SceneManager {
   }
 
   getActiveThemeId(): ThemeId {
-    return this.activeThemeId;
+    return this.coordinator.getActiveThemeId();
   }
 
   getRequestedThemeId(): ThemeId | null {
-    return this.requestedThemeId;
+    return this.coordinator.getRequestedThemeId();
   }
 
   getActiveTheme(): ThemeInstance<any> | null {
-    return this.activeTheme;
+    return this.coordinator.getActiveTheme();
+  }
+
+  getActiveThemeState(): ThemeState<any> | null {
+    return this.coordinator.getActiveThemeState();
   }
 
   getCameraState(): SavedCameraState {
+    const frustumH = this.camera.top - this.camera.bottom;
     return {
       position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
       target: [this.controls.target.x, this.controls.target.y, this.controls.target.z],
       zoom: this.camera.zoom,
+      baseFrustumHeight: Number.isFinite(frustumH) && frustumH > 0 ? frustumH : undefined,
     };
   }
 
@@ -181,8 +205,52 @@ export class SceneManager {
   }
 
   /**
-   * Switch active diorama theme safely with cancellation handling and no blank frames.
-   * Returns explicit SwitchThemeResult: success | cancelled | failed
+   * Recalculates and restores camera projection and position specifically for the target theme.
+   * Guarantees that frustum boundaries are calibrated to target theme bounds and viewport aspect ratio,
+   * completely eliminating projection leakage or distortion from previous themes.
+   */
+  restoreCameraForTheme(
+    _targetThemeId: ThemeId,
+    newTheme: ThemeInstance<any>,
+    savedCam?: SavedCameraState
+  ): void {
+    const parent = this.renderer.domElement.parentElement;
+    const w = parent ? parent.clientWidth : this.renderer.domElement.width;
+    const h = parent ? parent.clientHeight : this.renderer.domElement.height;
+    const aspect = w > 0 && h > 0 ? w / h : 1.0;
+
+    let frustumH = savedCam?.baseFrustumHeight;
+    if (typeof frustumH !== 'number' || !Number.isFinite(frustumH) || frustumH <= 5 || frustumH > 100) {
+      if (newTheme.cameraPreset?.baseFrustumHeight) {
+        frustumH = newTheme.cameraPreset.baseFrustumHeight;
+      } else {
+        frustumH = calculateBaseFrustumHeight(this.camera, this.renderer, newTheme.group);
+      }
+    }
+
+    setCameraProjection(this.camera, frustumH, aspect);
+
+    if (savedCam) {
+      this.camera.position.set(...savedCam.position);
+      this.controls.target.set(...savedCam.target);
+      this.camera.zoom = savedCam.zoom;
+    } else if (newTheme.cameraPreset) {
+      this.camera.position.copy(newTheme.cameraPreset.position);
+      this.controls.target.copy(newTheme.cameraPreset.target);
+      this.camera.zoom = 1.0;
+    }
+
+    if (newTheme.cameraPreset) {
+      this.controls.minPolarAngle = newTheme.cameraPreset.minPolarAngle ?? Math.PI * 0.16;
+      this.controls.maxPolarAngle = newTheme.cameraPreset.maxPolarAngle ?? Math.PI * 0.44;
+    }
+
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+  }
+
+  /**
+   * Switch active diorama theme with strict cancellation, robust error boundaries, and camera calibration.
    */
   async switchTheme(
     targetThemeId: ThemeId,
@@ -191,103 +259,14 @@ export class SceneManager {
   ): Promise<SwitchThemeResult> {
     if (this.disposed) return { status: 'cancelled' };
 
-    const switchToken = ++this.currentSwitchToken;
-    this.requestedThemeId = targetThemeId;
-    this.pendingStates.set(targetThemeId, { ...targetState });
-    this.onThemeLoadingChange?.(true, null);
-
-    // Save current camera for outgoing active theme
-    if (this.activeTheme && this.activeThemeId) {
-      this.themeCameraStates.set(this.activeThemeId, this.getCameraState());
+    // Save camera for current active theme before switching
+    const activeTheme = this.coordinator.getActiveTheme();
+    const activeThemeId = this.coordinator.getActiveThemeId();
+    if (activeTheme && activeThemeId) {
+      this.themeCameraStates.set(activeThemeId, this.getCameraState());
     }
 
-    let newTheme: ThemeInstance<any> | null = null;
-    try {
-      // 1. Load target theme factory dynamically (old theme keeps rendering!)
-      const loader = THEME_LOADERS[targetThemeId];
-      if (!loader) {
-        throw new Error(`Unknown theme loader for ID: ${targetThemeId}`);
-      }
-
-      newTheme = await loader(this.renderer);
-
-      // Check if cancelled
-      if (switchToken !== this.currentSwitchToken || this.disposed) {
-        newTheme.dispose();
-        return { status: 'cancelled' };
-      }
-
-      // 2. Initialize new theme asynchronously
-      await newTheme.init();
-
-      if (switchToken !== this.currentSwitchToken || this.disposed) {
-        newTheme.dispose();
-        return { status: 'cancelled' };
-      }
-
-      // 3. Prepare latest state for target theme
-      const latestState = this.pendingStates.get(targetThemeId) ?? targetState;
-
-      // Apply state before committing
-      newTheme.applyState(latestState);
-      if (newTheme.setQuality) {
-        newTheme.setQuality(this.currentQuality);
-      }
-
-      if (switchToken !== this.currentSwitchToken || this.disposed) {
-        newTheme.dispose();
-        return { status: 'cancelled' };
-      }
-
-      // 4. Atomically unmount and dispose old theme
-      if (this.activeTheme) {
-        this.scene.remove(this.activeTheme.group);
-        this.activeTheme.dispose();
-        this.activeTheme = null;
-      }
-
-      // 5. Commit new theme
-      this.activeTheme = newTheme;
-      this.activeThemeId = targetThemeId;
-      this.activeThemeState = { ...latestState };
-      this.scene.add(newTheme.group);
-
-      // 6. Restore or calibrate camera
-      const savedCam = initialCamera || this.themeCameraStates.get(targetThemeId) || latestState.cameraState;
-      if (savedCam) {
-        this.setCameraState(savedCam);
-      } else if (newTheme.cameraPreset) {
-        this.camera.position.copy(newTheme.cameraPreset.position);
-        this.controls.target.copy(newTheme.cameraPreset.target);
-        this.camera.zoom = 1.0;
-        this.controls.update();
-        this.fitCamera();
-      }
-
-      // 7. Adjust quality settings on renderer
-      this.applyQuality(this.currentQuality);
-
-      this.requestedThemeId = null;
-      this.pendingStates.delete(targetThemeId);
-      this.onThemeLoadingChange?.(false, null);
-      return { status: 'success' };
-    } catch (err: any) {
-      console.error('Failed to switch theme:', err);
-      if (newTheme) {
-        try {
-          newTheme.dispose();
-        } catch (disposeErr) {
-          console.warn('Error disposing aborted theme:', disposeErr);
-        }
-      }
-      this.requestedThemeId = null;
-      const errorObj = err instanceof Error ? err : new Error(String(err));
-      if (switchToken === this.currentSwitchToken) {
-        this.onThemeLoadingChange?.(false, errorObj);
-        return { status: 'failed', error: errorObj };
-      }
-      return { status: 'cancelled' };
-    }
+    return this.coordinator.switchTheme(targetThemeId, targetState, initialCamera);
   }
 
   /**
@@ -295,34 +274,13 @@ export class SceneManager {
    * State is verified to match activeThemeId, preventing foreign theme state leakage.
    */
   updateState(stateOrPatch: Partial<ThemeState<any>>): void {
-    const targetThemeId = (stateOrPatch as any).themeId as ThemeId | undefined;
-
-    // Prevent foreign theme state from ever entering active theme
-    if (targetThemeId && targetThemeId !== this.activeThemeId) {
-      if (targetThemeId === this.requestedThemeId) {
-        const currentPending = this.pendingStates.get(targetThemeId);
-        this.pendingStates.set(targetThemeId, { ...(currentPending ?? {}), ...stateOrPatch } as any);
-      }
-      return;
-    }
-
-    if (!this.activeTheme || !this.activeThemeState) return;
-
-    const prevState = { ...this.activeThemeState };
-    Object.assign(this.activeThemeState, stateOrPatch);
-
-    if (stateOrPatch.quality && stateOrPatch.quality !== prevState.quality) {
-      this.applyQuality(stateOrPatch.quality);
-      this.activeTheme.setQuality?.(stateOrPatch.quality);
-    }
-
-    this.activeTheme.applyState(this.activeThemeState);
+    this.coordinator.updateState(stateOrPatch);
   }
 
   setQuality(quality: Quality): void {
     this.currentQuality = quality;
+    this.coordinator.setQuality(quality);
     this.applyQuality(quality);
-    this.activeTheme?.setQuality?.(quality);
   }
 
   private applyQuality(quality: Quality): void {
@@ -391,6 +349,8 @@ export class SceneManager {
 
   private onContextRestored = (): void => {
     this.isContextLost = false;
+    const active = this.coordinator.getActiveTheme();
+    (active as any)?.onContextRestored?.();
     this.updateLoopState();
     console.info('WebGL context restored.');
   };
@@ -422,10 +382,10 @@ export class SceneManager {
       this.fpsAccum = 0;
       this.onFpsUpdate?.(this.currentFps);
 
-      // Auto quality step-down if FPS < 30 for 3 continuous seconds
+      // Dynamic quality adaptation: downgrade if FPS < 30 for 3 consecutive intervals
       if (this.currentFps < 30) {
         this.lowFpsSeconds += 0.5;
-        if (this.lowFpsSeconds >= 3.0 && !this.qualityDowngraded) {
+        if (this.lowFpsSeconds >= 1.5 && !this.qualityDowngraded) {
           if (this.currentQuality === 'high') {
             this.setQuality('medium');
             this.onQualityChange?.('medium');
@@ -434,7 +394,6 @@ export class SceneManager {
             this.setQuality('low');
             this.onQualityChange?.('low');
             this.qualityDowngraded = true;
-            this.lowFpsSeconds = 0;
           }
         }
       } else {
@@ -442,16 +401,21 @@ export class SceneManager {
       }
     }
 
-    // Auto rotate
-    if (this.activeThemeState) {
-      this.controls.autoRotate = this.activeThemeState.autoRotate;
-      this.controls.autoRotateSpeed = 0.6;
+    // Auto rotate controls
+    const activeState = this.coordinator.getActiveThemeState();
+    if (activeState?.autoRotate) {
+      this.controls.autoRotate = true;
+      this.controls.autoRotateSpeed = 0.8;
+    } else {
+      this.controls.autoRotate = false;
     }
+
     this.controls.update();
 
-    // Update active theme with smooth continuous simulation time
-    if (this.activeTheme && this.activeThemeState) {
-      this.activeTheme.update(dt, this.simTime, this.activeThemeState);
+    // Update active theme with continuous simulation time
+    const activeTheme = this.coordinator.getActiveTheme();
+    if (activeTheme && activeState) {
+      activeTheme.update(dt, this.simTime, activeState);
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -466,10 +430,7 @@ export class SceneManager {
 
     const aspect = w / h;
     const currentFrustumH = (this.camera.top - this.camera.bottom) || 26.0;
-
-    this.camera.left = (-currentFrustumH * aspect) / 2;
-    this.camera.right = (currentFrustumH * aspect) / 2;
-    this.camera.updateProjectionMatrix();
+    setCameraProjection(this.camera, currentFrustumH, aspect);
     this.renderer.setSize(w, h);
   }
 
@@ -482,23 +443,27 @@ export class SceneManager {
   }
 
   resetCurrentTheme(defaultState: ThemeState<any>): void {
-    if (!this.activeTheme) return;
+    const activeTheme = this.coordinator.getActiveTheme();
+    const activeThemeId = this.coordinator.getActiveThemeId();
+    if (!activeTheme) return;
 
-    // Delete saved camera for current theme so default preset takes over
-    this.themeCameraStates.delete(this.activeThemeId);
+    // Reset saved camera strictly for active theme
+    this.themeCameraStates.delete(activeThemeId);
 
-    if (this.activeTheme.cameraPreset) {
-      this.camera.position.copy(this.activeTheme.cameraPreset.position);
-      this.controls.target.copy(this.activeTheme.cameraPreset.target);
+    if (activeTheme.cameraPreset) {
+      this.camera.position.copy(activeTheme.cameraPreset.position);
+      this.controls.target.copy(activeTheme.cameraPreset.target);
       this.camera.zoom = 1.0;
-      this.controls.update();
+      this.controls.minPolarAngle = activeTheme.cameraPreset.minPolarAngle ?? Math.PI * 0.16;
+      this.controls.maxPolarAngle = activeTheme.cameraPreset.maxPolarAngle ?? Math.PI * 0.44;
     }
 
-    this.updateState(defaultState);
     this.fitCamera();
+    this.updateState(defaultState);
 
-    // Notify camera change listener
-    this.onCameraChange?.(this.activeThemeId, this.getCameraState());
+    const camState = this.getCameraState();
+    this.themeCameraStates.set(activeThemeId, camState);
+    this.onCameraChange?.(activeThemeId, camState);
   }
 
   // --- Interaction & Ripple Dispatch ---
@@ -508,7 +473,8 @@ export class SceneManager {
       const dy = e.clientY - this.pointerDownPos.y;
       if (dx * dx + dy * dy > 16) this.isDragging = true;
     }
-    if (this.isDragging || this.isPointerOnUI || !this.activeTheme) return;
+    const activeTheme = this.coordinator.getActiveTheme();
+    if (this.isDragging || this.isPointerOnUI || !activeTheme) return;
 
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -524,7 +490,8 @@ export class SceneManager {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
-    if (!this.isDragging && !this.isPointerOnUI && this.activeTheme) {
+    const activeTheme = this.coordinator.getActiveTheme();
+    if (!this.isDragging && !this.isPointerOnUI && activeTheme) {
       const rect = this.renderer.domElement.getBoundingClientRect();
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -535,17 +502,18 @@ export class SceneManager {
   };
 
   private raycastAndRipple(baseStrength: number, isSplash: boolean): void {
-    if (!this.activeTheme || !this.activeThemeState || this.isDragging) return;
+    const activeTheme = this.coordinator.getActiveTheme();
+    const activeState = this.coordinator.getActiveThemeState();
+    if (!activeTheme || !activeState || this.isDragging) return;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const hits = this.raycaster.intersectObjects(this.activeTheme.group.children, true);
+    const hits = this.raycaster.intersectObjects(activeTheme.group.children, true);
     if (hits.length === 0) return;
 
-    const waterLevel = this.activeTheme.getWaterLevel?.() ?? 0.3;
+    const waterLevel = activeTheme.getWaterLevel?.() ?? 0.3;
 
     for (const hit of hits) {
       const meshName = (hit.object.name || '').toLowerCase();
-      // Ignore helper, sky, or rain objects
       if (meshName.includes('helper') || meshName.includes('rain') || meshName.includes('sky')) {
         continue;
       }
@@ -553,16 +521,15 @@ export class SceneManager {
       const pt = hit.point;
       const isWaterSurfaceOrBelow = pt.y <= waterLevel + 0.08;
 
-      if (isWaterSurfaceOrBelow && this.activeTheme.isInWater(pt.x, pt.z)) {
-        this.activeTheme.addRipple(pt.x, pt.z, baseStrength * this.activeThemeState.rippleStrength);
+      if (isWaterSurfaceOrBelow && activeTheme.isInWater(pt.x, pt.z)) {
+        activeTheme.addRipple(pt.x, pt.z, baseStrength * activeState.rippleStrength);
         if (isSplash) {
-          this.activeTheme.reactToSplash(pt.x, pt.z);
+          activeTheme.reactToSplash(pt.x, pt.z);
         }
         break;
       }
 
-      // If the top-most solid object is an obstacle above water (pier, bungalow, boat, rock, plateau),
-      // it occludes the water beneath it -> do not trigger water ripple underneath
+      // Occluding obstacle above water
       break;
     }
   }
@@ -573,7 +540,6 @@ export class SceneManager {
 
   dispose(): void {
     this.disposed = true;
-    this.currentSwitchToken++;
     this.isRunning = false;
     if (this.animFrameId !== 0) {
       cancelAnimationFrame(this.animFrameId);
@@ -592,12 +558,7 @@ export class SceneManager {
     this.resizeObserver?.disconnect();
     this.intersectionObserver?.disconnect();
 
-    if (this.activeTheme) {
-      this.scene.remove(this.activeTheme.group);
-      this.activeTheme.dispose();
-      this.activeTheme = null;
-    }
-
+    this.coordinator.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     canvas.remove();

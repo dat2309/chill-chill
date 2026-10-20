@@ -4,8 +4,11 @@ import { THEME_LIST, THEME_METADATA_MAP } from '../three/themes/registry';
 
 interface UIProps {
   activeThemeId: ThemeId;
+  requestedThemeId?: ThemeId | null;
   state: ThemeState<any>;
+  quality: Quality;
   onChange: (patch: Partial<ThemeState<any>>) => void;
+  onQualityChange: (quality: Quality) => void;
   onReset: () => void;
   onSelectTheme: (themeId: ThemeId) => void;
   fps: number;
@@ -13,6 +16,7 @@ interface UIProps {
   themeLoading: boolean;
   themeError: string | null;
   onRetryTheme: () => void;
+  onCancelThemeError?: () => void;
   webglError: string | null;
 }
 
@@ -155,8 +159,11 @@ const FpsBadge = React.memo(({ fps }: { fps: number }) => {
 
 export default function UI({
   activeThemeId,
+  requestedThemeId,
   state,
+  quality,
   onChange,
+  onQualityChange,
   onReset,
   onSelectTheme,
   fps,
@@ -164,6 +171,7 @@ export default function UI({
   themeLoading,
   themeError,
   onRetryTheme,
+  onCancelThemeError,
   webglError,
 }: UIProps) {
   const [showThemeModal, setShowThemeModal] = useState(false);
@@ -245,7 +253,9 @@ export default function UI({
         <div className={`loading-screen ${!loading && !themeLoading ? 'fade-out' : ''}`} aria-busy={loading || themeLoading} aria-live="polite">
           <div className="loading-spinner" />
           <div className="loading-text">
-            {themeLoading ? `Đang chuyển sang ${activeMetadata.name}…` : 'Building the diorama from math…'}
+            {themeLoading
+              ? `Đang chuyển sang ${requestedThemeId ? THEME_METADATA_MAP[requestedThemeId]?.name ?? activeMetadata.name : activeMetadata.name}…`
+              : 'Building the diorama from math…'}
           </div>
         </div>
       )}
@@ -255,9 +265,16 @@ export default function UI({
         <div className="webgl-error" role="alert" style={{ zIndex: 180 }}>
           <h2>Không thể tải chủ đề</h2>
           <p>{themeError}</p>
-          <button className="ctrl-btn active" onClick={onRetryTheme} style={{ marginTop: 12 }}>
-            Thử lại
-          </button>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, justifyContent: 'center' }}>
+            <button className="ctrl-btn active" onClick={onRetryTheme}>
+              Thử lại
+            </button>
+            {onCancelThemeError && requestedThemeId && requestedThemeId !== activeThemeId && (
+              <button className="ctrl-btn" onClick={onCancelThemeError}>
+                Quay lại {activeMetadata.name}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -457,9 +474,9 @@ export default function UI({
               {(['low', 'medium', 'high'] as Quality[]).map(q => (
                 <button
                   key={q}
-                  className={`quality-btn ${state.quality === q ? 'active' : ''}`}
-                  onClick={() => onChange({ quality: q })}
-                  aria-pressed={state.quality === q}
+                  className={`quality-btn ${quality === q ? 'active' : ''}`}
+                  onClick={() => onQualityChange(q)}
+                  aria-pressed={quality === q}
                   aria-label={`Graphics quality: ${q}`}
                 >
                   {q === 'low' ? 'Thấp' : q === 'medium' ? 'Vừa' : 'Cao'}
