@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { SceneState } from './constants';
+import { SceneState, getNightFactor } from './constants';
 
 export interface LightingSystem {
   group: THREE.Group;
   sunDirection: THREE.Vector3; // current sun direction for water shader
   sunColor: THREE.Color; // current sun color
+  setupEmissiveMeshes(scene: THREE.Scene): void;
   update(state: SceneState): void;
   dispose(): void;
 }
@@ -307,10 +308,52 @@ export function createLighting(scene: THREE.Scene): LightingSystem {
 
   let cachedQuality: string | null = null;
 
+  interface EmissiveEntry {
+    mesh: THREE.Mesh;
+    material: THREE.MeshStandardMaterial;
+    baseEmissive: THREE.Color;
+    baseIntensity: number;
+  }
+  const emissiveEntries: EmissiveEntry[] = [];
+  const warmLanternColor = new THREE.Color(0xff9933);
+
+  function setupEmissiveMeshes(targetScene: THREE.Scene): void {
+    emissiveEntries.length = 0;
+    targetScene.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        const name = (mesh.name || '').toLowerCase();
+        const parentName = (mesh.parent?.name || '').toLowerCase();
+
+        const isLanternOrTent =
+          name.includes('tent') || name.includes('cabin') ||
+          name.includes('lantern') || name.includes('window') || name.includes('lamp') ||
+          parentName.includes('tent') || parentName.includes('cabin') ||
+          Boolean(mesh.userData.nightEmissive);
+
+        if (isLanternOrTent && mesh.material) {
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const mat of mats) {
+            if ('emissive' in mat && (mat as any).emissive instanceof THREE.Color) {
+              const stdMat = mat as THREE.MeshStandardMaterial;
+              emissiveEntries.push({
+                mesh,
+                material: stdMat,
+                baseEmissive: stdMat.emissive.clone(),
+                baseIntensity: stdMat.emissiveIntensity ?? 1.0,
+              });
+            }
+          }
+        }
+      }
+    });
+  }
+
   return {
     group,
     sunDirection,
     sunColor,
+    setupEmissiveMeshes,
 
     update(state: SceneState): void {
       const timeOfDay = ((state.timeOfDay % 24) + 24) % 24;
@@ -356,14 +399,16 @@ export function createLighting(scene: THREE.Scene): LightingSystem {
       ambientLight.color.copy(lighting.ambientColor);
       ambientLight.intensity = lighting.ambientIntensity;
 
-      // At night (after 20:00 or before 5:00), softly tint background; during day, keep null (transparent paper canvas)
-      if (timeOfDay > 20.0 || timeOfDay < 5.0) {
-        if (!scene.background) scene.background = new THREE.Color();
-        if (scene.background instanceof THREE.Color) {
-          scene.background.copy(lighting.bgColor);
+      // Background handling: DO NOT overwrite background if debugTerrain is active (magenta)
+      if (!state.debugTerrain) {
+        if (timeOfDay > 20.0 || timeOfDay < 5.0) {
+          if (!scene.background) scene.background = new THREE.Color();
+          if (scene.background instanceof THREE.Color) {
+            scene.background.copy(lighting.bgColor);
+          }
+        } else {
+          scene.background = null;
         }
-      } else {
-        scene.background = null;
       }
 
       // Update exported values for water shader
@@ -405,46 +450,17 @@ export function createLighting(scene: THREE.Scene): LightingSystem {
         }
       }
 
-      // Handle emissive objects: when timeOfDay > 18 or < 6, increase emissive on tent/cabin meshes
-      const nightFactor = (timeOfDay > 18.0 || timeOfDay < 6.0)
-        ? Math.min(1.0, Math.abs(timeOfDay > 12.0 ? timeOfDay - 18.0 : 6.0 - timeOfDay) / 2.0)
-        : 0.0;
-
-      scene.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh) {
-          const mesh = obj as THREE.Mesh;
-          const name = (mesh.name || '').toLowerCase();
-          const parentName = (mesh.parent?.name || '').toLowerCase();
-
-          const isLanternOrTent =
-            name.includes('tent') || name.includes('cabin') ||
-            name.includes('lantern') || name.includes('window') || name.includes('lamp') ||
-            parentName.includes('tent') || parentName.includes('cabin') ||
-            Boolean(mesh.userData.nightEmissive);
-
-          if (isLanternOrTent && mesh.material) {
-            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-            for (const mat of mats) {
-              if ('emissive' in mat && (mat as any).emissive instanceof THREE.Color) {
-                const stdMat = mat as THREE.MeshStandardMaterial;
-                if (!stdMat.userData._baseEmissive) {
-                  stdMat.userData._baseEmissive = stdMat.emissive.clone();
-                  stdMat.userData._baseEmissiveIntensity = stdMat.emissiveIntensity ?? 1.0;
-                }
-                const warmLanternColor = new THREE.Color(0xff9933);
-                stdMat.emissive.copy(stdMat.userData._baseEmissive).lerp(warmLanternColor, nightFactor * 0.85);
-                if ('emissiveIntensity' in stdMat) {
-                  stdMat.emissiveIntensity = THREE.MathUtils.lerp(
-                    stdMat.userData._baseEmissiveIntensity,
-                    1.2,
-                    nightFactor
-                  );
-                }
-              }
-            }
-          }
-        }
-      });
+      // Handle emissive objects using cached entries and unified getNightFactor (NO traverse!)
+      const nightFactor = getNightFactor(timeOfDay);
+      for (let i = 0; i < emissiveEntries.length; i++) {
+        const entry = emissiveEntries[i];
+        entry.material.emissive.copy(entry.baseEmissive).lerp(warmLanternColor, nightFactor * 0.85);
+        entry.material.emissiveIntensity = THREE.MathUtils.lerp(
+          entry.baseIntensity,
+          1.2,
+          nightFactor
+        );
+      }
     },
 
     dispose(): void {
