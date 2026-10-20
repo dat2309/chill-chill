@@ -25,6 +25,7 @@ export interface SavedCameraState {
   position: [number, number, number];
   target: [number, number, number];
   zoom: number;
+  baseFrustumHeight?: number;
 }
 export type CameraState = SavedCameraState;
 

@@ -8,32 +8,47 @@ export interface CameraFitOptions {
 }
 
 /**
- * Fits orthographic camera precisely to content bounding box.
- * Automatically excludes contact shadows, helpers, and weather particles.
+ * Sets orthographic camera projection bounds symmetrically based on frustum height and aspect ratio.
  */
-export function fitOrthographicCameraToBounds(
+export function setCameraProjection(
+  camera: THREE.OrthographicCamera,
+  frustumH: number,
+  aspect: number
+): void {
+  camera.left = (-frustumH * aspect) / 2;
+  camera.right = (frustumH * aspect) / 2;
+  camera.top = frustumH / 2;
+  camera.bottom = -frustumH / 2;
+  camera.updateProjectionMatrix();
+}
+
+/**
+ * Calculates the required base frustum height for an orthographic camera to comfortably fit the bounds of an Object3D/Scene.
+ * Ensures world matrices are updated prior to calculating bounds.
+ */
+export function calculateBaseFrustumHeight(
   camera: THREE.OrthographicCamera,
   renderer: THREE.WebGLRenderer,
-  scene: THREE.Scene,
+  sceneOrGroup: THREE.Object3D,
   options: CameraFitOptions = {}
-): void {
+): number {
   const parent = renderer.domElement.parentElement;
-  if (!parent) return;
-
-  const w = parent.clientWidth;
-  const h = parent.clientHeight;
-  if (w <= 0 || h <= 0) return;
-  const aspect = w / h;
+  const w = parent ? parent.clientWidth : renderer.domElement.width;
+  const h = parent ? parent.clientHeight : renderer.domElement.height;
+  const aspect = w > 0 && h > 0 ? w / h : 1.0;
 
   const paddingX = options.paddingX ?? 1.16;
   const paddingY = options.paddingY ?? 1.28;
   const minFrustumHeight = options.minFrustumHeight ?? 23.5;
-  const excludeKeywords = options.excludeKeywords ?? ['shadow', 'helper', 'rain', 'particle'];
+  const excludeKeywords = options.excludeKeywords ?? ['shadow', 'helper', 'rain', 'particle', 'sky'];
+
+  // Update world matrices before calculating bounding box
+  sceneOrGroup.updateMatrixWorld(true);
 
   const box = new THREE.Box3();
   let meshCount = 0;
 
-  scene.traverse((obj) => {
+  sceneOrGroup.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh || (obj as THREE.Points).isPoints) {
       const mesh = obj as THREE.Mesh;
       const name = (mesh.name || '').toLowerCase();
@@ -98,13 +113,28 @@ export function fitOrthographicCameraToBounds(
 
   const reqHeightFromY = viewHeight * paddingY;
   const reqHeightFromX = (viewWidth * paddingX) / aspect;
-  const frustumH = Math.max(reqHeightFromY, reqHeightFromX, minFrustumHeight);
+  return Math.max(reqHeightFromY, reqHeightFromX, minFrustumHeight);
+}
 
-  camera.left = (-frustumH * aspect) / 2;
-  camera.right = (frustumH * aspect) / 2;
-  camera.top = frustumH / 2;
-  camera.bottom = -frustumH / 2;
-  camera.updateProjectionMatrix();
+/**
+ * Fits orthographic camera precisely to content bounding box.
+ * Automatically excludes contact shadows, helpers, and weather particles.
+ */
+export function fitOrthographicCameraToBounds(
+  camera: THREE.OrthographicCamera,
+  renderer: THREE.WebGLRenderer,
+  scene: THREE.Scene,
+  options: CameraFitOptions = {}
+): void {
+  const parent = renderer.domElement.parentElement;
+  if (!parent) return;
 
+  const w = parent.clientWidth;
+  const h = parent.clientHeight;
+  if (w <= 0 || h <= 0) return;
+  const aspect = w / h;
+
+  const frustumH = calculateBaseFrustumHeight(camera, renderer, scene, options);
+  setCameraProjection(camera, frustumH, aspect);
   renderer.setSize(w, h);
 }

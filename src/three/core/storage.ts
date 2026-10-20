@@ -56,11 +56,19 @@ export function sanitizeCameraState(raw: any): CameraState | undefined {
   if (dx * dx + dy * dy + dz * dz < 0.01) return undefined;
 
   const zoom = Math.max(0.4, Math.min(3.0, raw.zoom));
+  const baseFrustumHeight =
+    typeof raw.baseFrustumHeight === 'number' &&
+    Number.isFinite(raw.baseFrustumHeight) &&
+    raw.baseFrustumHeight >= 5 &&
+    raw.baseFrustumHeight <= 100
+      ? raw.baseFrustumHeight
+      : undefined;
 
   return {
     position: [raw.position[0], raw.position[1], raw.position[2]],
     target: [raw.target[0], raw.target[1], raw.target[2]],
     zoom,
+    ...(baseFrustumHeight !== undefined ? { baseFrustumHeight } : {}),
   };
 }
 
