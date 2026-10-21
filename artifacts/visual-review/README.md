@@ -35,21 +35,31 @@ Các sửa đổi tập trung vào chiều sâu diorama 3 lớp, hồ nước m�
 ## Kết quả kiểm tra kỹ thuật
 
 - `npm run build`: Đạt 100%, 0 lỗi TypeScript hay Rollup.
-- `npm test`: Đạt toàn bộ 182 kiểm tra:
+- `npm test`: Đạt toàn bộ kiểm tra:
   - `check-stream`: 20/20 passed.
-  - `check-phuquoc`: 46/46 passed.
+  - `check-phuquoc`: 50/50 passed (bổ sung test độ sáng đêm mưa không lệch quá ngưỡng nhỏ và đêm luôn tối hơn ngày; test độ mượt đổi màu bầu trời tối đa <= 16/255 mỗi 0.05h; test 0 tán lá dừa nào giao footprint mái bungalow).
   - `check-lifecycle`: 108/108 passed.
   - `check-geometry`: 71.424 tam giác mặt trên, 7.680 tam giác thành bên, 256 tam giác đáy; winding và seam đạt chuẩn.
 - `git diff --check`: Đạt, không có lỗi whitespace hay conflict.
 
-## Xác minh hình ảnh trực quan
+## Xác minh hình ảnh trực quan (Commit `17e601c`)
 
-Chụp bằng Chrome WebGL headless (SwiftShader) tại 1440×1100 (desktop) và 390×844 (mobile):
+Tất cả 8 ảnh visual review được chụp trực tiếp từ bản build thực tế (`npm run preview`) bằng Chrome WebGL headless (Angle/SwiftShader, cờ `--ignore-gpu-blocklist --enable-webgl --use-gl=angle`) tại 1440×1100 (desktop) và 390×844 (mobile):
 
 | Chủ đề | Mặc định (Default) | Trên xuống (Top) | Mặt bên (Side) | Mobile (390×844) |
 | --- | --- | --- | --- | --- |
 | **Chillax Garden** | [garden-default.png](garden-default.png) | [garden-top.png](garden-top.png) | [garden-side.png](garden-side.png) | [garden-mobile.png](garden-mobile.png) |
 | **Phú Quốc Sunset Bay** | [phuquoc-default.png](phuquoc-default.png) | [phuquoc-top.png](phuquoc-top.png) | [phuquoc-side.png](phuquoc-side.png) | [phuquoc-mobile.png](phuquoc-mobile.png) |
+
+Chi tiết kiểm chứng trực quan trên từng ảnh:
+- **garden-default.png**: Hồ nước mở rộng ở tiền cảnh với đáy sỏi procedurally đa sắc nhìn rõ qua nước; thềm glamping bên trái tách biệt với cụm 3 dome, cabin A-frame, đống lửa và bàn picnic; dãy núi thông hậu cảnh phân tầng tự nhiên.
+- **garden-top.png**: Bố cục diorama rõ ràng, đường bao hồ nước tự nhiên, hai tuyến cầu thang đá nối từ thềm glamping xuống bờ hồ không bị che khuất.
+- **garden-side.png**: Thấy rõ mặt cắt địa chất với các lớp đất đá và đáy phẳng bo góc (bevel), không có khe hở hay tam giác vỡ.
+- **garden-mobile.png**: Viewport 390×844 hiển thị trọn vẹn diorama với padding tối ưu; thanh trượt giờ và bottom bar hiển thị vừa vặn, không đè lấn nhau.
+- **phuquoc-default.png**: Bầu trời gradient hoàng hôn chuyển từ tím xanh ở đỉnh sang hồng tím ở giữa và hồng cam ở chân trời; mặt nước phản chiếu sắc hoàng hôn; bungalow và cụm dừa hài hòa, không tán nào đè lên mái.
+- **phuquoc-top.png**: Xác nhận 0 tán dừa nào xâm phạm footprint mái tranh bungalow; bãi cát cong, mũi đá và thuyền thúng bố trí tự nhiên.
+- **phuquoc-side.png**: Mặt nước và thành nước khớp nối liền mạch, không răng cưa hay khe hở.
+- **phuquoc-mobile.png**: Giao diện mobile 390×844 gọn gàng, nút Full và các công cụ điều khiển mùa/giờ hoạt động hoàn hảo.
 
 Prompt review có thể sao chép:
 

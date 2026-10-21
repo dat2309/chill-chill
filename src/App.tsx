@@ -22,6 +22,23 @@ export default function App() {
       if (themeParam === 'garden' || themeParam === 'phuquoc') {
         loaded.activeThemeId = themeParam;
       }
+      const cameraParam = urlParams.get('camera');
+      if (cameraParam === 'top') {
+        const topCam: SavedCameraState = { position: [0.001, 38, 0], target: [0, 0, 0], zoom: 1 };
+        loaded.gardenState.cameraState = topCam;
+        loaded.phuquocState.cameraState = topCam;
+      } else if (cameraParam === 'side') {
+        const sideCam: SavedCameraState = { position: [35, 8, 0], target: [0, 0, 0], zoom: 1 };
+        loaded.gardenState.cameraState = sideCam;
+        loaded.phuquocState.cameraState = sideCam;
+      } else if (cameraParam === 'default') {
+        delete loaded.gardenState.cameraState;
+        delete loaded.phuquocState.cameraState;
+        if (loaded.camera) {
+          delete loaded.camera.garden;
+          delete loaded.camera.phuquoc;
+        }
+      }
     }
     return loaded;
   });
