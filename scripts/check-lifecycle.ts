@@ -49,13 +49,13 @@ const sanitizedGardenAttempt = sanitizeGardenState({
 });
 
 assert(
-  sanitizedGardenAttempt.season === DEFAULT_GARDEN_STATE.season && sanitizedGardenAttempt.season !== 'dry',
+  sanitizedGardenAttempt.season === DEFAULT_GARDEN_STATE.season && (sanitizedGardenAttempt.season as string) !== 'dry',
   'Sanitization prevents Phu Quoc season: "dry" from corrupting Garden state'
 );
 
 const sanitizedPhuQuocAttempt = sanitizePhuQuocState({
   ...DEFAULT_PHUQUOC_STATE,
-  season: 'winter',
+  season: 'winter' as any,
 });
 
 assert(

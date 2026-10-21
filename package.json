@@ -10,7 +10,7 @@
     "check-stream": "vite build --ssr scripts/check-stream.ts --outDir dist-scripts && node dist-scripts/check-stream.js",
     "check-phuquoc": "vite build --ssr scripts/check-phuquoc.ts --outDir dist-scripts && node dist-scripts/check-phuquoc.js",
     "check-lifecycle": "vite build --ssr scripts/check-lifecycle.ts --outDir dist-scripts && node dist-scripts/check-lifecycle.js",
-    "test": "npm run check-stream && npm run check-phuquoc && npm run check-lifecycle && npm run check-geometry",
+    "test": "tsc --noEmit && npm run check-stream && npm run check-phuquoc && npm run check-lifecycle && npm run check-geometry",
     "check-geometry": "vite build --ssr scripts/check-geometry.ts --outDir dist-scripts && node dist-scripts/check-geometry.js"
   },
   "dependencies": {
