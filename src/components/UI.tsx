@@ -320,7 +320,7 @@ export default function UI({
           >
             <LayersIcon />
             <span className="theme-btn-text">
-              {activeThemeId === 'garden' ? 'Chillax Garden' : 'Phú Quốc Beach'}
+              {activeThemeId === 'garden' ? 'Chillax Garden' : 'Sunset Beach'}
             </span>
           </button>
           <button
@@ -351,7 +351,7 @@ export default function UI({
             </>
           ) : (
             <>
-              <span className="badge">Phú Quốc Beach</span>
+              <span className="badge">Sunset Beach</span>
               <span className="badge">Bãi Hoàng Hôn</span>
               <span className="badge">Mái Lá & Cầu Tàu</span>
             </>

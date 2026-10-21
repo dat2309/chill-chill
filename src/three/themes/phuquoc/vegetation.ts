@@ -126,7 +126,7 @@ export function createPhuQuocVegetation(
     return false;
   }
 
-  // --- 1. Coconut Palms (Cây Dừa Phú Quốc) ---
+  // --- 1. Coconut Palms (Cây Dừa) ---
   // Strategically placed along beach foreshore and rocky headlands, leaning towards water and completely clear of bungalow roofs
   const palmCandidates = [
     // West cove sandy foreshore (leaning west/northwest towards water)

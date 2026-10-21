@@ -40,7 +40,7 @@ export function createPhuQuocArchitecture(
   });
   materialsToDispose.push(lanternMat);
 
-  // --- 1. Thatched Stilt Bungalows (Mái Lá Phú Quốc) ---
+  // --- 1. Thatched Stilt Bungalows (Mái Lá) ---
   const thatchMeshes: THREE.Mesh[] = [];
 
   BUNGALOW_SPOTS.forEach((spot, idx) => {
@@ -145,7 +145,7 @@ export function createPhuQuocArchitecture(
     archGroup.add(bGroup);
   });
 
-  // --- 2. Wooden Jetty / Pier (Cầu Tàu Gỗ Phú Quốc) ---
+  // --- 2. Wooden Jetty / Pier (Cầu Tàu Gỗ) ---
   const pierGroup = new THREE.Group();
   pierGroup.name = 'Pier';
 
