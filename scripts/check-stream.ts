@@ -171,7 +171,7 @@ import {
 } from '../src/three/themes/garden/footprint.js';
 
 assert(
-  GARDEN_BOUNDARY_POINTS.length === GARDEN_BOUNDARY_SAMPLES && GARDEN_BOUNDARY_SAMPLES === 128,
+  GARDEN_BOUNDARY_POINTS.length === GARDEN_BOUNDARY_SAMPLES && GARDEN_BOUNDARY_SAMPLES === 256,
   `Garden boundary polygon has exactly ${GARDEN_BOUNDARY_SAMPLES} samples`
 );
 
@@ -206,7 +206,6 @@ const gardenProps = [
   { x: -2.4, z: 2.2,  name: 'Stairs Mid Section' },
   { x: 2.2,  z: 5.0,  name: 'SUP Board Beach Landing' },
 ];
-
 let allPropsInside = true;
 let propFailName = '';
 for (const prop of gardenProps) {
@@ -217,6 +216,89 @@ for (const prop of gardenProps) {
   }
 }
 assert(allPropsInside, 'All glamping domes, cabin, campfire, stairs, and props reside safely within natural footprint', propFailName);
+
+// 6. Geometry Winding & Face Normal Cross Product Verification
+import * as THREE from 'three';
+import { createTerrain } from '../src/three/themes/garden/terrain.js';
+
+const mockScene = new THREE.Scene();
+const gardenTerrainSystem = createTerrain(mockScene);
+const dioramaMesh = gardenTerrainSystem.group.getObjectByName('DioramaTerrainMesh') as THREE.Mesh;
+assert(!!dioramaMesh, 'DioramaTerrainMesh exists in terrain system');
+
+const geom = dioramaMesh.geometry as THREE.BufferGeometry;
+const posAttr = geom.attributes.position;
+const indexAttr = geom.index;
+assert(!!posAttr && !!indexAttr, 'Terrain mesh contains valid position and index buffer attributes');
+
+let topWindingCorrect = true;
+let topTrianglesCount = 0;
+let bottomWindingCorrect = true;
+let bottomTrianglesCount = 0;
+let sideWindingCorrect = true;
+let sideTrianglesCount = 0;
+
+const v0 = new THREE.Vector3();
+const v1 = new THREE.Vector3();
+const v2 = new THREE.Vector3();
+const e1 = new THREE.Vector3();
+const e2 = new THREE.Vector3();
+const faceNormal = new THREE.Vector3();
+
+if (indexAttr) {
+  const numTris = indexAttr.count / 3;
+  for (let i = 0; i < numTris; i++) {
+    const i0 = indexAttr.getX(i * 3);
+    const i1 = indexAttr.getX(i * 3 + 1);
+    const i2 = indexAttr.getX(i * 3 + 2);
+
+    v0.fromBufferAttribute(posAttr, i0);
+    v1.fromBufferAttribute(posAttr, i1);
+    v2.fromBufferAttribute(posAttr, i2);
+
+    e1.subVectors(v1, v0);
+    e2.subVectors(v2, v0);
+    faceNormal.crossVectors(e1, e2).normalize();
+    // Triangles on the top surface (vertices strictly within top surface fan and rings)
+    const isTopTriangle = i0 < 35841 && i1 < 35841 && i2 < 35841;
+
+    // Bottom face triangles (at baseBottomY = -0.70)
+    if (Math.abs(v0.y - (-0.70)) < 0.001 && Math.abs(v1.y - (-0.70)) < 0.001 && Math.abs(v2.y - (-0.70)) < 0.001) {
+      bottomTrianglesCount++;
+      if (faceNormal.y > -0.95) {
+        bottomWindingCorrect = false;
+      }
+    }
+    // Top surface triangles
+    else if (isTopTriangle) {
+      topTrianglesCount++;
+      if (faceNormal.y <= 0.0) {
+        topWindingCorrect = false;
+      }
+    }
+    // Side wall / bevel triangles
+    else {
+      sideTrianglesCount++;
+      const midX = (v0.x + v1.x + v2.x) / 3;
+      const midZ = (v0.z + v1.z + v2.z) / 3;
+      const outDirX = midX - GARDEN_FOOTPRINT_BOUNDS.minX * 0.5 - GARDEN_FOOTPRINT_BOUNDS.maxX * 0.5;
+      const outDirZ = midZ - GARDEN_FOOTPRINT_BOUNDS.minZ * 0.5 - GARDEN_FOOTPRINT_BOUNDS.maxZ * 0.5;
+      const dotOut = faceNormal.x * outDirX + faceNormal.z * outDirZ;
+      if (dotOut < -0.1) {
+        sideWindingCorrect = false;
+      }
+    }
+  }
+}
+
+assert(topTrianglesCount > 5000 && topWindingCorrect, `Top surface has verified +Y normal winding across all ${topTrianglesCount} triangles`);
+assert(bottomTrianglesCount === 256 && bottomWindingCorrect, `Bottom face has verified strictly -Y normal winding across all ${bottomTrianglesCount} triangles`);
+assert(sideTrianglesCount > 1000 && sideWindingCorrect, `Side walls have verified outward-facing normal winding across all ${sideTrianglesCount} triangles`);
+
+// Verify no DoubleSide masking on terrain material
+const mat = dioramaMesh.material as THREE.MeshStandardMaterial;
+assert(mat.side === THREE.FrontSide, 'Terrain material uses FrontSide rendering (no DoubleSide used to mask winding errors)');
+
 
 // Summary
 const totalPassed = results.filter(r => r.passed).length;

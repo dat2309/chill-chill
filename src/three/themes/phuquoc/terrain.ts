@@ -34,8 +34,8 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
   terrainGroup.name = 'PhuQuocTerrain';
   parentGroup.add(terrainGroup);
 
-  const wallCutoffY = -0.65;
-  const baseBottomY = -0.80;
+  const wallCutoffY = -1.25;
+  const baseBottomY = -1.40;
   const bevelRadius = 0.18;
 
   function sampleHeight(x: number, z: number): number {
@@ -58,7 +58,7 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
   }
 
   // --- Geometry Construction ---
-  const numRings = 48;
+  const numRings = 140;
   const numSegments = PHUQUOC_BOUNDARY_SAMPLES;
   const topVertCount = 1 + numRings * numSegments;
 
@@ -168,11 +168,11 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
     }
   }
 
-  // Triangles for Top Surface
+  // Triangles for Top Surface (strictly +Y normal winding)
   // Center to ring 1: triangle fan
   for (let it = 0; it < numSegments; it++) {
     const nextIt = (it + 1) % numSegments;
-    indices.push(0, 1 + it, 1 + nextIt);
+    indices.push(0, 1 + nextIt, 1 + it);
   }
 
   // Ring k to Ring k + 1: quads
@@ -187,8 +187,8 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
       const i01 = ringNext + it;
       const i11 = ringNext + nextIt;
 
-      indices.push(i00, i01, i11);
-      indices.push(i00, i11, i10);
+      indices.push(i00, i11, i01);
+      indices.push(i00, i10, i11);
     }
   }
 
@@ -258,9 +258,9 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
   for (let ib = 0; ib <= nBevelSteps; ib++) {
     const phi = (ib / nBevelSteps) * (Math.PI * 0.5);
     const y = wallCutoffY - Math.sin(phi) * (wallCutoffY - baseBottomY);
-    const outward = bevelRadius * Math.cos(phi);
-    const nY = -Math.sin(phi);
-    const nOut = Math.cos(phi);
+    const outward = bevelRadius * (1.0 - Math.cos(phi));
+    const nY = -Math.cos(phi);
+    const nOut = Math.sin(phi);
 
     for (let it = 0; it < numSegments; it++) {
       const bPt = PHUQUOC_BOUNDARY_POINTS[it];
@@ -299,7 +299,7 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
   const bottomRingIdx = bevelBaseIdx + nBevelSteps * numSegments;
   for (let it = 0; it < numSegments; it++) {
     const nextIt = (it + 1) % numSegments;
-    indices.push(bottomCenterIdx, bottomRingIdx + nextIt, bottomRingIdx + it);
+    indices.push(bottomCenterIdx, bottomRingIdx + it, bottomRingIdx + nextIt);
   }
 
   // Assemble Terrain Mesh
@@ -315,7 +315,7 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
     vertexColors: true,
     roughness: 0.88,
     metalness: 0.05,
-    flatShading: true,
+    flatShading: false,
   });
 
   const topMesh = new THREE.Mesh(topGeo, topMat);
@@ -365,8 +365,8 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
       const i01 = rowNext + it;
       const i11 = rowNext + nextIt;
 
-      shadowIdx.push(i00, i10, i11);
       shadowIdx.push(i00, i11, i01);
+      shadowIdx.push(i00, i10, i11);
     }
   }
 

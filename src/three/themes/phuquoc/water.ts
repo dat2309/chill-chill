@@ -9,8 +9,9 @@ import {
   PHUQUOC_COLORS,
   TideLevel,
 } from './constants';
-import { getWaterLevel, isInWater } from './shoreline';
+import { getWaterLevel, isInWater, getShoreZ, getDistanceToShore } from './shoreline';
 import {
+  PHUQUOC_CENTER,
   PHUQUOC_BOUNDARY_POINTS,
   PHUQUOC_BOUNDARY_SAMPLES,
   isInsidePhuQuocFootprint,
@@ -126,8 +127,6 @@ export function createPhuQuocWater(
   let currentSimTime = 0;
 
   // --- Water Mesh Conforming Strictly to Natural Diorama Footprint ---
-  const segX = 100;
-  const segZ = 60;
   const minX = PHUQUOC_FOOTPRINT_BOUNDS.minX;
   const maxX = PHUQUOC_FOOTPRINT_BOUNDS.maxX;
   const minZ = -1.5;
@@ -140,96 +139,138 @@ export function createPhuQuocWater(
   const isSkirt: number[] = [];
   const indices: number[] = [];
 
-  // 1. Surface grid inside the natural footprint
-  for (let iz = 0; iz <= segZ; iz++) {
-    const tz = iz / segZ;
-    const z = minZ + tz * (maxZ - minZ);
-    for (let ix = 0; ix <= segX; ix++) {
-      const tx = ix / segX;
-      const x = minX + tx * (maxX - minX);
+  const cX = PHUQUOC_CENTER.x;
+  const cZ = PHUQUOC_CENTER.y;
+  const numSegments = PHUQUOC_BOUNDARY_SAMPLES;
 
-      positions.push(x, SEA_LEVEL_BASE, z);
-      uvs.push(tx, tz);
-      terrainHeights.push(getHeightAt(x, z));
+  // 1. Identify marine boundary segment range
+  // Boundary rays crossing the southern sweeping bay
+  let itStart = -1;
+  let itEnd = -1;
+  for (let it = 0; it < numSegments; it++) {
+    const pt = PHUQUOC_BOUNDARY_POINTS[it];
+    const shoreZ = getShoreZ(pt.x);
+    const isMarine = pt.y >= shoreZ - 0.05 || getHeightAt(pt.x, pt.y) < SEA_LEVEL_HIGH + 0.02;
+    if (isMarine) {
+      if (itStart === -1) itStart = it;
+      itEnd = it;
+    }
+  }
+
+  // Fallback safe defaults if dynamic range not found
+  if (itStart === -1 || itEnd === -1) {
+    itStart = 15;
+    itEnd = 118;
+  }
+
+  const numRays = itEnd - itStart + 1;
+  const numRings = 40;
+
+  // 1. Continuous Curvilinear Water Surface Tessellation
+  // Connects natural shoreline directly to exact boundary points bPt_k
+  for (let ik = 0; ik < numRays; ik++) {
+    const it = itStart + ik;
+    const bPt = PHUQUOC_BOUNDARY_POINTS[it];
+
+    // Find ray root at shoreline via bisection
+    // At t=0 (center), on land (dist > 0). At t=1 (boundary), in sea (dist < 0).
+    let tLow = 0.0;
+    let tHigh = 1.0;
+    for (let iter = 0; iter < 12; iter++) {
+      const tMid = (tLow + tHigh) * 0.5;
+      const mx = cX + tMid * (bPt.x - cX);
+      const mz = cZ + tMid * (bPt.y - cZ);
+      const dist = getDistanceToShore(mx, mz);
+      if (dist > 0) {
+        tLow = tMid;
+      } else {
+        tHigh = tMid;
+      }
+    }
+    const tShore = (tLow + tHigh) * 0.5;
+    // Slight overlap into intertidal sand slope so water laps onto beach without gaps
+    const t0 = Math.max(0.0, tShore - 0.04);
+    const t1 = 1.0; // EXACTLY at boundary point bPt
+
+    for (let ir = 0; ir <= numRings; ir++) {
+      const frac = ir / numRings;
+      const t = t0 + frac * (t1 - t0);
+      const x = cX + t * (bPt.x - cX);
+      const z = cZ + t * (bPt.y - cZ);
+      const y = SEA_LEVEL_BASE;
+      const h = getHeightAt(x, z);
+
+      positions.push(x, y, z);
+      const u = (x + halfW) / DIORAMA_WIDTH;
+      const v = (z - minZ) / (maxZ - minZ);
+      uvs.push(u, v);
+      terrainHeights.push(h);
       isSkirtBottom.push(0);
       isSkirt.push(0);
     }
   }
 
-  for (let iz = 0; iz < segZ; iz++) {
-    const tz0 = iz / segZ;
-    const tz1 = (iz + 1) / segZ;
-    const z0 = minZ + tz0 * (maxZ - minZ);
-    const z1 = minZ + tz1 * (maxZ - minZ);
-    const midZ = (z0 + z1) * 0.5;
+  // Quads for water surface (strictly facing +Y)
+  for (let ik = 0; ik < numRays - 1; ik++) {
+    const rayCurr = ik * (numRings + 1);
+    const rayNext = (ik + 1) * (numRings + 1);
 
-    for (let ix = 0; ix < segX; ix++) {
-      const tx0 = ix / segX;
-      const tx1 = (ix + 1) / segX;
-      const x0 = minX + tx0 * (maxX - minX);
-      const x1 = minX + tx1 * (maxX - minX);
-      const midX = (x0 + x1) * 0.5;
+    for (let ir = 0; ir < numRings; ir++) {
+      const i00 = rayCurr + ir;
+      const i10 = rayNext + ir;
+      const i01 = rayCurr + ir + 1;
+      const i11 = rayNext + ir + 1;
 
-      const row1 = iz * (segX + 1) + ix;
-      const row2 = (iz + 1) * (segX + 1) + ix;
-
-      const h0 = terrainHeights[row1];
-      const h1 = terrainHeights[row1 + 1];
-      const h2 = terrainHeights[row2];
-      const h3 = terrainHeights[row2 + 1];
-      const minH = Math.min(h0, h1, h2, h3);
-
-      // Only emit quad if inside the natural footprint and reaches water
-      if (isInsidePhuQuocFootprint(midX, midZ, 0.0) && minH <= SEA_LEVEL_HIGH + 0.08) {
-        indices.push(row1, row2, row1 + 1);
-        indices.push(row1 + 1, row2, row2 + 1);
-      }
+      indices.push(i00, i11, i01);
+      indices.push(i00, i10, i11);
     }
   }
 
   // 2. Natural Boundary Marine Cross-Section Cut Skirt
-  // Along PHUQUOC_BOUNDARY_POINTS where sea meets the diorama perimeter
-  const numSegments = PHUQUOC_BOUNDARY_SAMPLES;
-  for (let it = 0; it < numSegments; it++) {
-    const nextIt = (it + 1) % numSegments;
-    const bPt0 = PHUQUOC_BOUNDARY_POINTS[it];
-    const bPt1 = PHUQUOC_BOUNDARY_POINTS[nextIt];
+  // Along the marine boundary arc where sea meets diorama perimeter
+  // Uses IDENTICAL boundary points bPt0 and bPt1 matching surface outer vertices
+  for (let ik = 0; ik < numRays - 1; ik++) {
+    const it0 = itStart + ik;
+    const it1 = it0 + 1;
+    const bPt0 = PHUQUOC_BOUNDARY_POINTS[it0];
+    const bPt1 = PHUQUOC_BOUNDARY_POINTS[it1];
 
     const bedH0 = getHeightAt(bPt0.x, bPt0.y);
     const bedH1 = getHeightAt(bPt1.x, bPt1.y);
 
-    if (bedH0 < SEA_LEVEL_HIGH + 0.02 || bedH1 < SEA_LEVEL_HIGH + 0.02) {
-      const baseIdx = positions.length / 3;
+    const baseIdx = positions.length / 3;
 
-      // Top vertices (water level, moves with tide)
-      positions.push(bPt0.x, SEA_LEVEL_BASE, bPt0.y);
-      uvs.push(it / numSegments, 1.0);
-      terrainHeights.push(bedH0);
-      isSkirtBottom.push(0);
-      isSkirt.push(1);
+    // Top vertices (water level, identical to surface outer boundary vertices)
+    positions.push(bPt0.x, SEA_LEVEL_BASE, bPt0.y);
+    uvs.push((bPt0.x + halfW) / DIORAMA_WIDTH, 1.0);
+    terrainHeights.push(bedH0);
+    isSkirtBottom.push(0);
+    isSkirt.push(1);
 
-      positions.push(bPt1.x, SEA_LEVEL_BASE, bPt1.y);
-      uvs.push((it + 1) / numSegments, 1.0);
-      terrainHeights.push(bedH1);
-      isSkirtBottom.push(0);
-      isSkirt.push(1);
+    positions.push(bPt1.x, SEA_LEVEL_BASE, bPt1.y);
+    uvs.push((bPt1.x + halfW) / DIORAMA_WIDTH, 1.0);
+    terrainHeights.push(bedH1);
+    isSkirtBottom.push(0);
+    isSkirt.push(1);
 
-      // Bottom vertices (seabed height, fixed in world space)
-      positions.push(bPt0.x, bedH0, bPt0.y);
-      uvs.push(it / numSegments, 0.0);
-      terrainHeights.push(bedH0);
-      isSkirtBottom.push(1);
-      isSkirt.push(1);
+    // Bottom vertices (seabed height, clamped strictly below water surface)
+    const skirtBot0 = Math.min(SEA_LEVEL_BASE - 0.002, bedH0);
+    const skirtBot1 = Math.min(SEA_LEVEL_BASE - 0.002, bedH1);
+    positions.push(bPt0.x, skirtBot0, bPt0.y);
+    uvs.push((bPt0.x + halfW) / DIORAMA_WIDTH, 0.0);
+    terrainHeights.push(bedH0);
+    isSkirtBottom.push(1);
+    isSkirt.push(1);
 
-      positions.push(bPt1.x, bedH1, bPt1.y);
-      uvs.push((it + 1) / numSegments, 0.0);
-      terrainHeights.push(bedH1);
-      isSkirtBottom.push(1);
-      isSkirt.push(1);
+    positions.push(bPt1.x, skirtBot1, bPt1.y);
+    uvs.push((bPt1.x + halfW) / DIORAMA_WIDTH, 0.0);
+    terrainHeights.push(bedH1);
+    isSkirtBottom.push(1);
+    isSkirt.push(1);
 
-      indices.push(baseIdx, baseIdx + 2, baseIdx + 1);
-      indices.push(baseIdx + 1, baseIdx + 2, baseIdx + 3);
-    }
+    // Outward facing winding: (top0, top1, bot1) and (top0, bot1, bot0)
+    indices.push(baseIdx, baseIdx + 1, baseIdx + 3);
+    indices.push(baseIdx, baseIdx + 3, baseIdx + 2);
   }
 
   const waterGeo = new THREE.BufferGeometry();

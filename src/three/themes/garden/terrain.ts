@@ -26,6 +26,9 @@ import {
 } from './footprint';
 import { fbm2D, ridged2D, SimplexNoise2D, SeededRandom } from './noise';
 
+const halfW = DIORAMA_WIDTH / 2;
+const halfD = DIORAMA_DEPTH / 2;
+
 export type ZoneType = 'mountain' | 'plateau' | 'cliff' | 'bank' | 'stream' | 'hill' | 'out_of_bounds';
 
 export interface TerrainSample {
@@ -85,13 +88,6 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
  * - Lower, gently rolling right bank with small knolls and gravel patches
  */
 export function computeRawTerrainHeight(x: number, z: number): { height: number; zone: ZoneType; distToStream: number } {
-  const halfW = DIORAMA_WIDTH * 0.5;
-  const halfD = DIORAMA_DEPTH * 0.5;
-
-  if (Math.abs(x) > halfW || Math.abs(z) > halfD) {
-    return { height: 0, zone: 'out_of_bounds', distToStream: 99 };
-  }
-
   // 1. Mountain zone (concentrated at rear z < -3.5)
   const mountainRidge = ridged2D(x * 0.22 + 4.0, z * 0.22 - 3.0, 4, 2.0, 0.48);
   const mountainFbm = fbm2D(x * 0.32 + 10.0, z * 0.32 - 4.0, 3, 2.0, 0.45);
@@ -101,17 +97,17 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   const mountainH = 2.1 + mountainRidge * 1.1 + mountainFbm * 0.25 + peakLeft + peakRight;
 
   // 2. Glamping Plateau Zone: Softened, natural undulating contour (NOT a rigid rectangle)
-  // Curves organically around campsite living area
+  // Curves organically around campsite living area out to x ~ -9.6
   const frontEdgeZ = 0.85 + Math.sin((x + 4.0) * 0.70) * 0.35 + SimplexNoise2D(x * 0.6, 1.5) * 0.22;
   const rightEdgeX = -0.55 + Math.sin((z + 1.2) * 0.80) * 0.45 + SimplexNoise2D(1.5, z * 0.7) * 0.25;
-  const backEdgeZ = -3.5 + Math.cos(x * 0.4) * 0.35;
-  const leftEdgeX = -7.6 + SimplexNoise2D(z * 0.5, 3.2) * 0.25;
+  const backEdgeZ = -3.8 + Math.cos(x * 0.4) * 0.35;
+  const leftEdgeX = -9.6 + SimplexNoise2D(z * 0.4, 3.2) * 0.35;
 
   const inPlateauBox = x >= leftEdgeX && x <= rightEdgeX && z >= backEdgeZ && z <= frontEdgeZ;
   const distEdgeX = Math.min(x - leftEdgeX, rightEdgeX - x);
   const distEdgeZ = Math.min(z - backEdgeZ, frontEdgeZ - z);
   const distEdge = Math.min(distEdgeX, distEdgeZ);
-  const plateauCore = smoothstep(-0.25, 0.45, distEdge);
+  const plateauCore = smoothstep(-0.35, 0.45, distEdge);
 
   const plateauGentle = PLATEAU_HEIGHT + SimplexNoise2D(x * 0.3 + 1.0, z * 0.3 + 1.0) * 0.02;
 
@@ -133,7 +129,7 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
     const blendToMeadow = smoothstep(-4.2, -3.2, z);
     baseH = THREE.MathUtils.lerp(mountainH, plateauGentle, blendToMeadow * (inPlateauBox ? 1.0 : 0.35));
     currentZone = 'mountain';
-  } else if (inPlateauBox && plateauCore > 0.75) {
+  } else if (inPlateauBox && plateauCore > 0.70) {
     baseH = plateauGentle;
     currentZone = 'plateau';
   } else if (inPlateauBox || (x < rightEdgeX + 0.6 && z <= frontEdgeZ + 1.4)) {
@@ -197,25 +193,27 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   const group = new THREE.Group();
   group.name = 'TerrainSystemGroup';
 
-  const nx = TERRAIN_RES;
-  const nz = TERRAIN_RES;
-  const gridWidth = DIORAMA_WIDTH;
-  const gridDepth = DIORAMA_DEPTH;
-  const halfW = gridWidth * 0.5;
-  const halfD = gridDepth * 0.5;
+  const nx = 256;
+  const nz = 256;
+  const minX = GARDEN_FOOTPRINT_BOUNDS.minX - 0.6;
+  const maxX = GARDEN_FOOTPRINT_BOUNDS.maxX + 0.6;
+  const minZ = GARDEN_FOOTPRINT_BOUNDS.minZ - 0.6;
+  const maxZ = GARDEN_FOOTPRINT_BOUNDS.maxZ + 0.6;
+  const gridWidth = maxX - minX;
+  const gridDepth = maxZ - minZ;
 
   const baseBottomY = BASE_BOTTOM_Y;   // -0.70
   const wallCutoffY = WALL_CUTOFF_Y;   // -0.52
   const bevelRadius = 0.18;
 
-  // Precompute heightfield & zonefield
+  // Precompute heightfield & zonefield across full natural footprint
   const heightfield = new Float32Array((nx + 1) * (nz + 1));
   const zonefield: ZoneType[] = new Array((nx + 1) * (nz + 1));
 
   for (let iz = 0; iz <= nz; iz++) {
-    const z = -halfD + (iz / nz) * gridDepth;
+    const z = minZ + (iz / nz) * gridDepth;
     for (let ix = 0; ix <= nx; ix++) {
-      const x = -halfW + (ix / nx) * gridWidth;
+      const x = minX + (ix / nx) * gridWidth;
       const res = computeRawTerrainHeight(x, z);
       heightfield[iz * (nx + 1) + ix] = res.height;
       zonefield[iz * (nx + 1) + ix] = res.zone;
@@ -223,8 +221,8 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   }
 
   function getHeightAt(x: number, z: number): number {
-    const u = Math.min(Math.max((x + halfW) / gridWidth, 0.0), 1.0);
-    const v = Math.min(Math.max((z + halfD) / gridDepth, 0.0), 1.0);
+    const u = Math.min(Math.max((x - minX) / gridWidth, 0.0), 1.0);
+    const v = Math.min(Math.max((z - minZ) / gridDepth, 0.0), 1.0);
 
     const gx = u * nx;
     const gz = v * nz;
@@ -241,7 +239,6 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     const h01 = heightfield[row1 + ix];
     const h11 = heightfield[row1 + (ix + 1)];
 
-    // Exact triangle interpolation matching the CCW triangles (i00, i01, i11) and (i00, i11, i10)
     if (fx <= fz) {
       return h00 + (h01 - h00) * fz + (h11 - h01) * fx;
     } else {
@@ -309,8 +306,8 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   const indices: number[] = [];
 
   const tempCol = new THREE.Color();
-  const numRings = 48;
-  const numSegments = GARDEN_BOUNDARY_SAMPLES; // 128
+  const numRings = 140;
+  const numSegments = GARDEN_BOUNDARY_SAMPLES; // 256
   const numTopVerts = 1 + numRings * numSegments;
 
   const seasonPalettesData: Record<Season, Float32Array> = {
@@ -333,7 +330,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     outCol.copy(pal.ground).lerp(pal.grassTint, gNoise * 0.55);
 
     // Glamping Plateau Meadow: richer lush green
-    if (x >= -7.2 && x <= -0.6 && z >= -3.2 && z <= 0.85 && slope < 0.20) {
+    if (x >= -9.0 && x <= -0.6 && z >= -3.5 && z <= 0.85 && slope < 0.20) {
       outCol.lerp(pal.grassTint, 0.40);
     }
 
@@ -428,11 +425,11 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     }
   }
 
-  // Quads for Top Surface
+  // Quads for Top Surface (strictly +Y normal winding)
   // Center to ring 1: triangle fan
   for (let it = 0; it < numSegments; it++) {
     const nextIt = (it + 1) % numSegments;
-    indices.push(0, 1 + it, 1 + nextIt);
+    indices.push(0, 1 + nextIt, 1 + it);
   }
 
   // Ring k to Ring k + 1: quads
@@ -447,8 +444,8 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
       const i01 = ringNext + it;
       const i11 = ringNext + nextIt;
 
-      indices.push(i00, i01, i11);
-      indices.push(i00, i11, i10);
+      indices.push(i00, i11, i01);
+      indices.push(i00, i10, i11);
     }
   }
 
@@ -516,9 +513,9 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   for (let ib = 0; ib <= nBevelSteps; ib++) {
     const phi = (ib / nBevelSteps) * (Math.PI * 0.5);
     const y = wallCutoffY - Math.sin(phi) * (wallCutoffY - baseBottomY);
-    const outward = bevelRadius * Math.cos(phi);
-    const nY = -Math.sin(phi);
-    const nOut = Math.cos(phi);
+    const outward = bevelRadius * (1.0 - Math.cos(phi));
+    const nY = -Math.cos(phi);
+    const nOut = Math.sin(phi);
 
     for (let it = 0; it < numSegments; it++) {
       const bPt = GARDEN_BOUNDARY_POINTS[it];
@@ -557,7 +554,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   const bottomRingIdx = bevelBaseIdx + nBevelSteps * numSegments;
   for (let it = 0; it < numSegments; it++) {
     const nextIt = (it + 1) % numSegments;
-    indices.push(bottomCenterIdx, bottomRingIdx + nextIt, bottomRingIdx + it);
+    indices.push(bottomCenterIdx, bottomRingIdx + it, bottomRingIdx + nextIt);
   }
 
   // Assemble Terrain Mesh
@@ -591,58 +588,87 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   group.add(terrainMesh);
 
   // 5. Contact Shadow conforming directly to natural diorama perimeter
-  const shadowCanvas = document.createElement('canvas');
-  shadowCanvas.width = 128;
-  shadowCanvas.height = 128;
-  const ctx = shadowCanvas.getContext('2d')!;
-  const radGrad = ctx.createRadialGradient(64, 64, 25, 64, 64, 62);
-  radGrad.addColorStop(0.0, 'rgba(42, 34, 24, 0.40)');
-  radGrad.addColorStop(0.60, 'rgba(55, 46, 36, 0.18)');
-  radGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
-  ctx.fillStyle = radGrad;
-  ctx.fillRect(0, 0, 128, 128);
+  const shadowRings = 4;
+  const shadowPos: number[] = [];
+  const shadowAlpha: number[] = [];
+  const shadowIdx: number[] = [];
+  const shadowBaseY = baseBottomY - 0.015;
 
-  const shadowTex = new THREE.CanvasTexture(shadowCanvas);
-  const shadowPositions: number[] = [];
-  const shadowUvs: number[] = [];
-  const shadowIndices: number[] = [];
-  const shadowY = baseBottomY - 0.02;
+  shadowPos.push(cX, shadowBaseY, cZ);
+  shadowAlpha.push(0.38);
 
-  shadowPositions.push(cX, shadowY, cZ);
-  shadowUvs.push(0.5, 0.5);
+  for (let ir = 1; ir <= shadowRings; ir++) {
+    const frac = ir / shadowRings;
+    const expand = frac * 0.50;
+    const ringAlpha = 0.38 * Math.pow(1.0 - frac, 1.4);
 
-  const dilation = 1.15;
-  const boundSpanX = (GARDEN_FOOTPRINT_BOUNDS.maxX - GARDEN_FOOTPRINT_BOUNDS.minX) * dilation;
-  const boundSpanZ = (GARDEN_FOOTPRINT_BOUNDS.maxZ - GARDEN_FOOTPRINT_BOUNDS.minZ) * dilation;
+    for (let it = 0; it < numSegments; it++) {
+      const bPt = GARDEN_BOUNDARY_POINTS[it];
+      const norm2d = boundaryNormals[it];
+      const sx = bPt.x + norm2d.x * expand;
+      const sz = bPt.y + norm2d.y * expand;
 
-  for (let it = 0; it < numSegments; it++) {
-    const bPt = GARDEN_BOUNDARY_POINTS[it];
-    const sx = cX + (bPt.x - cX) * dilation;
-    const sz = cZ + (bPt.y - cZ) * dilation;
-    shadowPositions.push(sx, shadowY, sz);
-
-    const u = 0.5 + (sx - cX) / boundSpanX;
-    const v = 0.5 + (sz - cZ) / boundSpanZ;
-    shadowUvs.push(u, v);
+      shadowPos.push(sx, shadowBaseY, sz);
+      shadowAlpha.push(ringAlpha);
+    }
   }
 
   for (let it = 0; it < numSegments; it++) {
     const nextIt = (it + 1) % numSegments;
-    shadowIndices.push(0, 1 + it, 1 + nextIt);
+    shadowIdx.push(0, 1 + nextIt, 1 + it);
+  }
+
+  for (let ir = 1; ir < shadowRings; ir++) {
+    const rowCurr = 1 + (ir - 1) * numSegments;
+    const rowNext = 1 + ir * numSegments;
+
+    for (let it = 0; it < numSegments; it++) {
+      const nextIt = (it + 1) % numSegments;
+      const i00 = rowCurr + it;
+      const i10 = rowCurr + nextIt;
+      const i01 = rowNext + it;
+      const i11 = rowNext + nextIt;
+
+      shadowIdx.push(i00, i11, i01);
+      shadowIdx.push(i00, i10, i11);
+    }
   }
 
   const shadowGeom = new THREE.BufferGeometry();
-  shadowGeom.setAttribute('position', new THREE.Float32BufferAttribute(shadowPositions, 3));
-  shadowGeom.setAttribute('uv', new THREE.Float32BufferAttribute(shadowUvs, 2));
-  shadowGeom.setIndex(shadowIndices);
+  shadowGeom.setAttribute('position', new THREE.Float32BufferAttribute(shadowPos, 3));
+  const shadowColors = new Float32Array(shadowAlpha.length * 3);
+  const shadowColorAlpha = new Float32Array(shadowAlpha.length);
+  for (let i = 0; i < shadowAlpha.length; i++) {
+    shadowColors[i * 3 + 0] = 0.09;
+    shadowColors[i * 3 + 1] = 0.08;
+    shadowColors[i * 3 + 2] = 0.07;
+    shadowColorAlpha[i] = shadowAlpha[i];
+  }
+  shadowGeom.setAttribute('color', new THREE.Float32BufferAttribute(shadowColors, 3));
+  shadowGeom.setAttribute('alpha', new THREE.Float32BufferAttribute(shadowColorAlpha, 1));
+  shadowGeom.setIndex(shadowIdx);
 
-  const shadowMat = new THREE.MeshBasicMaterial({
-    map: shadowTex,
+  const shadowMat = new THREE.ShaderMaterial({
     transparent: true,
-    opacity: 0.70,
     depthWrite: false,
+    vertexShader: `
+      attribute float alpha;
+      varying float vAlpha;
+      void main() {
+        vAlpha = alpha;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying float vAlpha;
+      void main() {
+        gl_FragColor = vec4(0.09, 0.08, 0.07, vAlpha);
+      }
+    `,
   });
+
   const shadowMesh = new THREE.Mesh(shadowGeom, shadowMat);
+  shadowMesh.renderOrder = -1;
   group.add(shadowMesh);
 
   // 6. Natural Rounded River Boulders (volume, diverse sizes, clustered along margins)
@@ -791,7 +817,6 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
       debugMaterial.dispose();
       shadowGeom.dispose();
       shadowMat.dispose();
-      shadowTex.dispose();
       boulderGeom.dispose();
       boulderMat.dispose();
       pebbleGeom.dispose();

@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import {
   SHORELINE_BOUNDS,
   getShoreZ,
@@ -19,6 +20,14 @@ import {
   DEFAULT_PHUQUOC_STATE,
 } from '../src/three/themes/phuquoc/constants';
 import { calculatePhuQuocSunPosition } from '../src/three/themes/phuquoc/lighting';
+import {
+  PHUQUOC_CENTER,
+  PHUQUOC_BOUNDARY_POINTS,
+  PHUQUOC_BOUNDARY_SAMPLES,
+  isInsidePhuQuocFootprint,
+  getPhuQuocFootprintRadius,
+  PHUQUOC_FOOTPRINT_BOUNDS,
+} from '../src/three/themes/phuquoc/footprint';
 import {
   sanitizeGardenState,
   sanitizePhuQuocState,
@@ -45,9 +54,23 @@ function assert(condition: boolean, name: string, details?: string) {
   }
 }
 
-console.log('--- RUNNING PHU QUOC SUNSET BAY & MULTI-THEME VALIDATION SUITE ---');
-
 // 1. Shoreline Continuity & Bounds
+let allRaysCrossShore = true;
+const cX = PHUQUOC_CENTER.x;
+const cZ = PHUQUOC_CENTER.y;
+for (let i = 15; i <= 118; i++) {
+  const pt = PHUQUOC_BOUNDARY_POINTS[i];
+  const dStart = getDistanceToShore(cX, cZ);
+  const dEnd = getDistanceToShore(pt.x, pt.y);
+  if (dStart <= 0 || dEnd >= 0) {
+    allRaysCrossShore = false;
+    console.error(`Ray ${i} fail: dStart=${dStart}, dEnd=${dEnd}`);
+  }
+}
+assert(allRaysCrossShore, 'All marine rays start on land and end in sea across the bay (indices 15 to 118)');
+
+
+
 let shoreContinuous = true;
 let prevShoreZ = getShoreZ(-10);
 for (let x = -10; x <= 10; x += 0.2) {
@@ -59,6 +82,7 @@ for (let x = -10; x <= 10; x += 0.2) {
   prevShoreZ = sz;
 }
 assert(shoreContinuous, 'Shoreline crescent curve is smooth and continuous across [-10, 10]');
+
 
 // 1b. C0 and C1 Continuity Across Waterline Boundary (dist = 0) and Terrace Boundary (dist = 4.5)
 let c0WaterlineContinuous = true;
@@ -281,16 +305,9 @@ assert(
 );
 
 // 10. Phu Quoc Natural Asymmetric Footprint & Boundary Verification
-import {
-  PHUQUOC_BOUNDARY_POINTS,
-  PHUQUOC_BOUNDARY_SAMPLES,
-  isInsidePhuQuocFootprint,
-  getPhuQuocFootprintRadius,
-  PHUQUOC_FOOTPRINT_BOUNDS,
-} from '../src/three/themes/phuquoc/footprint';
 
 assert(
-  PHUQUOC_BOUNDARY_POINTS.length === PHUQUOC_BOUNDARY_SAMPLES && PHUQUOC_BOUNDARY_SAMPLES === 128,
+  PHUQUOC_BOUNDARY_POINTS.length === PHUQUOC_BOUNDARY_SAMPLES && PHUQUOC_BOUNDARY_SAMPLES === 256,
   `Phu Quoc boundary polygon has exactly ${PHUQUOC_BOUNDARY_SAMPLES} samples`
 );
 
@@ -348,6 +365,173 @@ for (const s of pqStructures) {
   }
 }
 assert(allPqStructuresInside, 'All thatched bungalows, pier, boats, and relaxation spots reside safely within natural footprint', pqStructFail);
+
+// 11. Phu Quoc Terrain Winding & Face Normal Cross Product Verification
+import { createPhuQuocTerrain } from '../src/three/themes/phuquoc/terrain';
+import { createPhuQuocWater } from '../src/three/themes/phuquoc/water';
+
+const pqMockGroup = new THREE.Group();
+const pqTerrainSystem = createPhuQuocTerrain(pqMockGroup);
+const pqTerrainMesh = pqTerrainSystem.group.children.find(c => c instanceof THREE.Mesh && c.receiveShadow) as THREE.Mesh;
+assert(!!pqTerrainMesh, 'Phu Quoc terrain mesh exists in system');
+
+const pqGeom = pqTerrainMesh.geometry as THREE.BufferGeometry;
+const pqPosAttr = pqGeom.attributes.position;
+const pqIndexAttr = pqGeom.index;
+assert(!!pqPosAttr && !!pqIndexAttr, 'Phu Quoc terrain mesh contains valid position and index buffer attributes');
+
+let pqTopWindingCorrect = true;
+let pqTopTrianglesCount = 0;
+let pqBottomWindingCorrect = true;
+let pqBottomTrianglesCount = 0;
+let pqSideWindingCorrect = true;
+let pqSideTrianglesCount = 0;
+
+const v0 = new THREE.Vector3();
+const v1 = new THREE.Vector3();
+const v2 = new THREE.Vector3();
+const e1 = new THREE.Vector3();
+const e2 = new THREE.Vector3();
+const faceNormal = new THREE.Vector3();
+
+if (pqIndexAttr) {
+  const numTris = pqIndexAttr.count / 3;
+  for (let i = 0; i < numTris; i++) {
+    const i0 = pqIndexAttr.getX(i * 3);
+    const i1 = pqIndexAttr.getX(i * 3 + 1);
+    const i2 = pqIndexAttr.getX(i * 3 + 2);
+
+    v0.fromBufferAttribute(pqPosAttr, i0);
+    v1.fromBufferAttribute(pqPosAttr, i1);
+    v2.fromBufferAttribute(pqPosAttr, i2);
+
+    e1.subVectors(v1, v0);
+    e2.subVectors(v2, v0);
+    faceNormal.crossVectors(e1, e2).normalize();
+
+    // Triangles on the top surface (vertices strictly within top surface fan and rings: 1 + 140 * 256 = 35841)
+    const isTopTriangle = i0 < 35841 && i1 < 35841 && i2 < 35841;
+
+    // Bottom face triangles (at baseBottomY = -1.40)
+    if (Math.abs(v0.y - (-1.40)) < 0.001 && Math.abs(v1.y - (-1.40)) < 0.001 && Math.abs(v2.y - (-1.40)) < 0.001) {
+      pqBottomTrianglesCount++;
+      if (faceNormal.y > -0.95) {
+        pqBottomWindingCorrect = false;
+      }
+    }
+    // Top surface triangles
+    else if (isTopTriangle) {
+      pqTopTrianglesCount++;
+      if (faceNormal.y <= 0.0) {
+        pqTopWindingCorrect = false;
+      }
+    }
+    // Side wall / bevel triangles
+    else {
+      pqSideTrianglesCount++;
+      const midX = (v0.x + v1.x + v2.x) / 3;
+      const midZ = (v0.z + v1.z + v2.z) / 3;
+      const outDirX = midX - PHUQUOC_CENTER.x;
+      const outDirZ = midZ - PHUQUOC_CENTER.y;
+      const dotOut = faceNormal.x * outDirX + faceNormal.z * outDirZ;
+      if (dotOut < -0.1) {
+        pqSideWindingCorrect = false;
+      }
+    }
+  }
+}
+
+assert(pqTopTrianglesCount > 5000 && pqTopWindingCorrect, `Phu Quoc top surface has verified +Y normal winding across all ${pqTopTrianglesCount} triangles`);
+assert(pqBottomTrianglesCount === 256 && pqBottomWindingCorrect, `Phu Quoc bottom face has verified strictly -Y normal winding across all ${pqBottomTrianglesCount} triangles`);
+assert(pqSideTrianglesCount > 1000 && pqSideWindingCorrect, `Phu Quoc side walls have verified outward-facing normal winding across all ${pqSideTrianglesCount} triangles`);
+
+// Verify FrontSide rendering on terrain material
+const pqMat = pqTerrainMesh.material as THREE.MeshStandardMaterial;
+assert(pqMat.side === THREE.FrontSide, 'Phu Quoc terrain material uses FrontSide rendering (no DoubleSide used to mask winding errors)');
+
+// 12. Phu Quoc Water Surface & Marine Skirt Exact Connectivity Verification
+const pqWaterParent = new THREE.Group();
+const pqWaterSystem = createPhuQuocWater({} as THREE.WebGLRenderer, pqWaterParent, getTerrainHeight, true);
+const pqWaterMesh = pqWaterSystem.mesh;
+assert(!!pqWaterMesh, 'Phu Quoc water mesh exists in system');
+
+const wGeom = pqWaterMesh.geometry as THREE.BufferGeometry;
+const wPos = wGeom.attributes.position;
+const wIsSkirt = wGeom.attributes.aIsSkirt;
+const wIdx = wGeom.index;
+assert(!!wPos && !!wIsSkirt && !!wIdx, 'Water mesh contains valid position, aIsSkirt, and index buffers');
+
+let waterSurfaceWindingOk = true;
+let waterSkirtWindingOk = true;
+let waterSurfaceTriCount = 0;
+let waterSkirtTriCount = 0;
+
+if (wIdx) {
+  const numTris = wIdx.count / 3;
+  for (let i = 0; i < numTris; i++) {
+    const i0 = wIdx.getX(i * 3);
+    const i1 = wIdx.getX(i * 3 + 1);
+    const i2 = wIdx.getX(i * 3 + 2);
+
+    v0.fromBufferAttribute(wPos, i0);
+    v1.fromBufferAttribute(wPos, i1);
+    v2.fromBufferAttribute(wPos, i2);
+
+    e1.subVectors(v1, v0);
+    e2.subVectors(v2, v0);
+    faceNormal.crossVectors(e1, e2).normalize();
+
+    const isSkirtTri = wIsSkirt.getX(i0) > 0.5 && wIsSkirt.getX(i1) > 0.5 && wIsSkirt.getX(i2) > 0.5;
+    if (isSkirtTri) {
+      waterSkirtTriCount++;
+      // Normal must point outward away from center
+      const midX = (v0.x + v1.x + v2.x) / 3;
+      const midZ = (v0.z + v1.z + v2.z) / 3;
+      const dotOut = faceNormal.x * (midX - PHUQUOC_CENTER.x) + faceNormal.z * (midZ - PHUQUOC_CENTER.y);
+      if (dotOut < 0.0) {
+        waterSkirtWindingOk = false;
+      }
+    } else {
+      waterSurfaceTriCount++;
+      if (faceNormal.y <= 0.0) {
+        waterSurfaceWindingOk = false;
+      }
+    }
+  }
+}
+
+assert(waterSurfaceTriCount > 1000 && waterSurfaceWindingOk, `Phu Quoc water surface has verified +Y normal winding across all ${waterSurfaceTriCount} triangles`);
+assert(waterSkirtTriCount > 50 && waterSkirtWindingOk, `Phu Quoc water skirt has verified outward normal winding across all ${waterSkirtTriCount} triangles`);
+
+// Verify exact connectivity: every top-edge vertex of the skirt shares the exact coordinates of a surface outer boundary vertex
+let zeroGapConnectivity = true;
+const skirtTopVerts: THREE.Vector3[] = [];
+for (let i = 0; i < wPos.count; i++) {
+  if (wIsSkirt.getX(i) > 0.5 && Math.abs(wPos.getY(i) - SEA_LEVEL_BASE) < 0.001) {
+    skirtTopVerts.push(new THREE.Vector3(wPos.getX(i), wPos.getY(i), wPos.getZ(i)));
+  }
+}
+
+for (const sVert of skirtTopVerts) {
+  let matched = false;
+  for (let j = 0; j < wPos.count; j++) {
+    if (wIsSkirt.getX(j) < 0.5) {
+      const dx = Math.abs(wPos.getX(j) - sVert.x);
+      const dy = Math.abs(wPos.getY(j) - sVert.y);
+      const dz = Math.abs(wPos.getZ(j) - sVert.z);
+      if (dx < 0.0001 && dy < 0.0001 && dz < 0.0001) {
+        matched = true;
+        break;
+      }
+    }
+  }
+  if (!matched) {
+    zeroGapConnectivity = false;
+    break;
+  }
+}
+assert(skirtTopVerts.length > 50 && zeroGapConnectivity, `Water surface outer boundary and marine cut skirt share exact matching boundary vertices (${skirtTopVerts.length} top vertices verified with 0.0000 gap)`);
+
 
 // Summary
 const totalPassed = results.filter((r) => r.passed).length;

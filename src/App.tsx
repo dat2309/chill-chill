@@ -14,7 +14,17 @@ import { THEME_METADATA_MAP } from './three/themes/registry';
 
 export default function App() {
   // Load persisted multi-theme state
-  const [persisted, setPersisted] = useState(() => loadPersistedAppState());
+  const [persisted, setPersisted] = useState(() => {
+    const loaded = loadPersistedAppState();
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const themeParam = urlParams.get('theme');
+      if (themeParam === 'garden' || themeParam === 'phuquoc') {
+        loaded.activeThemeId = themeParam;
+      }
+    }
+    return loaded;
+  });
   const [requestedThemeId, setRequestedThemeId] = useState<ThemeId | null>(null);
   const [loading, setLoading] = useState(true);
   const [themeLoading, setThemeLoading] = useState(false);

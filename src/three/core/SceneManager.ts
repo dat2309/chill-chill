@@ -266,6 +266,22 @@ export class SceneManager {
       this.controls.maxPolarAngle = newTheme.cameraPreset.maxPolarAngle ?? Math.PI * 0.44;
     }
 
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const camParam = urlParams.get('camera');
+      if (camParam === 'top') {
+        this.controls.minPolarAngle = 0;
+        this.controls.maxPolarAngle = Math.PI;
+        this.camera.position.set(0.001, 35, 0.001);
+        this.controls.target.set(0, 0, 0);
+      } else if (camParam === 'side') {
+        this.controls.minPolarAngle = 0;
+        this.controls.maxPolarAngle = Math.PI * 0.5;
+        this.camera.position.set(35, 2, 0);
+        this.controls.target.set(0, 0, 0);
+      }
+    }
+
     this.camera.updateProjectionMatrix();
     this.controls.update();
   }
