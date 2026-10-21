@@ -206,6 +206,10 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     return this.water ? this.water.getWaterLevel() : 0.3;
   }
 
+  getWaterMesh(): THREE.Mesh | null {
+    return this.water?.mesh ?? null;
+  }
+
   onContextRestored(): void {
     this.water?.onContextRestored?.();
   }

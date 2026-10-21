@@ -110,6 +110,7 @@ export interface ThemeInstance<T extends ThemeId = ThemeId> {
   reactToSplash(worldX: number, worldZ: number): void;
   getTideOffset?(): number;
   getWaterLevel?(): number;
+  getWaterMesh?(): THREE.Mesh | null;
   setQuality?(quality: Quality): void;
   setForceAnalyticalFallback?(force: boolean): void;
   setDebugMode?(debug: boolean): void;

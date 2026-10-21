@@ -54,6 +54,8 @@ export class SceneManager {
   private isPointerDown = false;
   private isDragging = false;
   private pointerDownPos = new THREE.Vector2();
+  private waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private waterHitPoint = new THREE.Vector3();
 
   // Lifecycle & Performance
   private initialized = false;
@@ -581,30 +583,36 @@ export class SceneManager {
     if (!activeTheme || !activeState || this.isDragging) return;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const hits = this.raycaster.intersectObjects(activeTheme.group.children, true);
-    if (hits.length === 0) return;
 
-    const waterLevel = activeTheme.getWaterLevel?.() ?? 0.3;
+    let hitX: number | null = null;
+    let hitZ: number | null = null;
 
-    for (const hit of hits) {
-      const meshName = (hit.object.name || '').toLowerCase();
-      if (meshName.includes('helper') || meshName.includes('rain') || meshName.includes('sky')) {
-        continue;
+    // Direct raycast against active theme's water mesh (never walk entire diorama group)
+    const waterMesh = activeTheme.getWaterMesh?.();
+    if (waterMesh && waterMesh.visible) {
+      const hits = this.raycaster.intersectObject(waterMesh, false);
+      if (hits.length > 0) {
+        hitX = hits[0].point.x;
+        hitZ = hits[0].point.z;
       }
+    }
 
-      const pt = hit.point;
-      const isWaterSurfaceOrBelow = pt.y <= waterLevel + 0.08;
-
-      if (isWaterSurfaceOrBelow && activeTheme.isInWater(pt.x, pt.z)) {
-        activeTheme.addRipple(pt.x, pt.z, baseStrength * activeState.rippleStrength);
-        if (isSplash) {
-          activeTheme.reactToSplash(pt.x, pt.z);
-        }
-        break;
+    // Mathematical plane intersection at current water level fallback
+    if (hitX === null || hitZ === null) {
+      const waterLevel = activeTheme.getWaterLevel?.() ?? 0.3;
+      this.waterPlane.set(new THREE.Vector3(0, 1, 0), -waterLevel);
+      const planeHit = this.raycaster.ray.intersectPlane(this.waterPlane, this.waterHitPoint);
+      if (planeHit) {
+        hitX = planeHit.x;
+        hitZ = planeHit.z;
       }
+    }
 
-      // Occluding obstacle above water
-      break;
+    if (hitX !== null && hitZ !== null && activeTheme.isInWater(hitX, hitZ)) {
+      activeTheme.addRipple(hitX, hitZ, baseStrength * activeState.rippleStrength);
+      if (isSplash) {
+        activeTheme.reactToSplash(hitX, hitZ);
+      }
     }
   }
 

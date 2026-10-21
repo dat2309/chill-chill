@@ -147,6 +147,14 @@ export class GardenTheme implements ThemeInstance<'garden'> {
     this.fish?.reactToRipple(worldX, worldZ);
   }
 
+  getWaterLevel(): number {
+    return this.water?.getWaterLevel() ?? 0.3;
+  }
+
+  getWaterMesh(): THREE.Mesh | null {
+    return this.water?.mesh ?? null;
+  }
+
   setDebugMode(debug: boolean): void {
     this.terrain?.setDebug(debug);
     if (this.vegetation) this.vegetation.group.visible = !debug;
