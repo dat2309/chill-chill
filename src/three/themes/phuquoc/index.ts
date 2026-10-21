@@ -210,6 +210,14 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     return this.water?.mesh ?? null;
   }
 
+  getObstacleMeshes(): THREE.Object3D[] {
+    const list: THREE.Object3D[] = [];
+    if (this.architecture?.group) list.push(this.architecture.group);
+    if (this.vegetation?.group) list.push(this.vegetation.group);
+    if (this.boats?.group) list.push(this.boats.group);
+    return list;
+  }
+
   onContextRestored(): void {
     this.water?.onContextRestored?.();
   }

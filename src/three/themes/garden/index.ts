@@ -155,6 +155,13 @@ export class GardenTheme implements ThemeInstance<'garden'> {
     return this.water?.mesh ?? null;
   }
 
+  getObstacleMeshes(): THREE.Object3D[] {
+    const list: THREE.Object3D[] = [];
+    if (this.architecture?.group) list.push(this.architecture.group);
+    if (this.vegetation?.group) list.push(this.vegetation.group);
+    return list;
+  }
+
   setDebugMode(debug: boolean): void {
     this.terrain?.setDebug(debug);
     if (this.vegetation) this.vegetation.group.visible = !debug;

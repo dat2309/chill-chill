@@ -111,6 +111,7 @@ export interface ThemeInstance<T extends ThemeId = ThemeId> {
   getTideOffset?(): number;
   getWaterLevel?(): number;
   getWaterMesh?(): THREE.Mesh | null;
+  getObstacleMeshes?(): THREE.Object3D[];
   setQuality?(quality: Quality): void;
   setForceAnalyticalFallback?(force: boolean): void;
   setDebugMode?(debug: boolean): void;

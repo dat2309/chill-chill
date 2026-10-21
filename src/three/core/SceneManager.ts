@@ -582,6 +582,7 @@ export class SceneManager {
 
     let hitX: number | null = null;
     let hitZ: number | null = null;
+    let waterDist = Infinity;
 
     // Direct raycast against active theme's water mesh (never walk entire diorama group)
     const waterMesh = activeTheme.getWaterMesh?.();
@@ -590,6 +591,7 @@ export class SceneManager {
       if (hits.length > 0) {
         hitX = hits[0].point.x;
         hitZ = hits[0].point.z;
+        waterDist = hits[0].distance;
       }
     }
 
@@ -601,10 +603,21 @@ export class SceneManager {
       if (planeHit) {
         hitX = planeHit.x;
         hitZ = planeHit.z;
+        waterDist = this.raycaster.ray.origin.distanceTo(planeHit);
       }
     }
 
     if (hitX !== null && hitZ !== null && activeTheme.isInWater(hitX, hitZ)) {
+      // Check if any solid obstacle (trees, rocks, architecture, boats) is in front of the water hit
+      const obstacles = activeTheme.getObstacleMeshes?.();
+      if (obstacles && obstacles.length > 0) {
+        const obstacleHits = this.raycaster.intersectObjects(obstacles, true);
+        if (obstacleHits.length > 0 && obstacleHits[0].distance < waterDist) {
+          // Ray hits a solid foreground obstacle before reaching water; skip ripple
+          return;
+        }
+      }
+
       activeTheme.addRipple(hitX, hitZ, baseStrength * activeState.rippleStrength);
       if (isSplash) {
         activeTheme.reactToSplash(hitX, hitZ);
