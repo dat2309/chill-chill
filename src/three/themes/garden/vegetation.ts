@@ -64,7 +64,7 @@ export function createVegetation(
 
   const dummy = new THREE.Object3D();
 
-  // 1. PINE / CONIFER TREES (~26 well-scaled trees on mountain ridges)
+  // 1. PINE / CONIFER TREES (~26 well-scaled trees in natural alpine groves, not in a rigid line)
   // Height: 1.4 - 2.3, Radius: 0.36 - 0.58, with varied silhouettes per tree
   const pineTrunkGeom = new THREE.CylinderGeometry(0.04, 0.08, 1.0, 6);
   pineTrunkGeom.translate(0, 0.5, 0);
@@ -82,7 +82,7 @@ export function createVegetation(
   });
 
   const pineFoliageMat = new THREE.MeshStandardMaterial({
-    color: SEASON_PALETTES.spring.pineFoliage,
+    color: 0xffffff, // White base so instanceColor reflects exact alpine evergreen tint
     roughness: 0.65,
     metalness: 0.03,
     flatShading: false, // Smooth cone lighting wrap so shaded sides retain rich evergreen depth
@@ -105,44 +105,58 @@ export function createVegetation(
     h: number;
     r: number;
     layers: number;
+    tint: THREE.Color;
   }
   const pineInstances: PineInstance[] = [];
 
+  // Grouped into 4 distinct natural alpine groves across mountain backdrop (breaking up any straight lines)
+  const pineGroves = [
+    [-7.8, -5.2], // Far-left high crags
+    [-4.6, -5.9], // Mid-left mountain saddle
+    [-2.0, -6.3], // Rear gorge flank
+    [5.0, -5.5],  // Right mountain knolls
+    [6.8, -4.5],  // Far-right slope
+  ];
+
   let pAttempts = 0;
-  while (pineInstances.length < pineCount && pAttempts < 1500) {
+  while (pineInstances.length < pineCount && pAttempts < 1800) {
     pAttempts++;
-    // Strictly inside diorama mountain bounds (z < -3.2)
-    const cluster = [[-7.4, -5.5], [-3.8, -6.1], [5.8, -5.7]][pAttempts % 3];
-    const x = cluster[0] + vRng.range(-1.8, 1.8);
-    const z = cluster[1] + vRng.range(-1.1, 1.1);
+    const grove = pineGroves[pAttempts % pineGroves.length];
+    const x = grove[0] + vRng.range(-1.4, 1.4);
+    const z = grove[1] + vRng.range(-0.95, 0.95);
 
     if (!isInsideGardenFootprint(x, z, 0.65) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.6)) continue;
     const h = getHeightAt(x, z);
-    if (h < 2.0) continue; // Only on mountain slope
+    if (h < 1.95) continue; // Only on mountain slopes and crags
 
-    // Leave a pleasant gap in the center back
-    if (Math.abs(x) < 1.4 && z > -5.5) continue;
+    // Leave a pleasant view corridor in the center rear gorge
+    if (Math.abs(x) < 1.3 && z > -5.5) continue;
 
     let tooClose = false;
     for (const p of pineInstances) {
-      if (Math.hypot(x - p.x, z - p.z) < 0.8) {
+      if (Math.hypot(x - p.x, z - p.z) < 0.72) {
         tooClose = true;
         break;
       }
     }
     if (tooClose) continue;
 
-    const treeH = vRng.range(1.4, 2.3);
-    const treeR = vRng.range(0.36, 0.58);
-    const layers = Math.floor(vRng.range(3, 5.99)); // 3 to 5 layers for varied silhouette
-    pineInstances.push({ x, y: h, z, h: treeH, r: treeR, layers });
+    const treeH = vRng.range(1.35, 2.35);
+    const treeR = vRng.range(0.34, 0.58);
+    const layers = Math.floor(vRng.range(3, 5.99));
+    const pineTint = SEASON_PALETTES.spring.pineFoliage.clone().offsetHSL(
+      vRng.range(-0.02, 0.02),
+      vRng.range(-0.04, 0.04),
+      vRng.range(-0.03, 0.04)
+    );
+    pineInstances.push({ x, y: h, z, h: treeH, r: treeR, layers, tint: pineTint });
   }
 
   let pFolIdx = 0;
   for (let i = 0; i < pineInstances.length; i++) {
     const p = pineInstances[i];
     dummy.position.set(p.x, p.y, p.z);
-    dummy.rotation.set(vRng.range(-0.04, 0.04), vRng.range(0, Math.PI * 2), vRng.range(-0.04, 0.04));
+    dummy.rotation.set(vRng.range(-0.06, 0.06), vRng.range(0, Math.PI * 2), vRng.range(-0.06, 0.06));
     dummy.scale.set(1.0, p.h, 1.0);
     dummy.updateMatrix();
     pineTrunkMesh.setMatrixAt(i, dummy.matrix);
@@ -151,16 +165,20 @@ export function createVegetation(
       if (l < p.layers) {
         const frac = 0.32 + (l / (p.layers - 0.2)) * 0.58;
         const ly = p.y + p.h * frac;
-        const layerRScale = 1.0 - (l / p.layers) * 0.62;
+        const layerRScale = 1.0 - (l / p.layers) * 0.60;
         const lr = p.r * layerRScale;
         const lh = p.h * (0.44 / p.layers * 4.0) * layerRScale;
         dummy.position.set(p.x, ly, p.z);
         dummy.rotation.set(0, vRng.range(0, Math.PI * 2), 0);
         dummy.scale.set(lr, lh, lr);
+
+        // Subtle gradient from darker lower branches to sunlit crown
+        const layerTint = p.tint.clone().offsetHSL(0, 0, (l / p.layers - 0.5) * 0.05);
+        pineFoliageMesh.setColorAt(pFolIdx, layerTint);
       } else {
-        // Zero scale for unused layers
         dummy.position.set(p.x, p.y, p.z);
         dummy.scale.set(0, 0, 0);
+        pineFoliageMesh.setColorAt(pFolIdx, p.tint);
       }
       dummy.updateMatrix();
       pineFoliageMesh.setMatrixAt(pFolIdx++, dummy.matrix);
@@ -168,8 +186,9 @@ export function createVegetation(
   }
   pineTrunkMesh.instanceMatrix.needsUpdate = true;
   pineFoliageMesh.instanceMatrix.needsUpdate = true;
+  if (pineFoliageMesh.instanceColor) pineFoliageMesh.instanceColor.needsUpdate = true;
 
-  // 2. LARGE DECIDUOUS SHADE TREES WITH CLOUD-LIKE 7-PUFF CANOPIES & BRANCHES
+  // 2. LARGE DECIDUOUS SHADE TREES WITH SOFT MULTI-TIER CLOUD-LIKE CANOPIES (11 overlapping puffs per tree)
   const decTrunkGeom = new THREE.CylinderGeometry(0.08, 0.16, 1.0, 7);
   decTrunkGeom.translate(0, 0.5, 0);
 
@@ -182,7 +201,7 @@ export function createVegetation(
   const decP = new THREE.Vector3();
   for (let i = 0; i < decPosAttr.count; i++) {
     decP.fromBufferAttribute(decPosAttr, i);
-    const n = simplexNoise3D(decP.x * 1.8, decP.y * 1.8, decP.z * 1.8) * 0.18;
+    const n = simplexNoise3D(decP.x * 1.8, decP.y * 1.8, decP.z * 1.8) * 0.16;
     decP.multiplyScalar(1.0 + n);
     decPosAttr.setXYZ(i, decP.x, decP.y, decP.z);
   }
@@ -195,17 +214,17 @@ export function createVegetation(
     flatShading: true,
   });
 
-  // Soft non-flat shading for cloud-like volume
+  // Soft non-flat shading with white base so instanceColor renders sun-dappled and shadowed foliage layers
   const decCanopyMat = new THREE.MeshStandardMaterial({
-    color: SEASON_PALETTES.spring.canopyPrimary,
+    color: 0xffffff,
     roughness: 0.72,
     metalness: 0.02,
     flatShading: false,
   });
 
   const decTreeCount = 13;
-  const blobsPerTree = 7; // 7 organic puffs per tree
-  const branchesPerTree = 3;
+  const blobsPerTree = 11; // 11 smaller hierarchical puffs per tree for soft cloud-like volume
+  const branchesPerTree = 4;
   const decTrunkMesh = new THREE.InstancedMesh(decTrunkGeom, decTrunkMat, decTreeCount);
   const decBranchMesh = new THREE.InstancedMesh(decBranchGeom, decTrunkMat, decTreeCount * branchesPerTree);
   const decCanopyMesh = new THREE.InstancedMesh(decCanopyGeom, decCanopyMat, decTreeCount * blobsPerTree);
@@ -223,6 +242,7 @@ export function createVegetation(
     z: number;
     h: number;
     r: number;
+    baseTint: THREE.Color;
   }
   const decTrees: DecTree[] = [];
 
@@ -238,7 +258,7 @@ export function createVegetation(
     { x: -1.2, z: -4.0, r: 0.85, h: 1.95 },
     { x: 0.8,  z: -3.8, r: 0.88, h: 2.00 },
     { x: 2.6,  z: -3.2, r: 0.85, h: 1.90 },
-    // Right hill / right flank
+    // Right hill / right flank embracing the diorama
     { x: 4.8,  z: -2.2, r: 0.82, h: 1.80 },
     { x: 6.2,  z: -1.2, r: 0.85, h: 1.80 },
     { x: 7.2,  z: -0.2, r: 0.80, h: 1.75 },
@@ -252,12 +272,18 @@ export function createVegetation(
     const h = getHeightAt(spot.x, spot.z);
     if (h < WATER_LEVEL + 0.15) return;
 
+    const baseTint = SEASON_PALETTES.spring.canopyPrimary.clone().offsetHSL(
+      vRng.range(-0.02, 0.02),
+      vRng.range(-0.03, 0.03),
+      vRng.range(-0.02, 0.04)
+    );
     decTrees.push({
       x: spot.x,
       y: h,
       z: spot.z,
       h: spot.h,
       r: spot.r,
+      baseTint,
     });
   });
 
@@ -271,38 +297,56 @@ export function createVegetation(
     dummy.updateMatrix();
     decTrunkMesh.setMatrixAt(i, dummy.matrix);
 
-    // 3 supporting branches reaching out to leaf puffs
-    const bAngles = [0.35, 2.45, 4.55];
+    // 4 supporting branches reaching out to leaf puffs
+    const bAngles = [0.35, 1.85, 3.45, 5.05];
     for (let b = 0; b < branchesPerTree; b++) {
       const ang = bAngles[b] + vRng.range(-0.15, 0.15);
-      dummy.position.set(t.x, t.y + t.h * 0.62, t.z);
-      dummy.rotation.set(Math.cos(ang) * 0.48, ang, Math.sin(ang) * 0.48);
+      dummy.position.set(t.x, t.y + t.h * 0.60, t.z);
+      dummy.rotation.set(Math.cos(ang) * 0.45, ang, Math.sin(ang) * 0.45);
       dummy.scale.set(1.0, t.h * 0.85, 1.0);
       dummy.updateMatrix();
       decBranchMesh.setMatrixAt(branchIdx++, dummy.matrix);
     }
 
-    // 7 overlapping foliage puffs forming a grand, soft cloud-like canopy
+    // 11 overlapping smaller cloud-like foliage puffs forming a soft, varied canopy
     const offsets = [
-      { dx: 0, dy: t.h * 1.06, dz: 0, sx: t.r * 1.05, sy: t.r * 0.92, sz: t.r * 1.05 },
-      { dx: 0.38, dy: t.h * 0.86, dz: 0.20, sx: t.r * 0.82, sy: t.r * 0.76, sz: t.r * 0.82 },
-      { dx: -0.36, dy: t.h * 0.88, dz: -0.22, sx: t.r * 0.80, sy: t.r * 0.74, sz: t.r * 0.80 },
-      { dx: -0.18, dy: t.h * 0.78, dz: 0.34, sx: t.r * 0.78, sy: t.r * 0.72, sz: t.r * 0.78 },
-      { dx: 0.28, dy: t.h * 0.76, dz: -0.30, sx: t.r * 0.75, sy: t.r * 0.70, sz: t.r * 0.75 },
-      { dx: -0.40, dy: t.h * 0.68, dz: 0.12, sx: t.r * 0.68, sy: t.r * 0.64, sz: t.r * 0.68 },
-      { dx: 0.32, dy: t.h * 0.66, dz: 0.32, sx: t.r * 0.68, sy: t.r * 0.64, sz: t.r * 0.68 },
+      // Crown top
+      { dx: 0, dy: t.h * 1.10, dz: 0, sx: t.r * 0.76, sy: t.r * 0.68, sz: t.r * 0.76, lightBias: 0.08 },
+      // Upper tier
+      { dx: 0.32, dy: t.h * 0.95, dz: 0.16, sx: t.r * 0.64, sy: t.r * 0.56, sz: t.r * 0.64, lightBias: 0.05 },
+      { dx: -0.30, dy: t.h * 0.96, dz: -0.18, sx: t.r * 0.62, sy: t.r * 0.54, sz: t.r * 0.62, lightBias: 0.04 },
+      { dx: -0.14, dy: t.h * 0.90, dz: 0.28, sx: t.r * 0.64, sy: t.r * 0.56, sz: t.r * 0.64, lightBias: 0.04 },
+      { dx: 0.24, dy: t.h * 0.88, dz: -0.26, sx: t.r * 0.60, sy: t.r * 0.52, sz: t.r * 0.60, lightBias: 0.03 },
+      // Mid-lower tier
+      { dx: 0.40, dy: t.h * 0.76, dz: -0.10, sx: t.r * 0.58, sy: t.r * 0.50, sz: t.r * 0.58, lightBias: 0.0 },
+      { dx: -0.40, dy: t.h * 0.78, dz: 0.14, sx: t.r * 0.58, sy: t.r * 0.50, sz: t.r * 0.58, lightBias: 0.0 },
+      { dx: 0.18, dy: t.h * 0.74, dz: 0.36, sx: t.r * 0.56, sy: t.r * 0.48, sz: t.r * 0.56, lightBias: -0.01 },
+      { dx: -0.22, dy: t.h * 0.72, dz: -0.34, sx: t.r * 0.56, sy: t.r * 0.48, sz: t.r * 0.56, lightBias: -0.01 },
+      // Lower understory
+      { dx: 0.14, dy: t.h * 0.60, dz: -0.14, sx: t.r * 0.48, sy: t.r * 0.42, sz: t.r * 0.48, lightBias: -0.06 },
+      { dx: -0.16, dy: t.h * 0.62, dz: 0.18, sx: t.r * 0.48, sy: t.r * 0.42, sz: t.r * 0.48, lightBias: -0.06 },
     ];
     for (const off of offsets) {
       dummy.position.set(t.x + off.dx, t.y + off.dy, t.z + off.dz);
       dummy.rotation.set(vRng.range(-0.08, 0.08), vRng.range(0, Math.PI * 2), vRng.range(-0.08, 0.08));
       dummy.scale.set(off.sx, off.sy, off.sz);
       dummy.updateMatrix();
-      decCanopyMesh.setMatrixAt(canopyIdx++, dummy.matrix);
+      decCanopyMesh.setMatrixAt(canopyIdx, dummy.matrix);
+
+      // Color gradation from sunlit crown to shaded understory
+      const puffColor = t.baseTint.clone().offsetHSL(
+        off.lightBias * 0.2,
+        off.lightBias * 0.3,
+        off.lightBias
+      );
+      decCanopyMesh.setColorAt(canopyIdx, puffColor);
+      canopyIdx++;
     }
   }
   decTrunkMesh.instanceMatrix.needsUpdate = true;
   decBranchMesh.instanceMatrix.needsUpdate = true;
   decCanopyMesh.instanceMatrix.needsUpdate = true;
+  if (decCanopyMesh.instanceColor) decCanopyMesh.instanceColor.needsUpdate = true;
 
   // 3. LOW BUSHES (~110 instances along banks, cliff ledges, path edges)
   const bushGeom = new THREE.IcosahedronGeometry(0.30, 2);

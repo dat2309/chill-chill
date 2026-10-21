@@ -51,20 +51,20 @@ export function getStreamCenter(z: number): number {
     const t = (z - (-7.5)) / 5.0; // 0 at z=-7.5, 1 at z=-2.5
     return THREE.MathUtils.lerp(3.2, 2.2, t) + Math.sin(t * Math.PI) * 0.15;
   } else if (z <= 0.5) {
-    // Cascades: transitions from 2.2 down to 1.5
+    // Cascades: transitions from 2.2 down to 1.45
     const t = (z - (-2.5)) / 3.0; // 0 at z=-2.5, 1 at z=0.5
     const s = t * t * (3.0 - 2.0 * t);
     return THREE.MathUtils.lerp(2.2, 1.45, s);
   } else {
-    // Wide foreground basin
+    // Expansive foreground lake basin
     const t = (z - 0.5) / 7.5; // 0 at z=0.5, 1 at z=8.0
-    return 1.45 + Math.sin(t * Math.PI * 0.90) * 0.95 + t * 0.35;
+    return 1.45 + Math.sin(t * Math.PI * 0.85) * 0.85 + t * 0.35;
   }
 }
 
 /**
  * Stream channel half-width along Z.
- * Tightly bounded in mountain pass (0.85 - 1.25m), opening into a spacious 4.2m wide pool in foreground.
+ * Tightly bounded in mountain pass (0.85 - 1.25m), opening into a spacious shallow lake (4.8m wide) in foreground.
  */
 export function getStreamHalfWidth(z: number): number {
   if (z <= -2.5) {
@@ -75,8 +75,8 @@ export function getStreamHalfWidth(z: number): number {
     return 1.25 + t * 0.55; // 1.25m to 1.80m
   } else {
     const t = (z - 0.5) / 7.5;
-    // Expands smoothly into foreground basin
-    return 1.80 + t * t * 2.45; // 1.80m to 4.25m
+    // Expands smoothly into expansive foreground lake basin
+    return 1.80 + Math.pow(t, 1.25) * 3.0; // 1.80m up to 4.80m
   }
 }
 
@@ -131,8 +131,9 @@ export function getStreamBedCenterHeight(z: number): number {
 }
 
 /**
- * Cross-section parabolic riverbed elevation Y at (x, z).
+ * Cross-section riverbed/lakebed elevation Y at (x, z).
  * Reaches water surface at the banks (|x - center| = halfWidth).
+ * In foreground lake basin (z >= 0.5), creates a broad, gentle, shallow bed (hồ nông).
  */
 export function getStreamBedHeight(x: number, z: number): number {
   const center = getStreamCenter(z);
@@ -141,7 +142,13 @@ export function getStreamBedHeight(x: number, z: number): number {
   const u = Math.min(1.0, dist / halfW);
   const baseWaterY = getBaseWaterSurfaceHeight(z);
   const maxDepth = getStreamMaxDepth(z);
-  // Parabolic channel profile
+
+  if (z >= 0.5) {
+    // Broad, flat-bottomed shallow lake bed with gentle rise to the shoreline
+    const bedProfile = 1.0 - Math.pow(u, 2.6);
+    return baseWaterY - maxDepth * bedProfile;
+  }
+  // Parabolic channel profile in mountain gorge & cascades
   return baseWaterY - maxDepth * (1.0 - u * u);
 }
 

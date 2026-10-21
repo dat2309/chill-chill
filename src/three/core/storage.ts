@@ -8,7 +8,7 @@ import {
   CameraState,
 } from './types';
 
-export const CURRENT_STORAGE_VERSION = 3;
+export const CURRENT_STORAGE_VERSION = 4;
 export const STORAGE_KEY = 'chillax_diorama_state_v2';
 
 export const DEFAULT_GARDEN_STATE: ThemeState<'garden'> = {

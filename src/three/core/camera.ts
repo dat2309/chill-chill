@@ -37,9 +37,10 @@ export function calculateBaseFrustumHeight(
   const h = parent ? parent.clientHeight : renderer.domElement.height;
   const aspect = w > 0 && h > 0 ? w / h : 1.0;
 
-  const paddingX = options.paddingX ?? 1.16;
-  const paddingY = options.paddingY ?? 1.28;
-  const minFrustumHeight = options.minFrustumHeight ?? 23.5;
+  const isPortraitMobile = aspect < 0.8;
+  const paddingX = options.paddingX ?? (isPortraitMobile ? 1.06 : 1.16);
+  const paddingY = options.paddingY ?? (isPortraitMobile ? 1.15 : 1.28);
+  const minFrustumHeight = options.minFrustumHeight ?? (isPortraitMobile ? 21.0 : 23.5);
   const excludeKeywords = options.excludeKeywords ?? ['shadow', 'helper', 'rain', 'particle', 'sky'];
 
   // Update world matrices before calculating bounding box

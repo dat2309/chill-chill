@@ -86,7 +86,18 @@ function FullscreenIcon() {
 
 function LayersIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ width: 18, height: 18, minWidth: 18, minHeight: 18, flexShrink: 0 }}
+      aria-hidden="true"
+    >
       <polygon points="12 2 2 7 12 12 22 7 12 2" />
       <polyline points="2 17 12 22 22 17" />
       <polyline points="2 12 12 17 22 12" />
@@ -299,7 +310,7 @@ export default function UI({
             <>Where the palms<br />meet the <em>sunset bay.</em></>
           )}
         </h1>
-        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+        <div className="top-action-row">
           <button
             ref={themeBtnRef}
             className="theme-switch-btn"
@@ -308,7 +319,7 @@ export default function UI({
             aria-haspopup="dialog"
           >
             <LayersIcon />
-            <span>Chủ đề: {activeMetadata.name}</span>
+            <span className="theme-btn-text">{activeMetadata.name}</span>
           </button>
           <button
             ref={howBtnRef}
@@ -322,7 +333,7 @@ export default function UI({
               <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
               <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
-            How it's made
+            <span>How it's made</span>
           </button>
         </div>
       </header>

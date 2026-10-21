@@ -597,6 +597,14 @@ input:focus-visible,
 }
 
 /* ==================== RESPONSIVE ==================== */
+.top-action-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 @media (max-width: 768px) {
   .top-left-panel {
     top: 16px;
@@ -638,11 +646,94 @@ input:focus-visible,
 
 @media (max-width: 480px) {
   .top-left-panel {
-    top: 8px;
-    left: 8px;
+    top: 10px;
+    left: 10px;
+    max-width: calc(100vw - 160px);
+  }
+  .logo-row {
+    margin-bottom: 2px;
+  }
+  .logo-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+  }
+  .logo-text {
+    font-size: 16px;
+  }
+  /* Hide verbose eyebrow on small screens so title & time never collide */
+  .eyebrow {
+    display: none;
   }
   .hero-title {
-    font-size: 18px;
+    font-size: 15px;
+    line-height: 1.15;
+    margin-bottom: 4px;
+  }
+  .top-action-row {
+    margin-top: 4px;
+    gap: 5px;
+  }
+  .top-right-panel {
+    top: 10px;
+    right: 10px;
+  }
+  .time-control {
+    padding: 4px 8px;
+    gap: 4px;
+  }
+  .time-slider {
+    width: 68px;
+  }
+  .time-icon {
+    font-size: 13px;
+  }
+  .time-label {
+    font-size: 11px;
+    min-width: 30px;
+  }
+  .how-btn {
+    display: none; /* Keep mobile viewport clean & spacious */
+  }
+  .theme-switch-btn {
+    padding: 4px 9px;
+    font-size: 10px;
+    border-radius: 14px;
+  }
+  .theme-switch-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px !important;
+    min-height: 16px !important;
+  }
+  /* Accessible complete toolbar on 390px screens */
+  .bottom-bar {
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    padding: 3px 5px;
+    gap: 1px;
+    max-width: calc(100vw - 12px);
+    justify-content: center;
+  }
+  .ctrl-btn {
+    padding: 4px 6px;
+    font-size: 10px;
+    gap: 3px;
+  }
+  .ctrl-btn svg, .ctrl-btn .btn-icon {
+    width: 13px;
+    height: 13px;
+  }
+  .ctrl-divider {
+    height: 14px;
+    margin: 0 1px;
+  }
+  .season-selector {
+    padding: 1px;
+    gap: 1px;
+  }
+  .season-btn {
+    padding: 4px 5px;
+    font-size: 10px;
   }
   .season-selector .season-label {
     display: none;
@@ -654,17 +745,28 @@ input:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 20px;
-  padding: 6px 14px;
-  font-size: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 18px;
+  padding: 5px 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #2d2a26;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
   transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.theme-switch-btn svg {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  max-width: 20px;
+  max-height: 20px;
+  flex-shrink: 0;
 }
 
 .theme-switch-btn:hover {

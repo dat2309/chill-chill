@@ -117,9 +117,11 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   const cragNoise = SimplexNoise2D(x * 1.8, z * 1.8) * 0.06 + SimplexNoise2D(x * 0.8 + 5.0, z * 0.8 + 5.0) * 0.04;
   const naturalCliffH = THREE.MathUtils.lerp(plateauGentle, 0.35, cliffDrop) + cragNoise * (1.0 - cliffDrop) * cliffDrop * 2.2;
 
-  // 4. Right bank: lower and gently rolling with small knolls and gravel banks
-  const rightKnoll = Math.exp(-Math.pow((x - 4.5) / 1.8, 2) - Math.pow((z - 2.8) / 1.8, 2)) * 0.25;
-  const rightBankH = 0.44 + rightKnoll + fbm2D(x * 0.35 + 5.0, z * 0.35 + 5.0, 3, 2.0, 0.4) * 0.18;
+  // 4. Right bank: lower and gently rolling with knolls embracing the wide lake basin
+  const rightKnoll1 = Math.exp(-Math.pow((x - 4.8) / 1.9, 2) - Math.pow((z - 2.5) / 1.9, 2)) * 0.28;
+  const rightKnoll2 = Math.exp(-Math.pow((x - 6.2) / 1.8, 2) - Math.pow((z - 5.5) / 2.2, 2)) * 0.24;
+  const rightEmbrace = smoothstep(0.5, 7.5, z) * smoothstep(3.0, 7.0, x) * 0.10;
+  const rightBankH = 0.44 + rightKnoll1 + rightKnoll2 + rightEmbrace + fbm2D(x * 0.35 + 5.0, z * 0.35 + 5.0, 3, 2.0, 0.4) * 0.16;
 
   // Combine base height before stream carving
   let baseH: number;
@@ -164,17 +166,20 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
     }
   }
 
-  // 5. Continuous Stream Channel Carving (from mountain pass at z = -7.5 to front edge at z = 8.0)
+  // 5. Continuous Stream Channel & Expansive Foreground Lake Carving
   const scx = getStreamCenter(z);
   const distToStream = Math.abs(x - scx);
   const shw = getStreamHalfWidth(z);
   const waterSurfaceY = getWaterSurfaceHeight(z);
 
-  // Parabolic channel profile
-  const channelProfile = smoothstep(shw * 1.15, shw * 0.18, distToStream);
+  // In foreground lake (z >= 0.5), create a broad, flat-bottomed shallow basin (hồ nông)
+  // In mountain gorge & cascades (z < 0.5), use a parabolic mountain stream channel
+  const channelProfile = z >= 0.5
+    ? smoothstep(shw * 1.05, shw * 0.76, distToStream)
+    : smoothstep(shw * 1.15, shw * 0.18, distToStream);
 
-  // Riverbed sits consistently below water surface along profile
-  const targetBedH = getStreamBedHeight(x, z) + SimplexNoise2D(x * 1.4 + 12.0, z * 1.4 + 12.0) * 0.02;
+  // Riverbed/lakebed sits consistently below water surface along profile
+  const targetBedH = getStreamBedHeight(x, z) + SimplexNoise2D(x * 1.4 + 12.0, z * 1.4 + 12.0) * 0.015;
 
   let finalH = baseH;
   if (channelProfile > 0.001) {
@@ -335,12 +340,27 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
       outCol.lerp(pal.grassTint, 0.40);
     }
 
-    // Stream channel & banks: warm sandy gravel and riverbed stones from mountain gorge to front edge
+    // Stream channel & banks: multi-toned sandy gravel and riverbed stones from mountain gorge to front edge
     if (distToStream < shw * 1.35) {
-      const gravelNoise = SimplexNoise2D(x * 2.0, z * 2.0) * 0.5 + 0.5;
-      const gravelCol = COLORS.terrain.sand.clone().lerp(COLORS.water.bedGravel, gravelNoise);
+      const gravelNoise1 = SimplexNoise2D(x * 2.2, z * 2.2) * 0.5 + 0.5;
+      const gravelNoise2 = SimplexNoise2D(x * 6.5 + 3.0, z * 6.5 + 3.0) * 0.5 + 0.5;
+      const gravelNoise3 = SimplexNoise2D(x * 14.0 + 8.0, z * 14.0 + 8.0) * 0.5 + 0.5;
+
+      const colSandWarm = COLORS.terrain.sand;
+      const colGravel = COLORS.water.bedGravel;
+      const colPebbleAmber = new THREE.Color(0xbfa57d);
+      const colPebbleSlate = new THREE.Color(0x656e6a);
+      const colPebbleJasper = new THREE.Color(0x9a6c52);
+
+      const pebbleMix = colSandWarm.clone().lerp(colGravel, gravelNoise1);
+      pebbleMix.lerp(colPebbleAmber, gravelNoise2 * 0.45);
+      pebbleMix.lerp(colPebbleSlate, (1.0 - gravelNoise2) * 0.35);
+      if (gravelNoise3 > 0.65) {
+        pebbleMix.lerp(colPebbleJasper, (gravelNoise3 - 0.65) * 1.5);
+      }
+
       const shoreBlend = smoothstep(shw * 1.35, shw * 0.65, distToStream);
-      outCol.lerp(gravelCol, shoreBlend * 0.90);
+      outCol.lerp(pebbleMix, shoreBlend * 0.95);
     }
 
     // Right bank: add natural dirt patches and warm gravel knolls (reduced uniform flat grass)
@@ -727,15 +747,15 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   if (boulderMesh.instanceColor) boulderMesh.instanceColor.needsUpdate = true;
   group.add(boulderMesh);
 
-  // 7. Small Riverbed Pebbles (scattered across wide crystal stream channel)
-  const pebbleCount = 220;
-  const pebbleGeom = new THREE.DodecahedronGeometry(0.16, 1);
-  pebbleGeom.scale(1.0, 0.52, 1.0);
+  // 7. Small Riverbed Pebbles (scattered across wide crystal stream & lake basin)
+  const pebbleCount = 480;
+  const pebbleGeom = new THREE.DodecahedronGeometry(0.15, 1);
+  pebbleGeom.scale(1.15, 0.48, 0.95);
   pebbleGeom.computeVertexNormals();
 
   const pebbleMat = new THREE.MeshStandardMaterial({
     color: 0xffffff, // White base so instanceColor reflects exact pebble palette
-    roughness: 0.70,
+    roughness: 0.65,
     metalness: 0.04,
     flatShading: true,
   });
@@ -743,33 +763,36 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   const pebbleMesh = new THREE.InstancedMesh(pebbleGeom, pebbleMat, pebbleCount);
   pebbleMesh.receiveShadow = true;
 
-  // Luminous riverbed pebbles: warm cream, river tan, amber-tan, soft slate, beige, jasper
+  // Luminous riverbed pebbles: warm cream, river tan, amber-gold, river slate, jasper terracotta, mossy rock
   const pebblePalette = [
-    new THREE.Color(0xd6ccb8),
-    new THREE.Color(0xa89e8e),
-    new THREE.Color(0xbeaf96),
-    new THREE.Color(0x8a928c),
-    new THREE.Color(0xc8baa0),
-    new THREE.Color(0x9e9282),
-    new THREE.Color(0xb2a288),
+    new THREE.Color(0xf0ebd8), // Warm cream quartzite
+    new THREE.Color(0xd6ccb8), // River stone light
+    new THREE.Color(0xc8baa0), // River tan
+    new THREE.Color(0xd4a359), // Amber river gold
+    new THREE.Color(0x9e9282), // Warm river gray
+    new THREE.Color(0x6a7775), // River slate green
+    new THREE.Color(0xb3634c), // Jasper terracotta
+    new THREE.Color(0x5e734b), // Mossy river pebble
+    new THREE.Color(0x485250), // Dark river slate
   ];
 
   const pRng = new SeededRandom(2026);
   let pPlaced = 0;
   let pAttempts = 0;
-  while (pPlaced < pebbleCount && pAttempts < 2000) {
+  while (pPlaced < pebbleCount && pAttempts < 4500) {
     pAttempts++;
-    const z = pRng.range(STREAM_BOUNDS.minZ + 0.4, halfD - 0.4);
+    const z = pRng.range(STREAM_BOUNDS.minZ + 0.4, halfD - 0.35);
     const scx = getStreamCenter(z);
     const shw = getStreamHalfWidth(z);
-    const x = scx + pRng.range(-shw * 0.82, shw * 0.82);
+    // Cover the full submerged width of the stream and lake
+    const x = scx + pRng.range(-shw * 0.88, shw * 0.88);
 
     const waterY = getWaterSurfaceHeight(z);
     const h = getHeightAt(x, z);
-    if (h > waterY + 0.03) continue;
+    if (h > waterY + 0.02) continue;
 
-    const scale = pRng.range(0.4, 1.1);
-    bDummy.position.set(x, h + 0.02 * scale, z);
+    const scale = pRng.range(0.35, 1.25);
+    bDummy.position.set(x, h + 0.015 * scale, z);
     bDummy.rotation.set(pRng.range(0, Math.PI), pRng.range(0, Math.PI * 2), pRng.range(0, Math.PI));
     bDummy.scale.set(scale, scale, scale);
     bDummy.updateMatrix();

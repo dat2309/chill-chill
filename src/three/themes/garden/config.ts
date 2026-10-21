@@ -57,9 +57,9 @@ export const GARDEN_METADATA: ThemeMetadata<'garden'> = {
 };
 
 export const GARDEN_CAMERA_PRESET: ThemeCameraPreset = {
-  position: new THREE.Vector3(26.0, 23.0, 26.0),
-  target: new THREE.Vector3(-0.4, 0.45, 0.0),
-  baseFrustumHeight: 25.5,
-  minPolarAngle: Math.PI * 0.16,
-  maxPolarAngle: Math.PI * 0.44,
+  position: new THREE.Vector3(16.0, 15.2, 27.5),
+  target: new THREE.Vector3(-0.35, 0.65, 0.15),
+  baseFrustumHeight: 24.5,
+  minPolarAngle: Math.PI * 0.14,
+  maxPolarAngle: Math.PI * 0.46,
 };

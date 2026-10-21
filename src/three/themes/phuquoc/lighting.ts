@@ -146,15 +146,15 @@ export function createPhuQuocLighting(
         skyCol.copy(cSkyDay);
         currentBgColor.copy(cSkyDay);
       } else if (tod > 16.5 && tod <= 19.0) {
-        // Sunset golden-hour (17:45 peak)
+        // Sunset golden-hour (17:45 peak): warm tropical atmosphere with clear shallow water bounce
         const sunsetT = (tod - 16.5) / 2.5;
         sunCol.copy(cSunSunset);
-        ambientLight.color.setHex(0xffead5);
-        ambientLight.intensity = 0.65;
+        ambientLight.color.setHex(0xffebd8);
+        ambientLight.intensity = 0.72;
         dirLight.intensity = 1.8 * (1.0 - sunsetT * 0.4);
-        hemiLight.color.setHex(0xffd3b5);
-        hemiLight.groundColor.setHex(0x698779);
-        hemiLight.intensity = 1.0;
+        hemiLight.color.setHex(0xffd5b8);
+        hemiLight.groundColor.setHex(0x2b756c); // Warm tropical sea bounce so shallow seabed and water details are visible
+        hemiLight.intensity = 1.05;
         skyCol.copy(cSkySunset);
         currentBgColor.copy(cSkySunset).lerp(cSkyNight, sunsetT * 0.7);
       } else {

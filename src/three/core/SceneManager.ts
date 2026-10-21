@@ -118,7 +118,7 @@ export class SceneManager {
     );
 
     // Default isometric view
-    this.camera.position.set(26.0, 23.0, 26.0);
+    this.camera.position.set(16.0, 15.2, 27.5);
 
     // Controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);

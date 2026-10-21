@@ -100,51 +100,71 @@ export function createPhuQuocVegetation(
     }
     palmObj.add(trunkCurve);
 
-    // Crown of arching palm fronds
+    // Crown of arching palm fronds in 3 realistic tiers (upper upright, middle spreading, lower drooping)
     const crown = new THREE.Group();
     crown.position.copy(currPos);
 
-    const frondCount = 10;
-    for (let f = 0; f < frondCount; f++) {
-      const fAngle = (f / frondCount) * Math.PI * 2 + rng.range(-0.15, 0.15);
-      const frondGeo = new THREE.BufferGeometry();
+    const frondTiers = [
+      // Upper tier: younger fronds reaching upward & outward
+      { count: 5, len: 1.15, archMul: 0.42, droopMul: 0.40, tilt: 0.25 },
+      // Middle tier: mature spreading fronds sweeping outward
+      { count: 6, len: 1.45, archMul: 0.36, droopMul: 0.72, tilt: 0.05 },
+      // Lower tier: mature drooping fronds with graceful downward curve
+      { count: 5, len: 1.60, archMul: 0.24, droopMul: 1.05, tilt: -0.22 },
+    ];
 
-      // Arching pinnate palm leaf quad strip
-      const fSteps = 6;
-      const fPos: number[] = [];
-      const fIndices: number[] = [];
-      const flen = 1.2;
+    let totalFrondIdx = 0;
+    frondTiers.forEach((tier, tierIdx) => {
+      for (let f = 0; f < tier.count; f++) {
+        const baseAngle = (f / tier.count) * Math.PI * 2 + (tierIdx * 0.42) + rng.range(-0.10, 0.10);
+        const frondGeo = new THREE.BufferGeometry();
 
-      for (let step = 0; step <= fSteps; step++) {
-        const ft = step / fSteps;
-        const archY = Math.sin(ft * Math.PI * 0.65) * 0.4 - ft * 0.55;
-        const archDist = ft * flen;
-        const w = Math.sin(ft * Math.PI) * 0.22;
+        // 8 smooth curved steps for natural arch & tip droop
+        const fSteps = 8;
+        const fPos: number[] = [];
+        const fIndices: number[] = [];
 
-        const lx = Math.cos(fAngle) * archDist;
-        const lz = Math.sin(fAngle) * archDist;
-        const perpX = -Math.sin(fAngle) * w;
-        const perpZ = Math.cos(fAngle) * w;
+        for (let step = 0; step <= fSteps; step++) {
+          const ft = step / fSteps;
+          // Arching curve: rises gently near trunk, arches gracefully, droops at the tip
+          const rise = Math.sin(ft * Math.PI * 0.55) * tier.archMul;
+          const droop = Math.pow(ft, 1.85) * tier.droopMul;
+          const tipDroop = Math.pow(Math.max(0, ft - 0.65) / 0.35, 2) * 0.25;
+          const archY = rise - droop - tipDroop + tier.tilt * (1.0 - ft);
 
-        fPos.push(lx + perpX, archY, lz + perpZ);
-        fPos.push(lx - perpX, archY, lz - perpZ);
+          const archDist = ft * tier.len;
+          // Tapered pinnate frond profile: narrow base, wide mid-blade, pointed tip
+          const w = Math.sin(ft * Math.PI) * (0.24 * (1.0 - ft * 0.25));
 
-        if (step < fSteps) {
-          const b = step * 2;
-          fIndices.push(b, b + 1, b + 2);
-          fIndices.push(b + 1, b + 3, b + 2);
+          const lx = Math.cos(baseAngle) * archDist;
+          const lz = Math.sin(baseAngle) * archDist;
+          const perpX = -Math.sin(baseAngle) * w;
+          const perpZ = Math.cos(baseAngle) * w;
+
+          // Subtle V-angle depth on frond leaflets
+          const leafV = -Math.sin(ft * Math.PI) * 0.035;
+
+          fPos.push(lx + perpX, archY + leafV, lz + perpZ);
+          fPos.push(lx - perpX, archY + leafV, lz - perpZ);
+
+          if (step < fSteps) {
+            const b = step * 2;
+            fIndices.push(b, b + 1, b + 2);
+            fIndices.push(b + 1, b + 3, b + 2);
+          }
         }
+
+        frondGeo.setAttribute('position', new THREE.Float32BufferAttribute(fPos, 3));
+        frondGeo.setIndex(fIndices);
+        frondGeo.computeVertexNormals();
+        geometriesToDispose.push(frondGeo);
+
+        const frondMesh = new THREE.Mesh(frondGeo, palmFrondMat);
+        frondMesh.castShadow = true;
+        crown.add(frondMesh);
+        totalFrondIdx++;
       }
-
-      frondGeo.setAttribute('position', new THREE.Float32BufferAttribute(fPos, 3));
-      frondGeo.setIndex(fIndices);
-      frondGeo.computeVertexNormals();
-      geometriesToDispose.push(frondGeo);
-
-      const frondMesh = new THREE.Mesh(frondGeo, palmFrondMat);
-      frondMesh.castShadow = true;
-      crown.add(frondMesh);
-    }
+    });
 
     // Coconut cluster
     const coconutGeo = new THREE.SphereGeometry(0.08, 6, 6);
@@ -254,20 +274,21 @@ export function createPhuQuocVegetation(
   bushMesh.instanceMatrix.needsUpdate = true;
   vegGroup.add(bushMesh);
 
-  // --- 4. Pink Bougainvillea (Hoa Giấy Hồng) ---
-  // Cascades over bungalow trellises and granite boulders
+  // --- 4. Soft Rose Bougainvillea (Hoa Giấy Hồng Êm) ---
+  // Cascades softly over bungalow trellises and granite boulders
   const bougCount = 35;
-  const bougGeo = new THREE.SphereGeometry(0.25, 6, 5);
+  const bougGeo = new THREE.SphereGeometry(0.22, 7, 5);
+  bougGeo.scale(1.2, 0.62, 1.1);
   geometriesToDispose.push(bougGeo);
   const bougMesh = new THREE.InstancedMesh(bougGeo, bougainvilleaMat, bougCount);
   bougMesh.castShadow = true;
 
   // Concentrated near bungalows and eastern headland rocks
   const bougCenters = [
-    { x: -4.8, z: -0.6, r: 1.2 }, // Bungalow 1
-    { x: -1.8, z: -2.2, r: 1.2 }, // Bungalow 2
-    { x: 1.8, z: -1.5, r: 1.2 },  // Bungalow 3
-    { x: 4.5, z: 1.5, r: 1.8 },   // Eastern granite rocks
+    { x: -4.8, z: -0.6, r: 1.1 }, // Bungalow 1
+    { x: -1.8, z: -2.2, r: 1.1 }, // Bungalow 2
+    { x: 1.8, z: -1.5, r: 1.1 },  // Bungalow 3
+    { x: 4.5, z: 1.5, r: 1.6 },   // Eastern granite rocks
   ];
 
   let placedBoug = 0;
@@ -278,12 +299,12 @@ export function createPhuQuocVegetation(
     const bx = center.x + ox;
     const bz = center.z + oz;
     if (!isInsidePhuQuocFootprint(bx, bz, 0.30)) continue;
-    const scale = rng.range(0.6, 1.3);
-    const by = getHeightAt(bx, bz) + 0.2 * scale;
+    const scale = rng.range(0.45, 0.95);
+    const by = getHeightAt(bx, bz) + 0.08 * scale;
 
     dummy.position.set(bx, by, bz);
-    dummy.scale.set(scale, scale * 0.8, scale);
-    dummy.rotation.set(rng.range(0, 0.5), rng.range(0, Math.PI * 2), 0);
+    dummy.scale.set(scale, scale * 0.75, scale);
+    dummy.rotation.set(rng.range(0, 0.3), rng.range(0, Math.PI * 2), 0);
     dummy.updateMatrix();
     bougMesh.setMatrixAt(placedBoug, dummy.matrix);
     placedBoug++;

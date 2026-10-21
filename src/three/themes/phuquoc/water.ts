@@ -606,7 +606,7 @@ export function createPhuQuocWater(
         finalColor += uSunColor * specular;
         finalColor = mix(finalColor, foamColor, foamFactor * 0.75);
 
-        float alpha = clamp(0.22 + depth * 0.28, 0.0, 0.72);
+        float alpha = clamp(0.18 + depth * 0.32, 0.0, 0.72);
         gl_FragColor = vec4(finalColor, alpha);
       }
     `,

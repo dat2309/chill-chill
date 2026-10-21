@@ -78,9 +78,12 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
     const slope = 1.0 - Math.max(0.0, norm.y);
     const dist = getDistanceToShore(x, z);
 
-    // A. Seabed (submerged)
+    // A. Seabed (submerged): clear golden sand in shallows transitioning to deeper sediment
     if (dist < 0) {
-      cDry.copy(PHUQUOC_COLORS.sand.deep).lerp(PHUQUOC_COLORS.sand.wet, Math.min(1, 1 + dist * 0.8));
+      const shallowSand = new THREE.Color(0xd0bfa0);
+      const deepSand = PHUQUOC_COLORS.sand.deep;
+      const shallowBlend = Math.min(1, Math.max(0, 1 + dist * 0.55));
+      cDry.copy(deepSand).lerp(shallowSand, shallowBlend);
       cRainy.copy(cDry).multiplyScalar(0.92);
     }
     // B. Wet swash zone
