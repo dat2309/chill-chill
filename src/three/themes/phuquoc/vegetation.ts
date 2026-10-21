@@ -72,6 +72,13 @@ function createBougainvilleaClusterGeometry(): THREE.BufferGeometry {
   return merged;
 }
 
+// Exact world bounding boxes of thatched bungalow roofs (from 3D cone meshes)
+export const BUNGALOW_ROOF_BOUNDS = [
+  { minX: -6.57, maxX: -3.49, minZ: -3.19, maxZ: -0.30 }, // West Cove Thatched Roof
+  { minX: 0.66,  maxX: 3.81,  minZ: -3.43, maxZ: -0.46 }, // East Cove Thatched Roof
+  { minX: 3.86,  maxX: 7.26,  minZ: -4.57, maxZ: -1.30 }, // East Garden Thatched Roof
+];
+
 export function createPhuQuocVegetation(
   parentGroup: THREE.Group,
   getHeightAt: (x: number, z: number) => number,
@@ -103,30 +110,16 @@ export function createPhuQuocVegetation(
 
   materialsToDispose.push(palmTrunkMat, palmFrondMat, casuarinaMat, bushMat, bougainvilleaMat);
 
-  // --- Footprint-based Bungalow Roof Exclusion ---
-  // Each bungalow roof is ~2.4m x 2.4m pyramid centered around (spot.x, spot.z - 0.15).
-  // A palm crown extends ~1.65m horizontally from trunk top.
-  // We check the entire crown footprint to strictly prevent any palm fronds from draping over bungalow roofs.
-  function isNearBungalowRoof(trunkX: number, trunkZ: number, leanAngle: number, leanDir: number): boolean {
-    const leanDistance = 2.6 * Math.sin(leanAngle) * 0.72;
-    const crownX = trunkX + leanDistance * Math.cos(leanDir);
-    const crownZ = trunkZ - leanDistance * Math.sin(leanDir);
-    const frondRadius = 1.65; // Max horizontal reach of lower fronds
-
-    for (const b of BUNGALOW_SPOTS) {
-      const roofCenterX = b.x;
-      const roofCenterZ = b.z - 0.15;
-      const roofRadius = 1.55; // Half-diagonal of the steep thatched roof
-
-      // Check crown footprint against roof bounds
-      const distCrown = Math.hypot(crownX - roofCenterX, crownZ - roofCenterZ);
-      if (distCrown < roofRadius + frondRadius) {
-        return true;
-      }
-
-      // Also ensure trunk base is not placed within bungalow deck or veranda
-      const distBase = Math.hypot(trunkX - roofCenterX, trunkZ - roofCenterZ);
-      if (distBase < roofRadius + 0.6) {
+  // --- Box3-based Bungalow Roof Exclusion ---
+  // Evaluates the actual 3D bounding box (Box3) of the palm crown against each bungalow roof footprint.
+  // Strictly prevents any coconut palm fronds from draping over or penetrating bungalow roofs.
+  function doesCrownIntersectRoof(crownObj: THREE.Object3D): boolean {
+    crownObj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(crownObj);
+    for (const r of BUNGALOW_ROOF_BOUNDS) {
+      const xOverlap = box.min.x <= r.maxX && box.max.x >= r.minX;
+      const zOverlap = box.min.z <= r.maxZ && box.max.z >= r.minZ;
+      if (xOverlap && zOverlap) {
         return true;
       }
     }
@@ -136,22 +129,23 @@ export function createPhuQuocVegetation(
   // --- 1. Coconut Palms (Cây Dừa Phú Quốc) ---
   // Strategically placed along beach foreshore and rocky headlands, leaning towards water and completely clear of bungalow roofs
   const palmCandidates = [
-    // West cove sandy foreshore (leaning west towards water)
-    { x: -7.2, z: 0.8, leanAngle: 0.32, leanDir: 0.6 },
-    { x: -4.0, z: 1.8, leanAngle: 0.35, leanDir: 0.4 },
+    // West cove sandy foreshore (leaning west/northwest towards water)
+    { x: -7.5, z: 2.0, leanAngle: 0.32, leanDir: 0.8 },
+    { x: -6.8, z: 2.4, leanAngle: 0.34, leanDir: 0.6 },
+    { x: -4.5, z: 2.5, leanAngle: 0.30, leanDir: 0.3 },
     // Jetty approach & central beach (leaning towards sunset bay)
-    { x: -0.6, z: 0.8, leanAngle: 0.30, leanDir: 0.2 },
-    { x: 0.8, z: 0.6, leanAngle: 0.32, leanDir: -0.2 },
-    // Beach terrace between rock outcrops
-    { x: 3.2, z: 0.4, leanAngle: 0.34, leanDir: -0.5 },
-    { x: 4.8, z: 1.2, leanAngle: 0.38, leanDir: -0.7 },
-    { x: 6.8, z: 1.6, leanAngle: 0.38, leanDir: -0.8 },
-    // Southern headland knolls (away from bungalow roofs)
-    { x: -7.5, z: -3.8, leanAngle: 0.18, leanDir: 0.7 },
-    { x: -2.6, z: -4.2, leanAngle: 0.18, leanDir: 0.4 },
-    { x: 0.0, z: -4.2, leanAngle: 0.16, leanDir: 0.2 },
-    { x: 7.2, z: -1.0, leanAngle: 0.22, leanDir: -0.5 },
-    { x: 4.2, z: -4.8, leanAngle: 0.18, leanDir: -0.3 },
+    { x: -1.2, z: 1.2, leanAngle: 0.28, leanDir: 0.6 },
+    { x: 0.2,  z: 1.8, leanAngle: 0.32, leanDir: 0.0 },
+    // East beach & coastal terrace
+    { x: 3.2,  z: 1.8, leanAngle: 0.32, leanDir: 0.0 },
+    { x: 5.2,  z: 1.6, leanAngle: 0.35, leanDir: -0.4 },
+    { x: 7.0,  z: 1.5, leanAngle: 0.36, leanDir: -0.7 },
+    // Inland hills / headlands (well away from roofs)
+    { x: -7.6, z: -5.0, leanAngle: 0.18, leanDir: 0.8 },
+    { x: -1.0, z: -5.0, leanAngle: 0.16, leanDir: 0.2 },
+    { x: 1.2,  z: -5.2, leanAngle: 0.16, leanDir: -0.2 },
+    { x: 7.6,  z: 0.5,  leanAngle: 0.22, leanDir: -0.5 },
+    { x: 6.8,  z: 2.8,  leanAngle: 0.35, leanDir: -0.6 },
   ];
 
   // Helper to create single coconut palm
@@ -263,6 +257,15 @@ export function createPhuQuocVegetation(
     });
 
     palmObj.add(crown);
+
+    // Update world transform to compute true Box3 bounding footprint of frond meshes
+    palmObj.updateMatrixWorld(true);
+
+    // Discard any palm whose crown fronds Box3 intersects any bungalow roof footprint
+    if (doesCrownIntersectRoof(crown)) {
+      return;
+    }
+
     dynamicMeshes.push({
       mesh: crown,
       baseRotation: crown.rotation.clone(),
@@ -272,11 +275,9 @@ export function createPhuQuocVegetation(
     vegGroup.add(palmObj);
   }
 
-  // Instantiate palms that strictly pass bungalow roof clearance
+  // Instantiate coconut palms with verified Box3 clearance
   palmCandidates.forEach((p) => {
-    if (!isNearBungalowRoof(p.x, p.z, p.leanAngle, p.leanDir)) {
-      createPalmTree(p.x, p.z, p.leanAngle, p.leanDir);
-    }
+    createPalmTree(p.x, p.z, p.leanAngle, p.leanDir);
   });
 
   // --- 2. Coastal Pines (Phi Lao Ven Biển) ---

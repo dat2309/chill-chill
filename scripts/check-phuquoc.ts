@@ -606,6 +606,56 @@ for (const s of ['dry', 'rainy'] as const) {
 
 assert(maxStepJump <= maxJumpThreshold, `Continuous sky interpolation: max color step jump between adjacent 0.05h samples is ${(maxStepJump * 255).toFixed(1)}/255 (threshold <= 16/255)`, maxStepDetails);
 
+// 15. Coconut Palm Crown Fronds Box3 vs Thatched Bungalow Roof Footprint Clearance
+import { createPhuQuocArchitecture } from '../src/three/themes/phuquoc/architecture';
+import { createPhuQuocVegetation } from '../src/three/themes/phuquoc/vegetation';
+
+const pqVegScene = new THREE.Scene();
+const pqVegParent = new THREE.Group();
+pqVegScene.add(pqVegParent);
+
+const pqArch = createPhuQuocArchitecture(pqVegParent, getTerrainHeight);
+const pqVeg = createPhuQuocVegetation(pqVegParent, getTerrainHeight, () => 0);
+
+pqVegParent.updateMatrixWorld(true);
+
+const bungalowRoofBoxes: THREE.Box3[] = [];
+pqArch.group.traverse((obj) => {
+  if (obj instanceof THREE.Mesh && obj.geometry instanceof THREE.ConeGeometry && (obj.geometry.parameters as any).height === 1.2) {
+    bungalowRoofBoxes.push(new THREE.Box3().setFromObject(obj));
+  }
+});
+
+let palmFrondOverlapCount = 0;
+let palmFrondFailDetails = '';
+let verifiedPalmsCount = 0;
+
+pqVeg.group.traverse((obj) => {
+  if (obj.name === '' && obj.children.length === 2 && obj.children[1] instanceof THREE.Group) {
+    const crown = obj.children[1];
+    if (crown.children.length > 0 && crown.children[0] instanceof THREE.Mesh) {
+      verifiedPalmsCount++;
+      const crownBox = new THREE.Box3().setFromObject(crown);
+      for (let i = 0; i < bungalowRoofBoxes.length; i++) {
+        const rBox = bungalowRoofBoxes[i];
+        const xOverlap = crownBox.min.x <= rBox.max.x && crownBox.max.x >= rBox.min.x;
+        const zOverlap = crownBox.min.z <= rBox.max.z && crownBox.max.z >= rBox.min.z;
+        if (xOverlap && zOverlap) {
+          palmFrondOverlapCount++;
+          palmFrondFailDetails = `Palm at (${obj.position.x.toFixed(2)}, ${obj.position.z.toFixed(2)}) crown Box3 overlaps Bungalow Roof ${i + 1}`;
+          break;
+        }
+      }
+    }
+  }
+});
+
+assert(
+  verifiedPalmsCount >= 10 && palmFrondOverlapCount === 0,
+  `Coconut palms crown fronds Box3 strictly clear of all thatched bungalow roofs (${verifiedPalmsCount} palms verified with 0 overlaps)`,
+  palmFrondFailDetails
+);
+
 // Layout migrations discard both camera storage paths while retaining settings.
 const oldWindow = (globalThis as any).window;
 try {
