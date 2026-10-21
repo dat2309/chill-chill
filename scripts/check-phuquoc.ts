@@ -760,6 +760,56 @@ assert(
   'Clear ocean surface is unblocked; submerged seabed behind water does not block ripple'
 );
 
+// D. Natural Footprint Cut-Corners Synchronization (Exclusion of outside corner points)
+// The diorama base has softly rounded corners with radius 2.0.
+// Corner (9.9, 7.9) and (-9.9, 7.9) are outside the display perimeter and must NOT register water ripples.
+const cutCorners = [
+  { desc: 'South-East cut corner (9.9, 7.9)', x: 9.9, z: 7.9 },
+  { desc: 'South-West cut corner (-9.9, 7.9)', x: -9.9, z: 7.9 },
+];
+
+for (const corner of cutCorners) {
+  for (const t of pqTides) {
+    const inWater = isInWater(corner.x, corner.z, t.offset);
+    assert(
+      inWater === false,
+      `${corner.desc} is rejected by isInWater at ${t.name} tide`
+    );
+
+    const rayDown = new THREE.Ray(new THREE.Vector3(corner.x, 5.0, corner.z), new THREE.Vector3(0, -1, 0));
+    const waterHit = intersectPhuQuocWater(rayDown, t.level, t.offset);
+    assert(
+      waterHit === null,
+      `${corner.desc} is rejected by intersectPhuQuocWater at ${t.name} tide`
+    );
+  }
+}
+
+// E. In-bounds marine boundary points close to border remain interactive at both tides
+// Test points at 96% radius along the corner ray and 0.5m inside the southern perimeter
+const inBoundsBorderPoints = [
+  { desc: 'South-East marine border inside (9.27, 7.41)', x: 9.27, z: 7.41 },
+  { desc: 'Southern marine border inside (0.0, 7.5)', x: 0.0, z: 7.5 },
+  { desc: 'South-West marine border inside (-9.27, 7.41)', x: -9.27, z: 7.41 },
+];
+
+for (const pt of inBoundsBorderPoints) {
+  for (const t of pqTides) {
+    const inWater = isInWater(pt.x, pt.z, t.offset);
+    assert(
+      inWater === true,
+      `In-bounds border point ${pt.desc} remains interactive (isInWater === true) at ${t.name} tide`
+    );
+
+    const rayDown = new THREE.Ray(new THREE.Vector3(pt.x, 5.0, pt.z), new THREE.Vector3(0, -1, 0));
+    const waterHit = intersectPhuQuocWater(rayDown, t.level, t.offset);
+    assert(
+      waterHit !== null && Math.abs(waterHit.point.y - t.level) < 0.001,
+      `In-bounds border point ${pt.desc} successfully intersects water at ${t.name} tide`
+    );
+  }
+}
+
 // Summary
 const totalPassed = results.filter((r) => r.passed).length;
 console.log('----------------------------------------------------');

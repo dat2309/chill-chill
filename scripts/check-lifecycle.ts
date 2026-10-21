@@ -836,6 +836,91 @@ async function runLifecycleTests() {
     'loadThemeWithRetry provides friendly guidance when dynamic chunk is permanently missing'
   );
 
+  // =========================================================================
+  // 12. SceneManager Authoritative intersectWater & Fallback Execution Path
+  // =========================================================================
+  let rippleCount = 0;
+  let lastRippleCoords = { x: 0, z: 0 };
+
+  // Create a real CPU plane mesh representing water at y = 0.3, spanning [-5, 5] in x and z
+  const testWaterPlaneGeo = new THREE.PlaneGeometry(10, 10);
+  testWaterPlaneGeo.rotateX(-Math.PI / 2); // facing +Y
+  testWaterPlaneGeo.translate(0, 0.3, 0); // at Y = 0.3
+  const testWaterMesh = new THREE.Mesh(testWaterPlaneGeo, new THREE.MeshBasicMaterial());
+  testWaterMesh.name = 'TestWaterMesh';
+
+  let mockIntersectWaterReturn: { point: THREE.Vector3; distance: number } | null = null;
+
+  const testRaycastTheme = createFakeThemeInstance('garden');
+  testRaycastTheme.isInWater = () => true;
+  (testRaycastTheme as any).getWaterMesh = () => testWaterMesh;
+  (testRaycastTheme as any).getWaterLevel = () => 0.3;
+  testRaycastTheme.addRipple = (x: number, z: number) => {
+    rippleCount++;
+    lastRippleCoords = { x, z };
+  };
+  (testRaycastTheme as any).intersectWater = (_ray: THREE.Ray) => {
+    return mockIntersectWaterReturn;
+  };
+
+  const raycastLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    garden: async () => testRaycastTheme,
+    phuquoc: async () => testRaycastTheme,
+  };
+
+  const raycastSceneManager = new SceneManager(mockContainer, {
+    renderer: mockRenderer,
+    loaderMap: raycastLoaderMap,
+  });
+
+  await raycastSceneManager.switchTheme('garden', { ...DEFAULT_GARDEN_STATE, rippleStrength: 0.5 });
+
+  // Position camera directly overhead looking down at (0, 0, 0)
+  (raycastSceneManager as any).camera.position.set(0, 5, 0);
+  (raycastSceneManager as any).camera.lookAt(0, 0, 0);
+  (raycastSceneManager as any).camera.updateMatrixWorld(true);
+
+  // Center pointer on screen: NDC (0, 0)
+  (raycastSceneManager as any).mouse.set(0, 0);
+
+  // Case 1: intersectWater returns null (e.g. authoritative theme logic says point is on land or outside footprint)
+  // Even though CPU waterMesh lies directly beneath the cursor, SceneManager must treat intersectWater()
+  // as the FINAL decision, abort processing, and NOT fallback to waterMesh!
+  mockIntersectWaterReturn = null;
+  rippleCount = 0;
+
+  (raycastSceneManager as any).raycastAndRipple(0.65, true);
+
+  assert(
+    rippleCount === 0,
+    'SceneManager terminates water interaction when intersectWater() returns null, without falling back to CPU waterMesh'
+  );
+
+  // Case 2: intersectWater returns a valid hit point
+  mockIntersectWaterReturn = {
+    point: new THREE.Vector3(1.5, 0.3, 2.5),
+    distance: 4.7,
+  };
+  rippleCount = 0;
+
+  (raycastSceneManager as any).raycastAndRipple(0.65, true);
+
+  assert(
+    rippleCount === 1 && Math.abs(lastRippleCoords.x - 1.5) < 0.01 && Math.abs(lastRippleCoords.z - 2.5) < 0.01,
+    'SceneManager emits ripple at exact authoritative coordinates when intersectWater() succeeds'
+  );
+
+  // Case 3: Theme does NOT provide intersectWater (legacy theme) -> ONLY then fallback to waterMesh
+  delete (testRaycastTheme as any).intersectWater;
+  rippleCount = 0;
+
+  (raycastSceneManager as any).raycastAndRipple(0.65, true);
+
+  assert(
+    rippleCount === 1,
+    'SceneManager falls back to CPU waterMesh ONLY when theme does not implement intersectWater()'
+  );
+
   // Summary
   const totalPassed = results.filter((r) => r.passed).length;
   console.log('----------------------------------------------------');

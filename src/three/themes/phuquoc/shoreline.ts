@@ -6,6 +6,7 @@ import {
   SEA_LEVEL_LOW,
   SEA_LEVEL_HIGH,
 } from './constants';
+import { isInsidePhuQuocFootprint } from './footprint';
 import { fbm2D, SimplexNoise2D } from '../../core/noise';
 
 export const SHORELINE_BOUNDS = {
@@ -153,7 +154,7 @@ export function getWaterDepth(x: number, z: number, tideOffset: number = 0): num
 }
 
 /**
- * True if (x, z) is submerged in water under current tide.
+ * True if (x, z) is submerged in water under current tide within the natural diorama footprint.
  */
 export function isInWater(x: number, z: number, tideOffset: number = 0): boolean {
   if (
@@ -162,6 +163,10 @@ export function isInWater(x: number, z: number, tideOffset: number = 0): boolean
     z < SHORELINE_BOUNDS.minZ ||
     z > SHORELINE_BOUNDS.maxZ
   ) {
+    return false;
+  }
+  // Must be strictly inside the natural rounded diorama footprint (sharing the same boundary as the water geometry)
+  if (!isInsidePhuQuocFootprint(x, z)) {
     return false;
   }
   const currentWaterLevel = getWaterLevel(tideOffset);
@@ -230,7 +235,7 @@ export const BOAT_SPOTS = {
 /**
  * Intersects a 3D ray with the horizontal sea surface of Phu Quoc coastal diorama.
  * Follows current waterLevel and tide.
- * Rejects points outside diorama marine bounds or on dry land.
+ * Rejects points outside the natural rounded diorama footprint or on dry land.
  */
 export function intersectPhuQuocWater(
   ray: THREE.Ray,
@@ -244,7 +249,7 @@ export function intersectPhuQuocWater(
   const hitX = ray.origin.x + t * ray.direction.x;
   const hitZ = ray.origin.z + t * ray.direction.z;
 
-  if (isInWater(hitX, hitZ, tideOffset)) {
+  if (isInsidePhuQuocFootprint(hitX, hitZ) && isInWater(hitX, hitZ, tideOffset)) {
     return {
       point: new THREE.Vector3(hitX, waterLevel, hitZ),
       distance: t,

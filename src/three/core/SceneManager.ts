@@ -584,14 +584,19 @@ export class SceneManager {
     let hitZ: number | null = null;
     let waterDist = Infinity;
 
-    // 1. Theme-specific exact water surface intersection (incorporates dynamic tide, stream Z slope, excludes vertical skirts)
-    const waterHit = activeTheme.intersectWater ? activeTheme.intersectWater(this.raycaster.ray) : null;
-    if (waterHit) {
+    // 1. Authoritative theme-specific water surface intersection:
+    // If the theme provides intersectWater(), its result is the FINAL decision.
+    // If it returns null, terminate water interaction immediately without fallback.
+    if (activeTheme.intersectWater) {
+      const waterHit = activeTheme.intersectWater(this.raycaster.ray);
+      if (!waterHit) {
+        return;
+      }
       hitX = waterHit.point.x;
       hitZ = waterHit.point.z;
       waterDist = waterHit.distance;
     } else {
-      // 2. Direct raycast against active theme's water mesh (excluding vertical cuts / skirts)
+      // 2. ONLY fallback when theme does NOT provide intersectWater()
       const waterMesh = activeTheme.getWaterMesh?.();
       if (waterMesh && waterMesh.visible) {
         const hits = this.raycaster.intersectObject(waterMesh, false);
@@ -605,7 +610,7 @@ export class SceneManager {
         }
       }
 
-      // 3. Mathematical plane intersection fallback ONLY for flat water themes (never arbitrary flat plane for Garden)
+      // 3. Mathematical plane intersection fallback ONLY for flat water themes without intersectWater
       if ((hitX === null || hitZ === null) && activeTheme.id !== 'garden') {
         const waterLevel = activeTheme.getWaterLevel?.() ?? 0.3;
         this.waterPlane.set(new THREE.Vector3(0, 1, 0), -waterLevel);
