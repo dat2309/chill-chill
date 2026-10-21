@@ -19,7 +19,7 @@ import {
   SEA_LEVEL_HIGH,
   DEFAULT_PHUQUOC_STATE,
 } from '../src/three/themes/phuquoc/constants';
-import { calculatePhuQuocSunPosition } from '../src/three/themes/phuquoc/lighting';
+import { calculatePhuQuocSunPosition, getPhuQuocSkyGradient } from '../src/three/themes/phuquoc/lighting';
 import {
   PHUQUOC_CENTER,
   PHUQUOC_BOUNDARY_POINTS,
@@ -533,6 +533,42 @@ for (const sVert of skirtTopVerts) {
 }
 assert(skirtTopVerts.length > 50 && zeroGapConnectivity, `Water surface outer boundary and marine cut skirt share exact matching boundary vertices (${skirtTopVerts.length} top vertices verified with 0.0000 gap)`);
 
+
+// 13. Phu Quoc Sky Night Luminance & Overcast Darkening Verification
+// Night in rainy season must NEVER be lighter than dry night (scaled by daylight factor), and night is always drastically darker than daytime.
+const tTop = new THREE.Color();
+const tMid = new THREE.Color();
+const tBot = new THREE.Color();
+
+let nightDarkerThanDay = true;
+let rainyNightNotBrighter = true;
+let nightLuminanceDetails = '';
+
+const nightHours = [21.0, 22.0, 23.0, 0.0, 1.0, 2.0, 3.0, 4.0];
+const noonSky = getPhuQuocSkyGradient(12.0, 'dry', tTop, tMid, tBot);
+const noonLum = 0.2126 * noonSky.top.r + 0.7152 * noonSky.top.g + 0.0722 * noonSky.top.b;
+
+for (const nh of nightHours) {
+  const drySky = getPhuQuocSkyGradient(nh, 'dry', new THREE.Color(), new THREE.Color(), new THREE.Color());
+  const rainySky = getPhuQuocSkyGradient(nh, 'rainy', new THREE.Color(), new THREE.Color(), new THREE.Color());
+
+  const dryLum = 0.2126 * drySky.top.r + 0.7152 * drySky.top.g + 0.0722 * drySky.top.b;
+  const rainyLum = 0.2126 * rainySky.top.r + 0.7152 * rainySky.top.g + 0.0722 * rainySky.top.b;
+
+  if (rainyLum > dryLum + 0.001) {
+    rainyNightNotBrighter = false;
+    nightLuminanceDetails = `At tod=${nh}: rainyLum (${rainyLum.toFixed(4)}) > dryLum (${dryLum.toFixed(4)})`;
+    break;
+  }
+  if (dryLum > noonLum * 0.1 || rainyLum > noonLum * 0.1) {
+    nightDarkerThanDay = false;
+    nightLuminanceDetails = `At tod=${nh}: dryLum=${dryLum.toFixed(4)}, noonLum=${noonLum.toFixed(4)}`;
+    break;
+  }
+}
+
+assert(rainyNightNotBrighter, 'Monsoon rainy night sky is not brighter than dry night sky (daylight factor prevents daytime overcast leak into night)', nightLuminanceDetails);
+assert(nightDarkerThanDay, 'Night sky luminance across all night hours is at least 10x darker than noon tropical daylight', nightLuminanceDetails);
 
 // Layout migrations discard both camera storage paths while retaining settings.
 const oldWindow = (globalThis as any).window;
