@@ -272,7 +272,7 @@ export class SceneManager {
       if (camParam === 'top') {
         this.controls.minPolarAngle = 0;
         this.controls.maxPolarAngle = Math.PI;
-        this.camera.position.set(0.001, 35, 0.001);
+        this.camera.position.set(0, 35, 0.001);
         this.controls.target.set(0, 0, 0);
       } else if (camParam === 'side') {
         this.controls.minPolarAngle = 0;
@@ -284,6 +284,12 @@ export class SceneManager {
 
     this.camera.updateProjectionMatrix();
     this.controls.update();
+    if (!savedCam) {
+      // Fit after choosing the viewing direction, including top/side reviews.
+      // The full rectangular display must also fit narrow mobile viewports.
+      const fittedHeight = calculateBaseFrustumHeight(this.camera, this.renderer, newTheme.group);
+      setCameraProjection(this.camera, Math.max(frustumH, fittedHeight), aspect);
+    }
   }
 
   isInitialized(): boolean {

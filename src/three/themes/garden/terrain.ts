@@ -98,8 +98,8 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
 
   // 2. Glamping Plateau Zone: Softened, natural undulating contour (NOT a rigid rectangle)
   // Curves organically around campsite living area out to x ~ -9.6
-  const frontEdgeZ = 0.85 + Math.sin((x + 4.0) * 0.70) * 0.35 + SimplexNoise2D(x * 0.6, 1.5) * 0.22;
-  const rightEdgeX = -0.55 + Math.sin((z + 1.2) * 0.80) * 0.45 + SimplexNoise2D(1.5, z * 0.7) * 0.25;
+  const frontEdgeZ = 1.15 + Math.sin((x + 4.0) * 0.70) * 0.35 + SimplexNoise2D(x * 0.6, 1.5) * 0.22;
+  const rightEdgeX = -0.1 + Math.sin((z + 1.2) * 0.80) * 0.45 + SimplexNoise2D(1.5, z * 0.7) * 0.25;
   const backEdgeZ = -3.8 + Math.cos(x * 0.4) * 0.35;
   const leftEdgeX = -9.6 + SimplexNoise2D(z * 0.4, 3.2) * 0.35;
 
@@ -126,8 +126,9 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   let currentZone: ZoneType = 'bank';
 
   if (z < -3.5) {
-    const blendToMeadow = smoothstep(-4.2, -3.2, z);
-    baseH = THREE.MathUtils.lerp(mountainH, plateauGentle, blendToMeadow * (inPlateauBox ? 1.0 : 0.35));
+    const mountainBlend = 1.0 - smoothstep(-5.0, -3.5, z);
+    const valleyFloor = x < rightEdgeX ? plateauGentle : rightBankH;
+    baseH = THREE.MathUtils.lerp(valleyFloor, mountainH, mountainBlend);
     currentZone = 'mountain';
   } else if (inPlateauBox && plateauCore > 0.70) {
     baseH = plateauGentle;
@@ -262,7 +263,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
 
   function sampleTerrain(x: number, z: number): TerrainSample {
     const inFootprint = isInsideGardenFootprint(x, z);
-    const inBounds = inFootprint && Math.abs(x) <= halfW - 0.25 && Math.abs(z) <= halfD - 0.25;
+    const inBounds = inFootprint;
     const h = getHeightAt(x, z);
     const norm = getNormalAt(x, z);
     const slope = 1.0 - Math.max(0.0, norm.y);
@@ -514,8 +515,8 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     const phi = (ib / nBevelSteps) * (Math.PI * 0.5);
     const y = wallCutoffY - Math.sin(phi) * (wallCutoffY - baseBottomY);
     const outward = bevelRadius * (1.0 - Math.cos(phi));
-    const nY = -Math.cos(phi);
-    const nOut = Math.sin(phi);
+    const nY = -Math.sin(phi);
+    const nOut = Math.cos(phi);
 
     for (let it = 0; it < numSegments; it++) {
       const bPt = GARDEN_BOUNDARY_POINTS[it];

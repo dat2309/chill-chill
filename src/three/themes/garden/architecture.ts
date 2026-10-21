@@ -142,9 +142,9 @@ export function createArchitecture(
   // 1. THREE GEODESIC DOME TENTS ON INDIVIDUAL WOODEN DECKS
   // Separated across the meadow with space and natural vegetation between them
   const domeConfigs = [
-    { x: -4.8, z: -2.0, rotY: 0.15 }, // Dome 1 (Back left)
-    { x: -1.9, z: -1.2, rotY: -0.20 }, // Dome 2 (Mid right)
-    { x: -4.0, z: 0.15, rotY: 0.05 },   // Dome 3 (Front left)
+    { x: -6.0, z: -2.2, rotY: 0.15 }, // Dome 1 (Back left)
+    { x: -3.8, z: -1.8, rotY: -0.20 }, // Dome 2 (Mid right)
+    { x: -4.7, z: 0.15, rotY: 0.05 },   // Dome 3 (Front left)
   ];
 
   domeConfigs.forEach((cfg, idx) => {
@@ -500,13 +500,10 @@ export function createArchitecture(
     width: number;
   }
 
+  // Two separate descents frame the meadow, matching its two bank approaches.
   const stairFlights: StairFlightDef[] = [
-    // Flight 1: Upper cliff descent from campsite meadow down to intermediate landing
-    { startX: -3.5, startZ: 0.85, endX: -3.0, endZ: 1.55, steps: 8, width: 0.90 },
-    // Flight 2: Lower cliff descent from intermediate landing down to pebble bank (lands on dry pebble shore)
-    { startX: -2.85, startZ: 1.70, endX: -2.35, endZ: 2.45, steps: 8, width: 0.90 },
-    // Right Bank Gentle Trail: descends along dry gravel slope to a stone overlook landing above water
-    { startX: 3.4, startZ: 0.30, endX: 3.9, endZ: 1.55, steps: 7, width: 0.80 },
+    { startX: -5.8, startZ: 0.65, endX: -5.45, endZ: 2.15, steps: 12, width: 0.85 },
+    { startX: -1.8, startZ: 1.05, endX: -1.25, endZ: 2.65, steps: 12, width: 0.85 },
   ];
 
   stairFlights.forEach((flight) => {
@@ -541,9 +538,9 @@ export function createArchitecture(
     }
   });
 
-  // Intermediate Landing Terrace (Chiếu nghỉ) between Flight 1 and Flight 2
-  const landingX = -2.92;
-  const landingZ = 1.62;
+  // Left descent landing on the dry bank
+  const landingX = -5.45;
+  const landingZ = 2.25;
   const landingBedY = getHeightAt(landingX, landingZ);
   const landingTerraceH = 0.24;
   const landingGeo = new THREE.BoxGeometry(1.15, landingTerraceH, 1.05).toNonIndexed();
@@ -561,9 +558,9 @@ export function createArchitecture(
     stoneGeometries.push(prepareGeometry(cGeo, COLORS.terrain.rockDark));
   });
 
-  // Right Bank Overlook Terrace (dry stone landing platform safely above water)
-  const rLandingX = 4.0;
-  const rLandingZ = 1.70;
+  // Right descent landing on the dry bank
+  const rLandingX = -1.25;
+  const rLandingZ = 2.75;
   const rLandingBedY = getHeightAt(rLandingX, rLandingZ);
   const rLandingGeo = new THREE.BoxGeometry(1.10, 0.20, 0.95).toNonIndexed();
   rLandingGeo.translate(rLandingX, rLandingBedY + 0.04, rLandingZ);

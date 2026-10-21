@@ -1,38 +1,18 @@
 import * as THREE from 'three';
 
-/**
- * Natural Diorama Footprint for "Phu Quoc Sunset Bay":
- * Organic coastal headland and bay silhouette:
- * - Prominent granite rocky headland protruding prominently at the Northeast (x > 0, z < 0)
- * - Sweeping crescent bay contour cradling the sea, coral reef, and boats on the South / Southwest
- * - Curved beach spit and sandy backshore hugging the bungalow and coconut palms on the West / Northwest
- * - Asymmetric natural coastal silhouette with clear directional axis (NE headland to SW bay)
- */
-
+/** Marine display bounds, independent of the crescent island shoreline. */
 export const PHUQUOC_CENTER = new THREE.Vector2(0.0, 0.2);
 
+// A broad rectangular sea section with softly rounded corners. The island
+// shape is defined separately by shoreline.ts, never by this display border.
 export function getPhuQuocFootprintRadius(theta: number): number {
-  let r = 7.75;
-
-  // Promontory 1: Prominent Granite Rocky Headland protruding at Northeast (theta ~ -PI/4, x > 0, z < 0)
-  // In our coordinates, -Z is rear/North, +Z is foreground/South
-  // theta = -PI/4 corresponds to x > 0, z < 0 (Northeast)
-  const headlandAngle = -Math.PI * 0.25;
-  const dThetaHeadland = Math.atan2(Math.sin(theta - headlandAngle), Math.cos(theta - headlandAngle));
-  r += 1.95 * Math.exp(-Math.pow(dThetaHeadland / 0.38, 2));
-
-  // Coastal Bay Arc: Wide bay crescent on South & Southwest (theta ~ +PI/3 to +3PI/4, z > 0)
-  const bayFactor = Math.max(0, Math.sin(theta));
-  r += 1.35 * Math.pow(bayFactor, 1.35);
-
-  // Inland Dune Arc on West / Northwest (theta ~ PI)
-  const inlandFactor = Math.max(0, -Math.cos(theta));
-  r += 1.05 * Math.pow(inlandFactor, 1.6);
-
-  // Coastal organic undulations along the marine perimeter
-  r += 0.38 * Math.sin(2 * theta - 0.7) - 0.22 * Math.cos(4 * theta + 0.3);
-
-  return r;
+  const dx = Math.abs(Math.cos(theta));
+  const dz = Math.abs(Math.sin(theta));
+  const radius = 2.0;
+  const t = Math.min(10 / Math.max(dx, 1e-12), 8.4 / Math.max(dz, 1e-12));
+  if (t * dx <= 8 || t * dz <= 6.4) return t;
+  const projection = dx * 8 + dz * 6.4;
+  return projection + Math.sqrt(Math.max(0, projection * projection - 8 ** 2 - 6.4 ** 2 + radius ** 2));
 }
 
 export function getPhuQuocBoundaryPoint(theta: number): THREE.Vector2 {

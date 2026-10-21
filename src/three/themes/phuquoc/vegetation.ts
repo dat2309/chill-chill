@@ -68,7 +68,7 @@ export function createPhuQuocVegetation(
 
     // Segmented curved trunk
     const segments = 7;
-    const totalHeight = 3.2;
+    const totalHeight = 2.6;
     const segHeight = totalHeight / segments;
     const trunkCurve = new THREE.Group();
 
@@ -113,13 +113,13 @@ export function createPhuQuocVegetation(
       const fSteps = 6;
       const fPos: number[] = [];
       const fIndices: number[] = [];
-      let flen = 1.6;
+      const flen = 1.2;
 
       for (let step = 0; step <= fSteps; step++) {
         const ft = step / fSteps;
         const archY = Math.sin(ft * Math.PI * 0.65) * 0.4 - ft * 0.55;
         const archDist = ft * flen;
-        const w = Math.sin(ft * Math.PI) * 0.28;
+        const w = Math.sin(ft * Math.PI) * 0.22;
 
         const lx = Math.cos(fAngle) * archDist;
         const lz = Math.sin(fAngle) * archDist;
@@ -183,7 +183,8 @@ export function createPhuQuocVegetation(
   const pineCount = 20;
   const pineTrunkGeo = new THREE.CylinderGeometry(0.08, 0.12, 1.2, 6);
   geometriesToDispose.push(pineTrunkGeo);
-  const pineCanopyGeo = new THREE.ConeGeometry(0.65, 2.6, 7);
+  const pineCanopyGeo = new THREE.IcosahedronGeometry(0.65, 2);
+  pineCanopyGeo.scale(1, 1.9, 0.85);
   geometriesToDispose.push(pineCanopyGeo);
 
   const pineTrunkMesh = new THREE.InstancedMesh(pineTrunkGeo, palmTrunkMat, pineCount);
@@ -195,12 +196,13 @@ export function createPhuQuocVegetation(
   let placedPines = 0;
 
   for (let i = 0; i < pineCount * 5 && placedPines < pineCount; i++) {
-    const px = rng.range(-9.0, 9.0);
-    const pz = rng.range(-7.5, -3.2);
+    const cluster = [[-6.7, -5.5], [-1.4, -6.0], [5.8, -4.7]][i % 3];
+    const px = cluster[0] + rng.range(-1.5, 1.5);
+    const pz = cluster[1] + rng.range(-1.1, 1.1);
 
     if (isInsidePhuQuocFootprint(px, pz, 0.45) && getDistanceToShore(px, pz) > 4.0 && !isInWater(px, pz)) {
       const py = getHeightAt(px, pz);
-      const scale = rng.range(0.8, 1.4);
+      const scale = rng.range(0.65, 1.05);
 
       // Trunk
       dummy.position.set(px, py + 0.6 * scale, pz);
@@ -210,7 +212,7 @@ export function createPhuQuocVegetation(
       pineTrunkMesh.setMatrixAt(placedPines, dummy.matrix);
 
       // Canopy
-      dummy.position.set(px, py + (1.2 + 1.3) * scale, pz);
+      dummy.position.set(px, py + 1.7 * scale, pz);
       dummy.updateMatrix();
       pineCanopyMesh.setMatrixAt(placedPines, dummy.matrix);
 
@@ -276,10 +278,10 @@ export function createPhuQuocVegetation(
     const bx = center.x + ox;
     const bz = center.z + oz;
     if (!isInsidePhuQuocFootprint(bx, bz, 0.30)) continue;
-    const by = getHeightAt(bx, bz) + rng.range(0.3, 1.2);
+    const scale = rng.range(0.6, 1.3);
+    const by = getHeightAt(bx, bz) + 0.2 * scale;
 
     dummy.position.set(bx, by, bz);
-    const scale = rng.range(0.6, 1.3);
     dummy.scale.set(scale, scale * 0.8, scale);
     dummy.rotation.set(rng.range(0, 0.5), rng.range(0, Math.PI * 2), 0);
     dummy.updateMatrix();

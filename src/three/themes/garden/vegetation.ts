@@ -26,14 +26,15 @@ interface ExclusionBox {
 
 // Building footprints and clear sightline corridor
 const EXCLUSION_BOXES: ExclusionBox[] = [
-  { minX: -6.2, maxX: -3.8, minZ: -3.1, maxZ: -0.9 }, // Dome 1 & deck
-  { minX: -3.4, maxX: -1.0, minZ: -2.3, maxZ: -0.1 }, // Dome 2 & deck
-  { minX: -5.4, maxX: -3.0, minZ: -1.1, maxZ: 1.1 },  // Dome 3 & deck
+  { minX: -7.0, maxX: -5.0, minZ: -3.2, maxZ: -1.2 }, // Dome 1 & deck
+  { minX: -4.8, maxX: -2.8, minZ: -2.8, maxZ: -0.8 }, // Dome 2 & deck
+  { minX: -5.7, maxX: -3.7, minZ: -0.85, maxZ: 1.15 },  // Dome 3 & deck
   { minX: -2.0, maxX: 0.1,  minZ: -3.6, maxZ: -1.2 }, // Cabin & deck
   { minX: -3.8, maxX: -2.6, minZ: -1.4, maxZ: -0.2 }, // Campfire
   { minX: -7.0, maxX: -5.4, minZ: -1.2, maxZ: 0.2 },  // Picnic table
   { minX: -6.8, maxX: -5.2, minZ: -3.1, maxZ: -1.9 }, // Archery
-  { minX: -4.0, maxX: -2.0, minZ: 0.7,  maxZ: 2.7 },  // Staircases
+  { minX: -6.4, maxX: -4.9, minZ: 0.3, maxZ: 2.9 }, // Left staircase
+  { minX: -2.4, maxX: -0.7, minZ: 0.7, maxZ: 3.3 }, // Right staircase
   { minX: 4.4,  maxX: 6.4,  minZ: 3.4,  maxZ: 5.5 },  // SUP board & beach props on bank
 ];
 
@@ -111,10 +112,11 @@ export function createVegetation(
   while (pineInstances.length < pineCount && pAttempts < 1500) {
     pAttempts++;
     // Strictly inside diorama mountain bounds (z < -3.2)
-    const x = vRng.range(-halfW + 1.2, halfW - 1.2);
-    const z = vRng.range(-halfD + 1.2, -3.4);
+    const cluster = [[-7.4, -5.5], [-3.8, -6.1], [5.8, -5.7]][pAttempts % 3];
+    const x = cluster[0] + vRng.range(-1.8, 1.8);
+    const z = cluster[1] + vRng.range(-1.1, 1.1);
 
-    if (!isInsideGardenFootprint(x, z, 0.45) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.6)) continue;
+    if (!isInsideGardenFootprint(x, z, 0.65) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.6)) continue;
     const h = getHeightAt(x, z);
     if (h < 2.0) continue; // Only on mountain slope
 
@@ -123,7 +125,7 @@ export function createVegetation(
 
     let tooClose = false;
     for (const p of pineInstances) {
-      if (Math.hypot(x - p.x, z - p.z) < 1.1) {
+      if (Math.hypot(x - p.x, z - p.z) < 0.8) {
         tooClose = true;
         break;
       }
@@ -245,7 +247,7 @@ export function createVegetation(
   ];
 
   candidateDecSpots.forEach((spot) => {
-    if (!isInsideGardenFootprint(spot.x, spot.z, 0.45) || Math.abs(spot.x) > halfW - 0.9 || Math.abs(spot.z) > halfD - 0.9) return;
+    if (!isInsideGardenFootprint(spot.x, spot.z, spot.r + 0.15) || Math.abs(spot.x) > halfW - 0.9 || Math.abs(spot.z) > halfD - 0.9) return;
     if (isInStream(spot.x, spot.z) || isInsideBuildingExclusion(spot.x, spot.z, 0.4)) return;
     const h = getHeightAt(spot.x, spot.z);
     if (h < WATER_LEVEL + 0.15) return;

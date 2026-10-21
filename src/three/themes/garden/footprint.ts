@@ -1,45 +1,18 @@
 import * as THREE from 'three';
 
-/**
- * Natural Diorama Footprint for "Chillax Garden & Stream":
- * Asymmetric alpine glamping valley silhouette:
- * - Wide, elevated meadow terrace lobe on the West (housing glamping domes, cabin deck, campfire, picnic area)
- * - Towering rear mountain crest wall on the North / Northwest
- * - Mountain gorge cleft niche at Northeast where the stream enters the valley
- * - Rolling pine-forested bank and rocky knolls on the East
- * - Flaring foreground stream delta basin and pebble beach landing on the South / Southeast
- * - Distinct asymmetric valley contours that avoid any resemblance to a generic circular or oval disc.
- */
+/** Display perimeter only. The meadow and stream retain their own contours. */
+export const GARDEN_CENTER = new THREE.Vector2(0, 0);
 
-export const GARDEN_CENTER = new THREE.Vector2(-0.6, 0.0);
-
+// Ray intersection with a 20 × 16 rounded rectangle, corner radius 1.2.
+// Straight foreground edge coincides with the stream's display cut at z=8.
 export function getGardenFootprintRadius(theta: number): number {
-  let r = 7.85;
-
-  // Lobe 1: Wide Glamping Plateau extension on West (theta ~ PI)
-  // Reaches x ~ -9.6, giving ample room for all 3 domes, cabin, campfire, and picnic lawn
-  const westFactor = Math.max(0, -Math.cos(theta));
-  r += 2.25 * Math.pow(westFactor, 1.55);
-
-  // Lobe 2: High Mountain Ridge along North/Northwest (theta ~ -PI/2, -Z is rear/North)
-  const northFactor = Math.max(0, -Math.sin(theta));
-  r += 1.05 * Math.pow(northFactor, 1.75);
-
-  // Inset 1: Mountain Gorge cleft niche at Northeast (theta ~ -0.26 PI, x > 0, z < 0)
-  // Indents naturally into the stream pass where water cuts between granite peaks
-  const gorgeAngle = -Math.PI * 0.26;
-  const dThetaGorge = Math.atan2(Math.sin(theta - gorgeAngle), Math.cos(theta - gorgeAngle));
-  r -= 0.95 * Math.exp(-Math.pow(dThetaGorge / 0.32, 2));
-
-  // Lobe 3: Broad stream mouth basin and pebble shore in foreground South (theta ~ +PI/2, +Z)
-  // Flaring river delta cradling SUP board and lower stream pool
-  const southFactor = Math.max(0, Math.sin(theta));
-  r += 1.45 * Math.pow(southFactor, 1.35);
-
-  // Smooth natural geological undulating lobes along the valley flanks
-  r += 0.38 * Math.sin(2 * theta + 0.5) + 0.22 * Math.cos(3 * theta - 0.4);
-
-  return r;
+  const dx = Math.abs(Math.cos(theta));
+  const dz = Math.abs(Math.sin(theta));
+  const radius = 1.2;
+  const t = Math.min(10 / Math.max(dx, 1e-12), 8 / Math.max(dz, 1e-12));
+  if (t * dx <= 10 - radius || t * dz <= 8 - radius) return t;
+  const projection = dx * (10 - radius) + dz * (8 - radius);
+  return projection + Math.sqrt(Math.max(0, projection * projection - (10 - radius) ** 2 - (8 - radius) ** 2 + radius ** 2));
 }
 
 export function getGardenBoundaryPoint(theta: number): THREE.Vector2 {

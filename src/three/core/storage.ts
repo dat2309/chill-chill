@@ -8,7 +8,7 @@ import {
   CameraState,
 } from './types';
 
-export const CURRENT_STORAGE_VERSION = 2;
+export const CURRENT_STORAGE_VERSION = 3;
 export const STORAGE_KEY = 'chillax_diorama_state_v2';
 
 export const DEFAULT_GARDEN_STATE: ThemeState<'garden'> = {
@@ -170,11 +170,15 @@ export function loadPersistedAppState(): PersistedAppState {
       debugTerrain: Boolean(data.shared?.debugTerrain),
     };
 
+    if (data.version !== CURRENT_STORAGE_VERSION) {
+      gardenState.cameraState = undefined;
+      phuquocState.cameraState = undefined;
+    }
     const camera: Partial<Record<ThemeId, CameraState>> = {};
     const gardenCam = sanitizeCameraState(data.camera?.garden ?? data.gardenState?.cameraState);
-    if (gardenCam) camera.garden = gardenCam;
+    if (data.version === CURRENT_STORAGE_VERSION && gardenCam) camera.garden = gardenCam;
     const phuquocCam = sanitizeCameraState(data.camera?.phuquoc ?? data.phuquocState?.cameraState);
-    if (phuquocCam) camera.phuquoc = phuquocCam;
+    if (data.version === CURRENT_STORAGE_VERSION && phuquocCam) camera.phuquoc = phuquocCam;
 
     return {
       version: CURRENT_STORAGE_VERSION,

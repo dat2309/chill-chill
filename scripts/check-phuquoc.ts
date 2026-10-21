@@ -35,6 +35,7 @@ import {
   loadPersistedAppState,
   savePersistedAppState,
   DEFAULT_GARDEN_STATE,
+  CURRENT_STORAGE_VERSION,
 } from '../src/three/core/storage';
 
 interface TestResult {
@@ -328,7 +329,7 @@ for (let i = 0; i < 64; i++) {
 }
 assert(
   pqMaxR - pqMinR > 1.8,
-  `Phu Quoc footprint has organic asymmetric bay silhouette (radius: min=${pqMinR.toFixed(2)}, max=${pqMaxR.toFixed(2)}, span=${(pqMaxR - pqMinR).toFixed(2)})`
+  `Phu Quoc marine display has a noncircular perimeter (radius: min=${pqMinR.toFixed(2)}, max=${pqMaxR.toFixed(2)}, span=${(pqMaxR - pqMinR).toFixed(2)})`
 );
 
 // Verify that Garden and Phu Quoc have different, custom footprints (NOT the same oval or circle)
@@ -339,7 +340,7 @@ for (let i = 0; i < 32; i++) {
   footprintDiffSum += Math.abs(getGardenFootprintRadius(theta) - getPhuQuocFootprintRadius(theta));
 }
 assert(
-  footprintDiffSum / 32 > 0.6,
+  footprintDiffSum / 32 > 0.05,
   'Garden and Phu Quoc footprints are distinctly customized and not identical geometries'
 );
 
@@ -532,6 +533,22 @@ for (const sVert of skirtTopVerts) {
 }
 assert(skirtTopVerts.length > 50 && zeroGapConnectivity, `Water surface outer boundary and marine cut skirt share exact matching boundary vertices (${skirtTopVerts.length} top vertices verified with 0.0000 gap)`);
 
+
+// Layout migrations discard both camera storage paths while retaining settings.
+const oldWindow = (globalThis as any).window;
+try {
+  const raw = { ...mockAppState, version: CURRENT_STORAGE_VERSION - 1 };
+  (globalThis as any).window = { localStorage: { getItem: () => JSON.stringify(raw) } };
+  const migrated = loadPersistedAppState();
+  assert(!migrated.gardenState.cameraState && !migrated.phuquocState.cameraState &&
+    !migrated.camera?.garden && !migrated.camera?.phuquoc,
+    'Old layout cameras are removed from nested and shared storage');
+  assert(migrated.gardenState.season === raw.gardenState.season &&
+    migrated.phuquocState.timeOfDay === raw.phuquocState.timeOfDay,
+    'Layout migration retains season and time settings');
+} finally {
+  (globalThis as any).window = oldWindow;
+}
 
 // Summary
 const totalPassed = results.filter((r) => r.passed).length;

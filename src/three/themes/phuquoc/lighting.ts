@@ -138,6 +138,7 @@ export function createPhuQuocLighting(
         // Daytime tropical sun
         const dayT = Math.sin(((tod - 6.0) / 10.5) * Math.PI);
         sunCol.copy(cSunSunset).lerp(cSunNoon, dayT);
+        ambientLight.intensity = 0.5;
         dirLight.intensity = 1.5 + 0.4 * dayT;
         hemiLight.color.setHex(0xe8f4fc);
         hemiLight.groundColor.setHex(0x28635c);
@@ -148,15 +149,18 @@ export function createPhuQuocLighting(
         // Sunset golden-hour (17:45 peak)
         const sunsetT = (tod - 16.5) / 2.5;
         sunCol.copy(cSunSunset);
+        ambientLight.color.setHex(0xffead5);
+        ambientLight.intensity = 0.65;
         dirLight.intensity = 1.8 * (1.0 - sunsetT * 0.4);
-        hemiLight.color.setHex(0xff9977);
-        hemiLight.groundColor.setHex(0x1c4e4a);
-        hemiLight.intensity = 0.75;
+        hemiLight.color.setHex(0xffd3b5);
+        hemiLight.groundColor.setHex(0x698779);
+        hemiLight.intensity = 1.0;
         skyCol.copy(cSkySunset);
         currentBgColor.copy(cSkySunset).lerp(cSkyNight, sunsetT * 0.7);
       } else {
         // Night moonlight
         sunCol.copy(cSunNight);
+        ambientLight.intensity = 0.12;
         dirLight.intensity = 0.35;
         hemiLight.color.setHex(0x223048);
         hemiLight.groundColor.setHex(0x0e1b1d);

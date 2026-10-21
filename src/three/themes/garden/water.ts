@@ -138,6 +138,8 @@ const waterVertexShader = `
     // front skirt bottom vertices remain anchored to the riverbed in world space.
     if (aIsFrontCut < 0.5 || uv.y > 0.5) {
       pos.y += uTideOffset;
+    } else {
+      pos.y = min(pos.y, uWaterLevel);
     }
 
     vec4 initialWorld = modelMatrix * vec4(pos, 1.0);
@@ -165,7 +167,7 @@ const waterVertexShader = `
       float w2 = cos(initialWorld.x * 4.4 - initialWorld.z * 2.2 + flowTime * 1.2) * 0.007;
       float gentleWaves = (w1 + w2) * (0.5 + uWindStrength * 0.6);
 
-      pos.y += (ripDisp + gentleWaves) * shoreDamping;
+      pos.y += (ripDisp + gentleWaves) * shoreDamping * sin(3.14159265 * uv.y);
     }
 
     vec4 finalWorld = modelMatrix * vec4(pos, 1.0);
@@ -315,18 +317,18 @@ const waterFragmentShader = `
     float foamTotal = clamp(shoreFoam + cascadeRapidFoam, 0.0, 1.0);
 
     // Final color compositing
-    vec3 color = mix(baseCol, skyReflect, fresnel * 0.65);
-    color += uSunColor * specular * 0.85;
+    vec3 color = mix(baseCol, skyReflect, fresnel * 0.35);
+    color += uSunColor * specular * 0.32;
     color = mix(color, uFoamColor, foamTotal);
 
     // Clean alpha gradient
     float alpha;
     if (vIsFrontCut > 0.5) {
       // Solid cut profile for diorama slab cross section
-      alpha = 0.94;
+      alpha = 0.48;
       color = mix(uDeepColor * 0.85, uWaterColor, vUv.y);
     } else {
-      alpha = mix(0.72, 0.95, depthFactor);
+      alpha = mix(0.20, 0.46, depthFactor);
       alpha = max(alpha, foamTotal * 0.88);
     }
 
@@ -337,7 +339,7 @@ const waterFragmentShader = `
 /**
  * Builds the stream surface geometry + vertical front cross-section skirt.
  */
-function createStreamGeometry(getHeightAt: (x: number, z: number) => number): THREE.BufferGeometry {
+export function createStreamGeometry(getHeightAt: (x: number, z: number) => number): THREE.BufferGeometry {
   const segmentsZ = 140;
   const segmentsX = 54;
   const numSurfaceVerts = (segmentsZ + 1) * (segmentsX + 1);
@@ -361,11 +363,24 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
     const z = zStart + tZ * (zEnd - zStart);
     const centerX = getStreamCenter(z);
     const halfWidth = getStreamHalfWidth(z) * 1.15;
+    // Solve both bank intersections instead of dropping whole grid cells.
+    const findBank = (direction: number): number => {
+      let wet = centerX;
+      let dry = centerX + direction * halfWidth;
+      for (let i = 0; i < 28; i++) {
+        const mid = (wet + dry) / 2;
+        if (getHeightAt(mid, z) < getWaterSurfaceHeight(z, 0.07)) wet = mid;
+        else dry = mid;
+      }
+      return (wet + dry) / 2;
+    };
+    const leftBank = findBank(-1);
+    const rightBank = findBank(1);
     const waterSurfaceY = getWaterSurfaceHeight(z);
 
     for (let ix = 0; ix <= segmentsX; ix++) {
       const tX = ix / segmentsX;
-      const x = centerX - halfWidth + tX * (halfWidth * 2.0);
+      const x = THREE.MathUtils.lerp(leftBank, rightBank, tX);
       const y = waterSurfaceY;
 
       const idx = iz * (segmentsX + 1) + ix;
@@ -398,7 +413,7 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
       const h3 = terrainHeights[i3];
 
       const minH = Math.min(h0, h1, h2, h3);
-      if (minH <= waterY + 0.06) {
+      if (minH <= waterY + 0.08) {
         const quadX = (positions[i0 * 3] + positions[i3 * 3]) * 0.5;
         const quadZ = (positions[i0 * 3 + 2] + positions[i3 * 3 + 2]) * 0.5;
         if (isInsideGardenFootprint(quadX, quadZ, -0.05)) {
@@ -434,7 +449,7 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
     // Bottom vertex of front skirt (at riverbed, uv.y = 0.0)
     const botIdx = frontBaseIdx + ix * 2 + 1;
     positions[botIdx * 3 + 0] = x;
-    positions[botIdx * 3 + 1] = bedH; // World riverbed height!
+    positions[botIdx * 3 + 1] = Math.min(bedH, waterSurfaceYEnd + 0.07); // World riverbed height!
     positions[botIdx * 3 + 2] = z;
     uvs[botIdx * 2 + 0] = ix / segmentsX;
     uvs[botIdx * 2 + 1] = 0.0;
@@ -450,8 +465,7 @@ function createStreamGeometry(getHeightAt: (x: number, z: number) => number): TH
 
     // Only draw quads where water exists and is within the natural footprint
     const midX = (positions[t0 * 3] + positions[t1 * 3]) * 0.5;
-    if ((terrainHeights[t0] < waterSurfaceYEnd + 0.04 || terrainHeights[t1] < waterSurfaceYEnd + 0.04) &&
-        isInsideGardenFootprint(midX, zEnd, -0.2)) {
+    if (isInsideGardenFootprint(midX, zEnd)) {
       indices.push(t0, b0, t1);
       indices.push(t1, b0, b1);
     }

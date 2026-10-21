@@ -90,37 +90,24 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
       // Rainy season expands wet sand
       cRainy.copy(PHUQUOC_COLORS.sand.wet).multiplyScalar(0.90);
     }
-    // C. Dry Sand Beach
-    else if (dist < 5.0 && x < 4.0) {
-      const t = (dist - 0.8) / 4.2;
-      cDry.copy(PHUQUOC_COLORS.sand.dry);
-      // Subtle sand warmth variation
-      const sandVar = 0.04 * SimplexNoise2D(x * 0.4, z * 0.4);
-      cDry.offsetHSL(0.01 * sandVar, 0.05 * sandVar, sandVar);
-
-      // Blend into coastal grass near back edge
-      if (t > 0.7) {
-        const grassBlend = (t - 0.7) / 0.3;
-        cDry.lerp(new THREE.Color(0x739a48), grassBlend * 0.6);
-      }
-
-      cRainy.copy(cDry).multiplyScalar(0.88); // Damp darkened sand
-    }
-    // D. Granite Headlands / Coastal Hills
+    // Continuous sand → coastal grass → granite transitions. Hard x/zone
+    // thresholds produce visible saw teeth on a densely tessellated mesh.
     else {
-      // High slope = exposed granite rock
-      if (slope > 0.35 || x > 4.5) {
-        const rockBlend = Math.min(1.0, (slope - 0.3) / 0.4 + (x > 4.5 ? 0.4 : 0));
-        cDry.copy(PHUQUOC_COLORS.rock.graniteWarm).lerp(PHUQUOC_COLORS.rock.graniteLight, rockBlend);
-        // Darker rock crevices
-        if (slope > 0.6) cDry.lerp(PHUQUOC_COLORS.rock.graniteDark, 0.4);
-        cRainy.copy(cDry).multiplyScalar(0.82); // Wet glistening granite
-      } else {
-        // Tropical coastal grass / lawn
-        cDry.set(0x6b8f3e);
-        if (z < -4) cDry.lerp(new THREE.Color(0x4e6b2c), 0.5); // Richer inland greenery
-        cRainy.copy(cDry).multiplyScalar(0.94);
-      }
+      const sandVar = 0.04 * SimplexNoise2D(x * 0.4, z * 0.4);
+      cDry.copy(PHUQUOC_COLORS.sand.dry).offsetHSL(0, 0, sandVar);
+      const grass = new THREE.Color(0x6b8f3e).lerp(
+        new THREE.Color(0x4e6b2c), THREE.MathUtils.smoothstep(-z, 3.3, 5.0) * 0.5);
+      const grassBlend = THREE.MathUtils.smoothstep(dist, 3.2, 5.8)
+        * (1 - THREE.MathUtils.smoothstep(x, 3.3, 5.2));
+      cDry.lerp(grass, grassBlend);
+      const rockBlend = Math.max(
+        THREE.MathUtils.smoothstep(x, 3.5, 5.5),
+        THREE.MathUtils.smoothstep(slope, 0.3, 0.65)
+      ) * THREE.MathUtils.smoothstep(dist, 0.8, 2.5);
+      const rock = PHUQUOC_COLORS.rock.graniteWarm.clone()
+        .lerp(PHUQUOC_COLORS.rock.graniteLight, 0.35);
+      cDry.lerp(rock, rockBlend);
+      cRainy.copy(cDry).multiplyScalar(THREE.MathUtils.lerp(0.88, 0.94, grassBlend));
     }
 
     return { dry: cDry, rainy: cRainy };
