@@ -85,39 +85,48 @@ export function getPhuQuocSkyGradient(
 ): { top: THREE.Color; mid: THREE.Color; bot: THREE.Color } {
   const tod = ((timeOfDay % 24) + 24) % 24;
 
-  if (tod < 5.0) {
+  // 1. Base dry sky continuous timeline
+  if (tod < 4.8) {
+    // Deep night
     outTop.copy(cSkyNightTop);
     outMid.copy(cSkyNightMid);
     outBot.copy(cSkyNightBot);
-  } else if (tod < 6.5) {
-    const t = (tod - 5.0) / 1.5;
+  } else if (tod < 6.2) {
+    // Dawn onset
+    const t = smoothstep(4.8, 6.2, tod);
     outTop.copy(cSkyNightTop).lerp(cSkyDawnTop, t);
     outMid.copy(cSkyNightMid).lerp(cSkyDawnMid, t);
     outBot.copy(cSkyNightBot).lerp(cSkyDawnBot, t);
   } else if (tod < 7.5) {
-    const t = (tod - 6.5) / 1.0;
+    // Dawn into day
+    const t = smoothstep(6.2, 7.5, tod);
     outTop.copy(cSkyDawnTop).lerp(cSkyDayTop, t);
     outMid.copy(cSkyDawnMid).lerp(cSkyDayMid, t);
     outBot.copy(cSkyDawnBot).lerp(cSkyDayBot, t);
-  } else if (tod <= 16.5) {
+  } else if (tod <= 16.2) {
+    // Daytime clear tropical sky
     outTop.copy(cSkyDayTop);
     outMid.copy(cSkyDayMid);
     outBot.copy(cSkyDayBot);
   } else if (tod < 17.5) {
-    const t = (tod - 16.5) / 1.0;
+    // Golden hour transition towards vivid pink sunset
+    const t = smoothstep(16.2, 17.5, tod);
     outTop.copy(cSkyDayTop).lerp(cSkySunsetTop, t);
     outMid.copy(cSkyDayMid).lerp(cSkySunsetMid, t);
     outBot.copy(cSkyDayBot).lerp(cSkySunsetBot, t);
   } else if (tod <= 18.25) {
+    // Peak vivid sunset (17:30 - 18:15): zenith purple-blue, mid magenta-pink, horizon pink-orange
     outTop.copy(cSkySunsetTop);
     outMid.copy(cSkySunsetMid);
     outBot.copy(cSkySunsetBot);
-  } else if (tod < 19.5) {
-    const t = (tod - 18.25) / 1.25;
+  } else if (tod < 20.0) {
+    // Twilight dusk smoothly fading into night
+    const t = smoothstep(18.25, 20.0, tod);
     outTop.copy(cSkySunsetTop).lerp(cSkyNightTop, t);
     outMid.copy(cSkySunsetMid).lerp(cSkyNightMid, t);
     outBot.copy(cSkySunsetBot).lerp(cSkyNightBot, t);
   } else {
+    // Night
     outTop.copy(cSkyNightTop);
     outMid.copy(cSkyNightMid);
     outBot.copy(cSkyNightBot);
@@ -126,8 +135,8 @@ export function getPhuQuocSkyGradient(
   // Monsoon Rainy Season Adjustments:
   // Multiply rain blend by daylightFactor so night sky is NEVER pulled towards bright daytime gray
   if (season === 'rainy') {
-    const daylightFactor = smoothstep(4.8, 7.5, tod) * (1.0 - smoothstep(16.5, 19.8, tod));
-    const sunsetFactor = tod >= 17.5 && tod <= 18.25 ? 1.0 : 0.0;
+    const daylightFactor = smoothstep(4.8, 7.5, tod) * (1.0 - smoothstep(16.2, 20.0, tod));
+    const sunsetFactor = smoothstep(16.5, 17.6, tod) * (1.0 - smoothstep(18.25, 19.4, tod));
 
     tmpRainTargetTop.copy(cRainyDayTop).lerp(cRainySunsetTop, sunsetFactor);
     tmpRainTargetMid.copy(cRainyDayMid).lerp(cRainySunsetMid, sunsetFactor);
@@ -230,15 +239,15 @@ export function createPhuQuocLighting(
       dirLight.position.set(sunPos.x, Math.max(-1.5, sunPos.y), sunPos.z);
       sunDir.copy(dirLight.position).normalize();
 
-      if (tod < 5.0) {
+      if (tod < 4.8) {
         sunCol.copy(cSunNight);
         ambientLight.intensity = 0.12;
         dirLight.intensity = 0.35;
         hemiLight.color.setHex(0x223048);
         hemiLight.groundColor.setHex(0x0e1b1d);
         hemiLight.intensity = 0.3;
-      } else if (tod < 6.5) {
-        const t = (tod - 5.0) / 1.5;
+      } else if (tod < 6.2) {
+        const t = smoothstep(4.8, 6.2, tod);
         sunCol.copy(cSunNight).lerp(cSunSunset, t);
         ambientLight.intensity = 0.12 + 0.28 * t;
         dirLight.intensity = 0.35 + 0.65 * t;
@@ -246,26 +255,26 @@ export function createPhuQuocLighting(
         hemiLight.groundColor.setHex(0x183835);
         hemiLight.intensity = 0.3 + 0.3 * t;
       } else if (tod < 7.5) {
-        const t = (tod - 6.5) / 1.0;
+        const t = smoothstep(6.2, 7.5, tod);
         sunCol.copy(cSunSunset).lerp(cSunNoon, t);
         ambientLight.intensity = 0.40 + 0.10 * t;
         dirLight.intensity = 1.0 + 0.5 * t;
         hemiLight.color.setHex(0xe8f4fc);
         hemiLight.groundColor.setHex(0x28635c);
         hemiLight.intensity = 0.6 + 0.2 * t;
-      } else if (tod <= 16.5) {
-        const dayT = Math.sin(((tod - 7.5) / 9.0) * Math.PI);
+      } else if (tod <= 16.2) {
+        const dayT = Math.sin(((tod - 7.5) / 8.7) * Math.PI);
         sunCol.copy(cSunNoon);
         ambientLight.intensity = 0.50;
-        dirLight.intensity = 1.5 + 0.35 * dayT;
+        dirLight.intensity = 1.5 + 0.35 * Math.max(0, dayT);
         hemiLight.color.setHex(0xe8f4fc);
         hemiLight.groundColor.setHex(0x28635c);
         hemiLight.intensity = 0.8;
       } else if (tod < 17.5) {
-        const t = (tod - 16.5) / 1.0;
+        const t = smoothstep(16.2, 17.5, tod);
         sunCol.copy(cSunNoon).lerp(cSunSunset, t);
         ambientLight.color.setHex(0xffebd8);
-        ambientLight.intensity = 0.50 + 0.20 * t;
+        ambientLight.intensity = 0.50 + 0.22 * t;
         dirLight.intensity = 1.6 + 0.2 * t;
         hemiLight.color.setHex(0xffd5b8);
         hemiLight.groundColor.setHex(0x2b756c);
@@ -278,14 +287,14 @@ export function createPhuQuocLighting(
         hemiLight.color.setHex(0xffd5b8);
         hemiLight.groundColor.setHex(0x2b756c);
         hemiLight.intensity = 1.05;
-      } else if (tod < 19.5) {
-        const t = (tod - 18.25) / 1.25;
+      } else if (tod < 20.0) {
+        const t = smoothstep(18.25, 20.0, tod);
         sunCol.copy(cSunSunset).lerp(cSunNight, t);
-        ambientLight.intensity = 0.72 * (1.0 - t * 0.83);
-        dirLight.intensity = 1.8 * (1.0 - t * 0.80);
+        ambientLight.intensity = 0.72 * (1.0 - t * 0.833);
+        dirLight.intensity = 1.8 * (1.0 - t * 0.805);
         hemiLight.color.lerpColors(cHemiDuskSky, cHemiNightSky, t);
         hemiLight.groundColor.lerpColors(cHemiDuskGround, cHemiNightGround, t);
-        hemiLight.intensity = 1.05 * (1.0 - t * 0.71);
+        hemiLight.intensity = 1.05 * (1.0 - t * 0.714);
       } else {
         sunCol.copy(cSunNight);
         ambientLight.intensity = 0.12;

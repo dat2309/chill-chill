@@ -570,6 +570,42 @@ for (const nh of nightHours) {
 assert(rainyNightNotBrighter, 'Monsoon rainy night sky is not brighter than dry night sky (daylight factor prevents daytime overcast leak into night)', nightLuminanceDetails);
 assert(nightDarkerThanDay, 'Night sky luminance across all night hours is at least 10x darker than noon tropical daylight', nightLuminanceDetails);
 
+// 14. Phu Quoc Sky Continuous Interpolation (Max step jump limit across 24h)
+let maxStepJump = 0;
+let maxStepDetails = '';
+const maxJumpThreshold = 16.0 / 255.0; // max allowed channel change in 0.05 hr (3 mins)
+
+for (const s of ['dry', 'rainy'] as const) {
+  let prevGrad: { top: THREE.Color; mid: THREE.Color; bot: THREE.Color } | null = null;
+  for (let tod = 0; tod <= 24; tod = Math.round((tod + 0.05) * 100) / 100) {
+    const curTop = new THREE.Color();
+    const curMid = new THREE.Color();
+    const curBot = new THREE.Color();
+    getPhuQuocSkyGradient(tod, s, curTop, curMid, curBot);
+
+    if (prevGrad) {
+      const parts = [
+        { cur: curTop, prev: prevGrad.top },
+        { cur: curMid, prev: prevGrad.mid },
+        { cur: curBot, prev: prevGrad.bot },
+      ];
+      for (const p of parts) {
+        const dR = Math.abs(p.cur.r - p.prev.r);
+        const dG = Math.abs(p.cur.g - p.prev.g);
+        const dB = Math.abs(p.cur.b - p.prev.b);
+        const step = Math.max(dR, dG, dB);
+        if (step > maxStepJump) {
+          maxStepJump = step;
+          maxStepDetails = `[${s}] tod=${tod}: step=${(step * 255).toFixed(1)}/255`;
+        }
+      }
+    }
+    prevGrad = { top: curTop, mid: curMid, bot: curBot };
+  }
+}
+
+assert(maxStepJump <= maxJumpThreshold, `Continuous sky interpolation: max color step jump between adjacent 0.05h samples is ${(maxStepJump * 255).toFixed(1)}/255 (threshold <= 16/255)`, maxStepDetails);
+
 // Layout migrations discard both camera storage paths while retaining settings.
 const oldWindow = (globalThis as any).window;
 try {
