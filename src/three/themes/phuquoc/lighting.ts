@@ -213,6 +213,11 @@ export function createPhuQuocLighting(
   const sunCol = new THREE.Color();
   const skyCol = new THREE.Color();
 
+  // Cache DOM element and last applied gradient string to prevent per-frame DOM queries and style mutations
+  let cachedContainer: HTMLElement | null =
+    typeof document !== 'undefined' ? (document.querySelector('.canvas-container') as HTMLElement | null) : null;
+  let lastGradientCss = '';
+
   if (boundScene) {
     boundScene.background = null;
   }
@@ -315,27 +320,34 @@ export function createPhuQuocLighting(
 
       skyCol.copy(tmpMid).lerp(tmpBot, 0.45);
 
+      // Apply dynamic CSS gradient (cached element, only assigns style.background when gradient changes)
       if (typeof document !== 'undefined') {
-        const container = document.querySelector('.canvas-container') as HTMLElement | null;
-        if (container) {
-          if (!container.classList.contains('theme-phuquoc')) {
-            container.classList.add('theme-phuquoc');
+        if (!cachedContainer) {
+          cachedContainer = document.querySelector('.canvas-container') as HTMLElement | null;
+        }
+        if (cachedContainer) {
+          if (!cachedContainer.classList.contains('theme-phuquoc')) {
+            cachedContainer.classList.add('theme-phuquoc');
           }
           const topHex = '#' + tmpTop.getHexString();
           const midHex = '#' + tmpMid.getHexString();
           const botHex = '#' + tmpBot.getHexString();
-          container.style.background = `linear-gradient(180deg, ${topHex} 0%, ${midHex} 52%, ${botHex} 100%)`;
+          const nextGradientCss = `linear-gradient(180deg, ${topHex} 0%, ${midHex} 52%, ${botHex} 100%)`;
+
+          if (nextGradientCss !== lastGradientCss) {
+            cachedContainer.style.background = nextGradientCss;
+            lastGradientCss = nextGradientCss;
+          }
         }
       }
     },
     dispose() {
-      if (typeof document !== 'undefined') {
-        const container = document.querySelector('.canvas-container') as HTMLElement | null;
-        if (container) {
-          container.style.background = '';
-          container.classList.remove('theme-phuquoc');
-        }
+      if (cachedContainer) {
+        cachedContainer.style.background = '';
+        cachedContainer.classList.remove('theme-phuquoc');
+        cachedContainer = null;
       }
+      lastGradientCss = '';
       lightGroup.clear();
       parentGroup.remove(lightGroup);
     },
