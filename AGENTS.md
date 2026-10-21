@@ -1,49 +1,57 @@
-## Quy tắc bắt buộc: hình dáng tự nhiên cho mọi chủ đề
+# Hướng dẫn cho agent
 
-Mọi chủ đề diorama phải có đường bao cảnh quan được thiết kế riêng, bất đối xứng và phù hợp với nội dung. Quy tắc này áp dụng khi tạo chủ đề mới hoặc chỉnh sửa chủ đề hiện có.
+Áp dụng cho toàn bộ repository và mọi chủ đề hiện có hoặc được thêm sau này. Đọc file này trước khi thiết kế hoặc sửa cảnh.
 
-### Hình dáng và bố cục
+## Ưu tiên yêu cầu và ảnh tham chiếu
 
-- Không mặc định dựng cảnh trên khối đất hoặc đế hình chữ nhật với bốn cạnh thẳng.
-- Không chỉ bo bốn góc của hình chữ nhật để coi là đã đáp ứng.
-- Không dùng cùng một hình tròn hoặc oval cho tất cả chủ đề.
-- Thiết kế silhouette tổng thể trước khi thêm cây, công trình và chi tiết.
-- Đường bao phải có các vùng lồi/lõm có chủ đích, chuyển tiếp mềm, không tạo nhiễu thành gai nhọn.
-- Giữ bản sắc địa hình: thung lũng theo sườn núi và dòng suối; đảo theo đường bờ; các chủ đề khác theo cấu trúc cảnh tương ứng.
-- Hình chữ nhật chỉ được dùng làm đường bao nhìn thấy khi người dùng yêu cầu rõ hoặc vật thể được mô phỏng thực sự có hình dạng đó.
+- Yêu cầu mới nhất của người dùng và ảnh tham chiếu do người dùng cung cấp quyết định hướng thiết kế.
+- Phân tích bố cục, tỷ lệ, cao độ, đường bờ, vật liệu và camera của ảnh trước khi chỉnh hình học. Không suy diễn rằng mọi cảnh phải là một hòn đảo.
+- Mẫu Chillax Garden do người dùng cung cấp là miniature landscape diorama: đế gần chữ nhật bo góc, núi ở hậu cảnh, glamping ở trung cảnh và suối mở rộng ra tiền cảnh.
+- Website tham chiếu: https://chillaxdiorama.netlify.app/. Nếu không truy cập hoặc render được, dùng ảnh đã có và nói rõ phạm vi đã xác minh; không tự nhận đã quan sát website.
 
-### Dữ liệu và hình học
+## Hình dáng và bố cục của mọi chủ đề
 
-- Mỗi chủ đề khai báo footprint riêng, dùng chung cho dựng terrain, thành bên, đáy, placement, nước, tương tác và bounds.
-- Phân biệt footprint ngoài của diorama với vùng đất, vùng nước và bounds tính toán.
-- Heightfield hoặc render target nội bộ được phép là hình chữ nhật; hình chữ nhật đó không được lộ ra ngoài chủ đích trong cảnh hoàn thiện.
-- Mặt trên, thành bên, đáy và mặt cắt nước phải nối đúng biên, không có lỗ hoặc skirt chữ nhật còn sót.
-- Không dùng transparency, shader discard, sương hoặc vật thể trang trí làm cách duy nhất để che hình học sai.
-- Đế và bóng tiếp xúc phải phù hợp với đường bao cảnh.
+- Phân biệt ba thành phần: đế trưng bày, đường bao địa hình và đường bờ đất–nước. Chúng có thể có hình dạng khác nhau.
+- Đế trưng bày được phép gần chữ nhật bo góc khi phù hợp bố cục, ảnh tham chiếu hoặc yêu cầu người dùng. Không áp đặt đế tròn, oval hay bất đối xứng cho mọi cảnh.
+- Đường bờ, sườn núi, thềm đất và dòng suối phải có cấu trúc tự nhiên, phù hợp nội dung; bo góc đế không thay thế việc thiết kế địa hình.
+- Mỗi chủ đề có bố cục riêng. Không dùng chung một công thức bán kính hoặc một silhouette cho tất cả chủ đề.
+- Thiết kế các khối lớn và khoảng trống trước khi thêm chi tiết. Chuyển tiếp đường bao mềm, lồi/lõm có chủ đích; không tạo gai bằng nhiễu tần số cao.
+- Garden: giữ chiều sâu núi → thềm glamping → bờ suối và hồ nông tiền cảnh. Cầu thang nối các cao độ; cây không che kín dome, cabin hoặc dòng suối.
+- Phú Quốc: giữ bản sắc bãi cát cong, mũi đá, cụm dừa và biển nông chuyển sâu. Phân biệt bờ đảo với biên trưng bày của vùng biển; không ép cả vùng biển thành chiếc đĩa tròn.
+- Chủ đề mới phải xác định điểm nhấn, tiền cảnh, trung cảnh, hậu cảnh và hình dáng đế phù hợp trước khi dựng chi tiết.
+- Cây mọc thành cụm có tầng cao thấp; chừa đường nhìn và khoảng trống quanh điểm nhấn. Đế có tỷ lệ gọn và bóng tiếp xúc phù hợp.
 
-### Vật thể và camera
+## Dữ liệu và hình học
+
+- Khai báo riêng biên đế/cảnh, vùng đất, vùng nước và bounds tính toán theo nhu cầu từng chủ đề. Các hệ thống dùng chung dữ liệu biên liên quan; không ép mọi hệ thống dùng một footprint duy nhất.
+- Heightfield hoặc render target nội bộ được phép là hình chữ nhật. Miền lấy mẫu phải bao phủ mesh; không clamp phần địa hình mở rộng vào cạnh miền cũ gây kéo phẳng.
+- Mặt trên, thành bên, đáy và mặt cắt nước phải nối đúng các biên tương ứng, không có lỗ, phần thừa hoặc skirt ngoài thiết kế.
+- Khi mặt nước có mặt cắt trưng bày, mặt nước và skirt phải chia sẻ biên chính xác. Không giữ/bỏ nguyên ô lưới theo tâm làm cách duy nhất để cắt đường bao cong.
+- Kiểm tra winding: mặt trên hướng lên, đáy hướng xuống, thành bên hướng ra ngoài. Normals phải nhất quán với hướng tam giác.
+- Không dùng DoubleSide, transparency, shader discard, sương hoặc vật trang trí làm cách duy nhất để che hình học sai. Vật liệu hai mặt vẫn được phép khi bản chất vật thể cần nó.
+- Tessellation phải giữ được vách núi, lòng suối và đường bờ; không thay lưới đủ chi tiết bằng lưới xuyên tâm thưa gây tam giác dài hoặc mất địa hình.
+- Nước phải có độ trong và chuyển sắc theo độ sâu phù hợp chủ đề; với mẫu Garden, giữ khả năng thấy sỏi đáy và cá.
+- Toàn bộ cảnh tiếp tục được tạo bằng procedural code, không thêm model, texture bên ngoài hoặc nhân vật người nếu chưa được yêu cầu.
+
+## Vật thể và camera
 
 - Kiểm tra toàn bộ footprint vật thể, không chỉ tọa độ tâm.
-- Công trình, cây và đồ vật phải nằm trong vùng hợp lệ, tiếp xúc đúng terrain.
+- Công trình, cây và đồ vật phải nằm trong vùng hợp lệ, đúng tỷ lệ và tiếp xúc terrain sau mọi thay đổi địa hình.
 - Nước, cá và thuyền phải tuân theo vùng nước và mực nước hiện tại.
-- Camera mặc định phải hiển thị trọn silhouette, đế và các điểm chính, có khoảng trống cho UI.
-- Cập nhật camera và xử lý dữ liệu camera cũ khi thay đổi đáng kể hình dáng cảnh.
+- Camera mặc định phải hiển thị trọn cảnh, đế và các điểm chính, có khoảng trống cho UI ở cả desktop và mobile.
+- Cập nhật camera và xử lý dữ liệu camera đã lưu khi thay đổi đáng kể hình dáng hoặc bố cục cảnh.
 
-### Điều kiện hoàn thành
+## Kiểm tra và review
 
-Trước khi coi một chủ đề hoàn tất:
+- Chạy build và các kiểm tra logic phù hợp với thay đổi. Với thay đổi chỉ ở tài liệu, đọc lại nội dung và chạy git diff --check; không bắt buộc chạy build ứng dụng.
+- Khi sửa hình học, kiểm tra winding, đường bao khép kín không tự cắt, các mối nối mesh, placement, vùng nước và bounds.
+- Khi có WebGL, quan sát từng chủ đề bị ảnh hưởng ở góc mặc định, từ trên xuống và các mặt bên; kiểm tra mất mặt, vật thể lơ lửng, khe nước, mép răng cưa và tam giác kéo dài. So sánh render với ảnh tham chiếu nếu có.
+- Báo riêng kết quả build, kiểm tra logic và xác minh hình ảnh. Nếu không render được WebGL, ghi rõ chưa xác minh hình ảnh; không dùng build/test đạt để kết luận cảnh đẹp hoặc giống mẫu.
+- Mỗi lần review phải nêu phát hiện cụ thể, phạm vi đã kiểm tra và kèm prompt xử lý có thể sao chép. Phân biệt lỗi đã tái hiện với nhận xét hoặc rủi ro chưa xác minh.
 
-- Kiểm tra đường bao khép kín, không tự cắt và mesh nối kín.
-- Kiểm tra placement, vùng nước và bounds.
-- Nếu có WebGL, quan sát góc mặc định, từ trên xuống và các mặt bên để tìm cạnh thẳng, lỗ hoặc hình học thừa ngoài chủ đích.
-- Báo riêng kết quả build, kiểm tra logic và xác minh hình ảnh; không dùng build thành công thay cho kiểm tra hình dáng.
-
-Khi bắt đầu chủ đề mới, phải đọc và áp dụng quy tắc này ngay từ bước thiết kế địa hình. Không chờ đến giai đoạn hoàn thiện mới sửa đường bao.
-
-## Quy trình commit và kiểm tra
+## Quy trình commit
 
 - Sau khi hoàn thành thay đổi và các kiểm tra phù hợp đạt, tự động tạo local commit với thông điệp mô tả thay đổi.
-- Chỉ commit các file thuộc tác vụ; không gộp thay đổi có sẵn của người dùng.
+- Chỉ stage và commit các file thuộc tác vụ; không gộp thay đổi có sẵn của người dùng.
 - Không push hoặc deploy nếu người dùng chưa yêu cầu rõ.
 - Nếu kiểm tra thất bại, báo nguyên nhân; không tuyên bố hoàn tất.
-
