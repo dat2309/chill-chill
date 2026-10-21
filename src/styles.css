@@ -47,6 +47,10 @@ html, body, #root {
   touch-action: none;
 }
 
+.canvas-container.theme-phuquoc {
+  transition: background 0.35s ease;
+}
+
 .canvas-container canvas {
   display: block;
   width: 100% !important;

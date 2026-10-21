@@ -88,30 +88,65 @@ export function createPhuQuocLighting(
   lightGroup.add(dirLight);
 
   // Hemisphere Light (Sky & Sea Bounce)
-  const hemiLight = new THREE.HemisphereLight(0xffa885, 0x1d5c58, 0.7);
+  const hemiLight = new THREE.HemisphereLight(0xffa885, 0x2b756c, 0.7);
   lightGroup.add(hemiLight);
 
   // Ambient Fill
   const ambientLight = new THREE.AmbientLight(0xffd5b8, 0.25);
   lightGroup.add(ambientLight);
 
-  // Atmosphere palettes
+  // Reusable Color palettes (allocated ONCE, never inside update)
   const cSunNoon = new THREE.Color(0xfff7ea);
   const cSunSunset = new THREE.Color(0xff8438);
   const cSunNight = new THREE.Color(0x6e86a4);
 
-  const cSkyDay = new THREE.Color(0xdcebf7);
-  const cSkySunset = new THREE.Color(0xf6cfbc);
-  const cSkyNight = new THREE.Color(0x151b27);
+  // Sky gradient - Daytime clear tropical
+  const cSkyDayTop = new THREE.Color(0x82b2db);
+  const cSkyDayMid = new THREE.Color(0xbed9ee);
+  const cSkyDayBot = new THREE.Color(0xe6f1f8);
 
+  // Sky gradient - Sunset (17:30 - 18:15):
+  // Zenith purple-blue, Mid magenta-pink, Horizon pink-orange
+  const cSkySunsetTop = new THREE.Color(0x383363);
+  const cSkySunsetMid = new THREE.Color(0xc95882);
+  const cSkySunsetBot = new THREE.Color(0xfba078);
+
+  // Sky gradient - Night deep indigo
+  const cSkyNightTop = new THREE.Color(0x090f1d);
+  const cSkyNightMid = new THREE.Color(0x101a2d);
+  const cSkyNightBot = new THREE.Color(0x1a263d);
+
+  // Sky gradient - Dawn
+  const cSkyDawnTop = new THREE.Color(0x273650);
+  const cSkyDawnMid = new THREE.Color(0x8a6e80);
+  const cSkyDawnBot = new THREE.Color(0xf0aa92);
+
+  // Rainy season overcast targets
+  const cRainyDayTop = new THREE.Color(0x758896);
+  const cRainyDayMid = new THREE.Color(0x9cb0bd);
+  const cRainyDayBot = new THREE.Color(0xbcccd5);
+
+  // Rainy sunset retains a soft, gentle pale-pink band at horizon
+  const cRainySunsetTop = new THREE.Color(0x43405a);
+  const cRainySunsetMid = new THREE.Color(0x826779);
+  const cRainySunsetBot = new THREE.Color(0xdca8a8);
+
+  const cHemiDuskSky = new THREE.Color(0xffd5b8);
+  const cHemiNightSky = new THREE.Color(0x223048);
+  const cHemiDuskGround = new THREE.Color(0x2b756c);
+  const cHemiNightGround = new THREE.Color(0x0e1b1d);
+
+  // Working temporary colors (reused every frame, ZERO memory allocations)
+  const tmpTop = new THREE.Color();
+  const tmpMid = new THREE.Color();
+  const tmpBot = new THREE.Color();
   const sunDir = new THREE.Vector3();
   const sunCol = new THREE.Color();
   const skyCol = new THREE.Color();
-  const currentBgColor = new THREE.Color();
 
-  // Take ownership of background if scene is provided
-  if (boundScene && (!boundScene.background || !(boundScene.background instanceof THREE.Color))) {
-    boundScene.background = currentBgColor.clone();
+  // Clear flat scene background to let transparent canvas reveal CSS sky gradient
+  if (boundScene) {
+    boundScene.background = null;
   }
 
   return {
@@ -126,6 +161,10 @@ export function createPhuQuocLighting(
       if (activeScene) {
         boundScene = activeScene;
       }
+      if (boundScene && boundScene.background !== null) {
+        boundScene.background = null;
+      }
+
       const tod = state.timeOfDay; // 0 - 24
 
       // 1. Calculate pure sun position
@@ -133,64 +172,157 @@ export function createPhuQuocLighting(
       dirLight.position.set(sunPos.x, Math.max(-1.5, sunPos.y), sunPos.z);
       sunDir.copy(dirLight.position).normalize();
 
-      // 2. Atmospheric grading
-      if (tod >= 6.0 && tod <= 16.5) {
-        // Daytime tropical sun
-        const dayT = Math.sin(((tod - 6.0) / 10.5) * Math.PI);
-        sunCol.copy(cSunSunset).lerp(cSunNoon, dayT);
-        ambientLight.intensity = 0.5;
-        dirLight.intensity = 1.5 + 0.4 * dayT;
-        hemiLight.color.setHex(0xe8f4fc);
-        hemiLight.groundColor.setHex(0x28635c);
-        hemiLight.intensity = 0.8;
-        skyCol.copy(cSkyDay);
-        currentBgColor.copy(cSkyDay);
-      } else if (tod > 16.5 && tod <= 19.0) {
-        // Sunset golden-hour (17:45 peak): warm tropical atmosphere with clear shallow water bounce
-        const sunsetT = (tod - 16.5) / 2.5;
-        sunCol.copy(cSunSunset);
-        ambientLight.color.setHex(0xffebd8);
-        ambientLight.intensity = 0.72;
-        dirLight.intensity = 1.8 * (1.0 - sunsetT * 0.4);
-        hemiLight.color.setHex(0xffd5b8);
-        hemiLight.groundColor.setHex(0x2b756c); // Warm tropical sea bounce so shallow seabed and water details are visible
-        hemiLight.intensity = 1.05;
-        skyCol.copy(cSkySunset);
-        currentBgColor.copy(cSkySunset).lerp(cSkyNight, sunsetT * 0.7);
-      } else {
-        // Night moonlight
+      // 2. Multi-stop sky gradient evaluation based on timeOfDay
+      if (tod < 5.0) {
+        // Deep night
+        tmpTop.copy(cSkyNightTop);
+        tmpMid.copy(cSkyNightMid);
+        tmpBot.copy(cSkyNightBot);
+
         sunCol.copy(cSunNight);
         ambientLight.intensity = 0.12;
         dirLight.intensity = 0.35;
         hemiLight.color.setHex(0x223048);
         hemiLight.groundColor.setHex(0x0e1b1d);
         hemiLight.intensity = 0.3;
-        skyCol.copy(cSkyNight);
-        currentBgColor.copy(cSkyNight);
+      } else if (tod < 6.5) {
+        // Dawn onset
+        const t = (tod - 5.0) / 1.5;
+        tmpTop.copy(cSkyNightTop).lerp(cSkyDawnTop, t);
+        tmpMid.copy(cSkyNightMid).lerp(cSkyDawnMid, t);
+        tmpBot.copy(cSkyNightBot).lerp(cSkyDawnBot, t);
+
+        sunCol.copy(cSunNight).lerp(cSunSunset, t);
+        ambientLight.intensity = 0.12 + 0.28 * t;
+        dirLight.intensity = 0.35 + 0.65 * t;
+        hemiLight.color.setHex(0x6b5a7a);
+        hemiLight.groundColor.setHex(0x183835);
+        hemiLight.intensity = 0.3 + 0.3 * t;
+      } else if (tod < 7.5) {
+        // Morning transition to day
+        const t = (tod - 6.5) / 1.0;
+        tmpTop.copy(cSkyDawnTop).lerp(cSkyDayTop, t);
+        tmpMid.copy(cSkyDawnMid).lerp(cSkyDayMid, t);
+        tmpBot.copy(cSkyDawnBot).lerp(cSkyDayBot, t);
+
+        sunCol.copy(cSunSunset).lerp(cSunNoon, t);
+        ambientLight.intensity = 0.40 + 0.10 * t;
+        dirLight.intensity = 1.0 + 0.5 * t;
+        hemiLight.color.setHex(0xe8f4fc);
+        hemiLight.groundColor.setHex(0x28635c);
+        hemiLight.intensity = 0.6 + 0.2 * t;
+      } else if (tod <= 16.5) {
+        // Daytime tropical sun
+        const dayT = Math.sin(((tod - 7.5) / 9.0) * Math.PI);
+        tmpTop.copy(cSkyDayTop);
+        tmpMid.copy(cSkyDayMid);
+        tmpBot.copy(cSkyDayBot);
+
+        sunCol.copy(cSunNoon);
+        ambientLight.intensity = 0.50;
+        dirLight.intensity = 1.5 + 0.35 * dayT;
+        hemiLight.color.setHex(0xe8f4fc);
+        hemiLight.groundColor.setHex(0x28635c);
+        hemiLight.intensity = 0.8;
+      } else if (tod < 17.5) {
+        // Golden hour transition (16:30 - 17:30)
+        const t = (tod - 16.5) / 1.0;
+        tmpTop.copy(cSkyDayTop).lerp(cSkySunsetTop, t);
+        tmpMid.copy(cSkyDayMid).lerp(cSkySunsetMid, t);
+        tmpBot.copy(cSkyDayBot).lerp(cSkySunsetBot, t);
+
+        sunCol.copy(cSunNoon).lerp(cSunSunset, t);
+        ambientLight.color.setHex(0xffebd8);
+        ambientLight.intensity = 0.50 + 0.20 * t;
+        dirLight.intensity = 1.6 + 0.2 * t;
+        hemiLight.color.setHex(0xffd5b8);
+        hemiLight.groundColor.setHex(0x2b756c);
+        hemiLight.intensity = 0.8 + 0.25 * t;
+      } else if (tod <= 18.25) {
+        // Peak Vivid Pink Sunset (17:30 - 18:15)
+        // Zenith purple-blue, Mid magenta-pink, Horizon pink-orange
+        // At 17:45 (tod = 17.75): zero night darkening, full radiant color
+        tmpTop.copy(cSkySunsetTop);
+        tmpMid.copy(cSkySunsetMid);
+        tmpBot.copy(cSkySunsetBot);
+
+        sunCol.copy(cSunSunset);
+        ambientLight.color.setHex(0xffebd8);
+        ambientLight.intensity = 0.72;
+        dirLight.intensity = 1.8;
+        hemiLight.color.setHex(0xffd5b8);
+        hemiLight.groundColor.setHex(0x2b756c);
+        hemiLight.intensity = 1.05;
+      } else if (tod < 19.5) {
+        // Twilight dusk fading into night (18:15 - 19:30)
+        const t = (tod - 18.25) / 1.25;
+        tmpTop.copy(cSkySunsetTop).lerp(cSkyNightTop, t);
+        tmpMid.copy(cSkySunsetMid).lerp(cSkyNightMid, t);
+        tmpBot.copy(cSkySunsetBot).lerp(cSkyNightBot, t);
+
+        sunCol.copy(cSunSunset).lerp(cSunNight, t);
+        ambientLight.intensity = 0.72 * (1.0 - t * 0.83);
+        dirLight.intensity = 1.8 * (1.0 - t * 0.80);
+        hemiLight.color.lerpColors(cHemiDuskSky, cHemiNightSky, t);
+        hemiLight.groundColor.lerpColors(cHemiDuskGround, cHemiNightGround, t);
+        hemiLight.intensity = 1.05 * (1.0 - t * 0.71);
+      } else {
+        // Late night
+        tmpTop.copy(cSkyNightTop);
+        tmpMid.copy(cSkyNightMid);
+        tmpBot.copy(cSkyNightBot);
+
+        sunCol.copy(cSunNight);
+        ambientLight.intensity = 0.12;
+        dirLight.intensity = 0.35;
+        hemiLight.color.setHex(0x223048);
+        hemiLight.groundColor.setHex(0x0e1b1d);
+        hemiLight.intensity = 0.3;
       }
 
       dirLight.color.copy(sunCol);
 
-      // Monsoon rainy season overcast adjustment
+      // 3. Monsoon Rainy Season Adjustments
       if (state.season === 'rainy') {
         dirLight.intensity *= 0.65;
-        currentBgColor.lerp(new THREE.Color(0xaebdc6), 0.45);
-        skyCol.lerp(new THREE.Color(0xb0c0ca), 0.5);
+        if (tod >= 17.5 && tod <= 18.25) {
+          // Rainy sunset maintains a soft pale-pink band at the horizon
+          tmpTop.lerp(cRainySunsetTop, 0.55);
+          tmpMid.lerp(cRainySunsetMid, 0.55);
+          tmpBot.lerp(cRainySunsetBot, 0.45); // Retains soft pink horizon
+        } else {
+          tmpTop.lerp(cRainyDayTop, 0.45);
+          tmpMid.lerp(cRainyDayMid, 0.45);
+          tmpBot.lerp(cRainyDayBot, 0.45);
+        }
       }
 
-      // Update active scene background
-      if (boundScene) {
-        if (boundScene.background instanceof THREE.Color) {
-          boundScene.background.copy(currentBgColor);
-        } else {
-          boundScene.background = currentBgColor.clone();
+      // 4. Synchronize skyColor for water reflection (uSunsetSkyColor)
+      // Captures the radiant mid-to-horizon sunset pink glow
+      skyCol.copy(tmpMid).lerp(tmpBot, 0.45);
+
+      // 5. Apply dynamic CSS gradient to container behind transparent canvas
+      if (typeof document !== 'undefined') {
+        const container = document.querySelector('.canvas-container') as HTMLElement | null;
+        if (container) {
+          if (!container.classList.contains('theme-phuquoc')) {
+            container.classList.add('theme-phuquoc');
+          }
+          const topHex = '#' + tmpTop.getHexString();
+          const midHex = '#' + tmpMid.getHexString();
+          const botHex = '#' + tmpBot.getHexString();
+          container.style.background = `linear-gradient(180deg, ${topHex} 0%, ${midHex} 52%, ${botHex} 100%)`;
         }
       }
     },
     dispose() {
-      // Release background ownership so Garden can restore clean background
-      if (boundScene && boundScene.background) {
-        boundScene.background = null;
+      // Clear dynamic background when unloading theme so other themes restore cleanly
+      if (typeof document !== 'undefined') {
+        const container = document.querySelector('.canvas-container') as HTMLElement | null;
+        if (container) {
+          container.style.background = '';
+          container.classList.remove('theme-phuquoc');
+        }
       }
       lightGroup.clear();
       parentGroup.remove(lightGroup);

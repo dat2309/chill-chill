@@ -48,8 +48,8 @@ export const PHUQUOC_METADATA: ThemeMetadata<'phuquoc'> = {
     },
     {
       icon: '🌅',
-      title: 'Western Sunset & Dynamic Sky',
-      content: 'With the sea facing West (-X), 17:45 serves as an experiential sunset preset, casting warm golden-rose illumination across the bay, specular surface glint, and soft twilight sky gradients transitioning smoothly across 0–24h.',
+      title: 'Western Sunset & Dynamic Sky Gradient',
+      content: 'With the sea facing West (-X), 17:30–18:15 features a vivid tropical sunset with a tripartite sky gradient (zenith purple-blue, mid magenta-pink, horizon pink-orange) synchronized with uSunsetSkyColor for ocean reflections, zero premature night-darkening at 17:45, and a soft pale-pink horizon band retained during monsoon rain.',
     },
   ],
 };
