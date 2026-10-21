@@ -648,7 +648,7 @@ input:focus-visible,
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 640px) {
   .top-left-panel {
     top: 10px;
     left: 10px;
@@ -747,12 +747,13 @@ input:focus-visible,
     flex-shrink: 0;
   }
   .season-btn {
-    padding: 3px 5px;
-    font-size: 10px;
+    padding: 3px 6px !important;
+    font-size: 12px !important;
     flex-shrink: 0;
   }
+  .season-btn .season-label,
   .season-selector .season-label {
-    display: none;
+    display: none !important;
   }
   /* Footer sits cleanly below bottom bar without any visual overlap */
   .footer {
