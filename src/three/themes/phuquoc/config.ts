@@ -3,10 +3,10 @@ import { ThemeMetadata, ThemeCameraPreset } from '../../core/types';
 
 export const PHUQUOC_METADATA: ThemeMetadata<'phuquoc'> = {
   id: 'phuquoc',
-  name: 'Phu Quoc Sunset Bay',
+  name: 'Phu Quoc Sunset Beach',
   tagline: 'A fictional coastal retreat inspired by Ông Lang, Phú Quốc.',
   eyebrow: 'A FICTIONAL COASTAL RETREAT INSPIRED BY ÔNG LANG',
-  description: 'A peaceful coastal diorama inspired by the natural bays of Ông Lang, Phú Quốc, featuring curved sandy shorelines interspersed with coastal rocks, thatched bungalows, a wooden jetty, and glowing western sunsets over the Gulf of Thailand.',
+  description: 'A peaceful coastal diorama inspired by the natural shores of Ông Lang, Phú Quốc, featuring curved sandy shorelines interspersed with coastal rocks, thatched bungalows, a wooden jetty, and glowing western sunsets over the Gulf of Thailand.',
   badges: ['Ông Lang Inspiration', 'Western Sunset', 'Coastal Rocks & Palms'],
   seasons: [
     { id: 'dry', label: '☀️', icon: '☀️', name: 'Mùa khô (Dry)' },

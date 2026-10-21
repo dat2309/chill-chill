@@ -172,11 +172,12 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   const shw = getStreamHalfWidth(z);
   const waterSurfaceY = getWaterSurfaceHeight(z);
 
-  // In foreground lake (z >= 0.5), create a broad, flat-bottomed shallow basin (hồ nông)
-  // In mountain gorge & cascades (z < 0.5), use a parabolic mountain stream channel
-  const channelProfile = z >= 0.5
-    ? smoothstep(shw * 1.05, shw * 0.76, distToStream)
-    : smoothstep(shw * 1.15, shw * 0.18, distToStream);
+  // Seamless transition from mountain cascade channel to broad foreground lake basin
+  // Blend gradually over z in [0.0, 1.0] centered at 0.5 with zero formula discontinuity
+  const cascadeChannel = smoothstep(shw * 1.15, shw * 0.18, distToStream);
+  const lakeChannel = smoothstep(shw * 1.05, shw * 0.76, distToStream);
+  const lakeBlend = smoothstep(0.0, 1.0, z);
+  const channelProfile = THREE.MathUtils.lerp(cascadeChannel, lakeChannel, lakeBlend);
 
   // Riverbed/lakebed sits consistently below water surface along profile
   const targetBedH = getStreamBedHeight(x, z) + SimplexNoise2D(x * 1.4 + 12.0, z * 1.4 + 12.0) * 0.015;

@@ -672,6 +672,94 @@ try {
   (globalThis as any).window = oldWindow;
 }
 
+// 15. Raycast Water Interaction & Obstacle Verification Tests (Phu Quoc)
+import { intersectPhuQuocWater } from '../src/three/themes/phuquoc/shoreline';
+
+// A. Oblique camera raycast tests at both HIGH and LOW tides
+const pqCameraPos = new THREE.Vector3(18.0, 16.0, 26.0);
+const pqTargets = [
+  { desc: 'Central bay water (x=0, z=5.5)', x: 0.0, z: 5.5 },
+  { desc: 'South-east bay water (x=3.5, z=6.0)', x: 3.5, z: 6.0 },
+  { desc: 'South-west bay water (x=-4.5, z=5.2)', x: -4.5, z: 5.2 },
+];
+
+let pqObliqueRaycastPassed = true;
+let pqObliqueFailDetails = '';
+
+const pqTides = [
+  { name: 'high', level: SEA_LEVEL_HIGH, offset: 1.0 },
+  { name: 'low', level: SEA_LEVEL_LOW, offset: -1.0 },
+];
+
+for (const t of pqTides) {
+  for (const target of pqTargets) {
+    const targetPt = new THREE.Vector3(target.x, t.level, target.z);
+    const rayDir = new THREE.Vector3().subVectors(targetPt, pqCameraPos).normalize();
+    const ray = new THREE.Ray(pqCameraPos, rayDir);
+
+    const hit = intersectPhuQuocWater(ray, t.level, t.offset);
+    if (!hit) {
+      pqObliqueRaycastPassed = false;
+      pqObliqueFailDetails = `Failed to intersect water for ${target.desc} at ${t.name} tide`;
+      break;
+    }
+
+    if (Math.abs(hit.point.y - t.level) > 0.001) {
+      pqObliqueRaycastPassed = false;
+      pqObliqueFailDetails = `Water hit Y (${hit.point.y.toFixed(4)}) did not match water level (${t.level.toFixed(4)}) for ${target.desc} at ${t.name} tide`;
+      break;
+    }
+
+    if (!isInWater(hit.point.x, hit.point.z, t.offset)) {
+      pqObliqueRaycastPassed = false;
+      pqObliqueFailDetails = `Hit point (${hit.point.x.toFixed(2)}, ${hit.point.z.toFixed(2)}) is not in water at ${t.name} tide`;
+      break;
+    }
+  }
+}
+
+assert(
+  pqObliqueRaycastPassed,
+  'Oblique camera raycast accurately intersects sea surface across coastal bay at both HIGH and LOW tides',
+  pqObliqueFailDetails
+);
+
+// B. Vertical skirt rejection at perimeter
+// Ray aimed horizontally from outside towards the vertical skirt at z = 8.0, y = 0.10
+const pqSkirtRay = new THREE.Ray(new THREE.Vector3(0, 0.10, 10.0), new THREE.Vector3(0, 0, -1));
+const pqSkirtHit = intersectPhuQuocWater(pqSkirtRay, SEA_LEVEL_HIGH, 1.0);
+assert(
+  pqSkirtHit === null || pqSkirtHit.point.z < 8.0,
+  'Ray hitting vertical perimeter skirt does not produce spurious ripple on vertical sea cut'
+);
+
+// C. Emergent coastal rock vs submerged seabed vs clear water obstacle testing
+const pqObstacles: THREE.Object3D[] = [pqTerrainSystem.group];
+
+// Test 1: Emergent coastal rock at rocky outcrop (x=0, z=0.8)
+// Outcrop terrain height is ~0.75m > SEA_LEVEL_HIGH (0.44m)
+const rayToRock = new THREE.Ray(new THREE.Vector3(0, 5.0, 0.8), new THREE.Vector3(0, -1, 0));
+const pqRaycasterRock = new THREE.Raycaster(rayToRock.origin, rayToRock.direction);
+const rockHits = pqRaycasterRock.intersectObjects(pqObstacles, true);
+assert(
+  rockHits.length > 0 && rockHits[0].point.y > SEA_LEVEL_HIGH,
+  'Emergent coastal rock outcrop stands strictly above high sea level'
+);
+
+// Test 2: Submerged seabed beneath clear ocean water (x=0, z=5.5)
+// Sea level is at 0.44m, seabed is at y ~ -0.40m
+const rayToSea = new THREE.Ray(new THREE.Vector3(0, 5.0, 5.5), new THREE.Vector3(0, -1, 0));
+const waterHitSea = intersectPhuQuocWater(rayToSea, SEA_LEVEL_HIGH, 1.0);
+const pqRaycasterSea = new THREE.Raycaster(rayToSea.origin, rayToSea.direction);
+const seaObstacleHits = pqRaycasterSea.intersectObjects(pqObstacles, true);
+
+assert(
+  waterHitSea !== null &&
+  seaObstacleHits.length > 0 &&
+  seaObstacleHits[0].distance > waterHitSea.distance + 0.005,
+  'Clear ocean surface is unblocked; submerged seabed behind water does not block ripple'
+);
+
 // Summary
 const totalPassed = results.filter((r) => r.passed).length;
 console.log('----------------------------------------------------');

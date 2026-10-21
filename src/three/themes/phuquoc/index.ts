@@ -9,7 +9,7 @@ import { createPhuQuocVegetation, PhuQuocVegetationSystem } from './vegetation';
 import { createPhuQuocFish, PhuQuocFishSystem } from './fish';
 import { createPhuQuocWeather, PhuQuocWeatherSystem } from './weather';
 import { createPhuQuocLighting, PhuQuocLightingSystem } from './lighting';
-import { isInWater } from './shoreline';
+import { isInWater, intersectPhuQuocWater } from './shoreline';
 import { PhuQuocState } from './constants';
 
 export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
@@ -202,6 +202,12 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     }
   }
 
+  intersectWater(ray: THREE.Ray): { point: THREE.Vector3; distance: number } | null {
+    const waterLevel = this.water ? this.water.getWaterLevel() : 0.3;
+    const tideOffset = this.water && this.water.getTideOffset ? this.water.getTideOffset() : 0;
+    return intersectPhuQuocWater(ray, waterLevel, tideOffset);
+  }
+
   getWaterLevel(): number {
     return this.water ? this.water.getWaterLevel() : 0.3;
   }
@@ -212,6 +218,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
 
   getObstacleMeshes(): THREE.Object3D[] {
     const list: THREE.Object3D[] = [];
+    if (this.terrain?.group) list.push(this.terrain.group);
     if (this.architecture?.group) list.push(this.architecture.group);
     if (this.vegetation?.group) list.push(this.vegetation.group);
     if (this.boats?.group) list.push(this.boats.group);

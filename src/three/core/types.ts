@@ -108,6 +108,7 @@ export interface ThemeInstance<T extends ThemeId = ThemeId> {
   isInWater(worldX: number, worldZ: number): boolean;
   addRipple(worldX: number, worldZ: number, strength: number): void;
   reactToSplash(worldX: number, worldZ: number): void;
+  intersectWater?(ray: THREE.Ray): { point: THREE.Vector3; distance: number } | null;
   getTideOffset?(): number;
   getWaterLevel?(): number;
   getWaterMesh?(): THREE.Mesh | null;

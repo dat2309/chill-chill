@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import {
   DIORAMA_WIDTH,
   DIORAMA_DEPTH,
@@ -225,3 +226,29 @@ export const BOAT_SPOTS = {
   thung: { x: 1.8, z: 4.5, draft: 0.10 }, // Thuyền thúng
   ghe:   { x: -4.5, z: 5.2, draft: 0.16 }, // Ghe nhỏ
 };
+
+/**
+ * Intersects a 3D ray with the horizontal sea surface of Phu Quoc coastal diorama.
+ * Follows current waterLevel and tide.
+ * Rejects points outside diorama marine bounds or on dry land.
+ */
+export function intersectPhuQuocWater(
+  ray: THREE.Ray,
+  waterLevel: number,
+  tideOffset: number = 0
+): { point: THREE.Vector3; distance: number } | null {
+  if (Math.abs(ray.direction.y) < 1e-6) return null;
+  const t = (waterLevel - ray.origin.y) / ray.direction.y;
+  if (t <= 0) return null;
+
+  const hitX = ray.origin.x + t * ray.direction.x;
+  const hitZ = ray.origin.z + t * ray.direction.z;
+
+  if (isInWater(hitX, hitZ, tideOffset)) {
+    return {
+      point: new THREE.Vector3(hitX, waterLevel, hitZ),
+      distance: t,
+    };
+  }
+  return null;
+}

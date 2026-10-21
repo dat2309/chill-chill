@@ -318,6 +318,7 @@ export function createFish(
       // Clamp delta time to avoid large physics steps
       const safeDt = Math.min(dt, 0.06);
       fishUniforms.uTime.value = elapsed;
+      const tideOffset = waterLevel - BASE_WATER_LEVEL;
 
       // Group center calculation for loose schooling cohesion
       const groupCenter = new THREE.Vector3();
@@ -388,17 +389,17 @@ export function createFish(
         const probeRightX = fish.position.x + rightDirX * probeDist;
         const probeRightZ = fish.position.z + rightDirZ * probeDist;
 
-        const localWaterLevel = getWaterSurfaceHeight(fish.position.z);
-        const aheadInWater = isInWater(probeAheadX, probeAheadZ);
-        const aheadWaterH = getWaterSurfaceHeight(probeAheadZ);
+        const localWaterLevel = getWaterSurfaceHeight(fish.position.z, tideOffset);
+        const aheadInWater = isInWater(probeAheadX, probeAheadZ, tideOffset);
+        const aheadWaterH = getWaterSurfaceHeight(probeAheadZ, tideOffset);
         const aheadDepth = aheadWaterH - getHeightAt(probeAheadX, probeAheadZ);
 
         if (!aheadInWater || aheadDepth < 0.04) {
           // Ahead is blocked by bank or shallow water
-          const leftWaterH = getWaterSurfaceHeight(probeLeftZ);
-          const leftOk = isInWater(probeLeftX, probeLeftZ) && (leftWaterH - getHeightAt(probeLeftX, probeLeftZ) >= 0.04);
-          const rightWaterH = getWaterSurfaceHeight(probeRightZ);
-          const rightOk = isInWater(probeRightX, probeRightZ) && (rightWaterH - getHeightAt(probeRightX, probeRightZ) >= 0.04);
+          const leftWaterH = getWaterSurfaceHeight(probeLeftZ, tideOffset);
+          const leftOk = isInWater(probeLeftX, probeLeftZ, tideOffset) && (leftWaterH - getHeightAt(probeLeftX, probeLeftZ) >= 0.04);
+          const rightWaterH = getWaterSurfaceHeight(probeRightZ, tideOffset);
+          const rightOk = isInWater(probeRightX, probeRightZ, tideOffset) && (rightWaterH - getHeightAt(probeRightX, probeRightZ) >= 0.04);
 
           if (leftOk && !rightOk) {
             steer.x += leftDirX * 2.5;
@@ -421,7 +422,7 @@ export function createFish(
         }
 
         // Strong recovery if fish ever wanders outside stream
-        if (!isInWater(fish.position.x, fish.position.z)) {
+        if (!isInWater(fish.position.x, fish.position.z, tideOffset)) {
           const curCenter = getStreamCenter(fish.position.z);
           steer.x += (curCenter - fish.position.x) * 4.5;
         }

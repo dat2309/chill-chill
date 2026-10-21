@@ -584,35 +584,46 @@ export class SceneManager {
     let hitZ: number | null = null;
     let waterDist = Infinity;
 
-    // Direct raycast against active theme's water mesh (never walk entire diorama group)
-    const waterMesh = activeTheme.getWaterMesh?.();
-    if (waterMesh && waterMesh.visible) {
-      const hits = this.raycaster.intersectObject(waterMesh, false);
-      if (hits.length > 0) {
-        hitX = hits[0].point.x;
-        hitZ = hits[0].point.z;
-        waterDist = hits[0].distance;
+    // 1. Theme-specific exact water surface intersection (incorporates dynamic tide, stream Z slope, excludes vertical skirts)
+    const waterHit = activeTheme.intersectWater ? activeTheme.intersectWater(this.raycaster.ray) : null;
+    if (waterHit) {
+      hitX = waterHit.point.x;
+      hitZ = waterHit.point.z;
+      waterDist = waterHit.distance;
+    } else {
+      // 2. Direct raycast against active theme's water mesh (excluding vertical cuts / skirts)
+      const waterMesh = activeTheme.getWaterMesh?.();
+      if (waterMesh && waterMesh.visible) {
+        const hits = this.raycaster.intersectObject(waterMesh, false);
+        for (const h of hits) {
+          // Reject vertical cuts / skirts (normal pointing horizontally)
+          if (h.face && Math.abs(h.face.normal.y) < 0.25) continue;
+          hitX = h.point.x;
+          hitZ = h.point.z;
+          waterDist = h.distance;
+          break;
+        }
       }
-    }
 
-    // Mathematical plane intersection at current water level fallback
-    if (hitX === null || hitZ === null) {
-      const waterLevel = activeTheme.getWaterLevel?.() ?? 0.3;
-      this.waterPlane.set(new THREE.Vector3(0, 1, 0), -waterLevel);
-      const planeHit = this.raycaster.ray.intersectPlane(this.waterPlane, this.waterHitPoint);
-      if (planeHit) {
-        hitX = planeHit.x;
-        hitZ = planeHit.z;
-        waterDist = this.raycaster.ray.origin.distanceTo(planeHit);
+      // 3. Mathematical plane intersection fallback ONLY for flat water themes (never arbitrary flat plane for Garden)
+      if ((hitX === null || hitZ === null) && activeTheme.id !== 'garden') {
+        const waterLevel = activeTheme.getWaterLevel?.() ?? 0.3;
+        this.waterPlane.set(new THREE.Vector3(0, 1, 0), -waterLevel);
+        const planeHit = this.raycaster.ray.intersectPlane(this.waterPlane, this.waterHitPoint);
+        if (planeHit && activeTheme.isInWater(planeHit.x, planeHit.z)) {
+          hitX = planeHit.x;
+          hitZ = planeHit.z;
+          waterDist = this.raycaster.ray.origin.distanceTo(planeHit);
+        }
       }
     }
 
     if (hitX !== null && hitZ !== null && activeTheme.isInWater(hitX, hitZ)) {
-      // Check if any solid obstacle (trees, rocks, architecture, boats) is in front of the water hit
+      // Check if any solid obstacle (terrain, emergent rocks, trees, architecture, boats) is in front of the water hit
       const obstacles = activeTheme.getObstacleMeshes?.();
       if (obstacles && obstacles.length > 0) {
         const obstacleHits = this.raycaster.intersectObjects(obstacles, true);
-        if (obstacleHits.length > 0 && obstacleHits[0].distance < waterDist) {
+        if (obstacleHits.length > 0 && obstacleHits[0].distance < waterDist - 0.005) {
           // Ray hits a solid foreground obstacle before reaching water; skip ripple
           return;
         }

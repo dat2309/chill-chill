@@ -11,6 +11,7 @@ import { createArchitecture, ArchitectureSystem } from './architecture';
 import { createVegetation, VegetationSystem } from './vegetation';
 import { createFish, FishSystem } from './fish';
 import { createLighting, LightingSystem } from './lighting';
+import { intersectGardenWater } from './streamProfile';
 
 export class GardenTheme implements ThemeInstance<'garden'> {
   readonly id = 'garden' as const;
@@ -147,6 +148,15 @@ export class GardenTheme implements ThemeInstance<'garden'> {
     this.fish?.reactToRipple(worldX, worldZ);
   }
 
+  intersectWater(ray: THREE.Ray): { point: THREE.Vector3; distance: number } | null {
+    const tideOffset = this.water ? this.water.getTideOffset() : 0;
+    return intersectGardenWater(ray, tideOffset);
+  }
+
+  getTideOffset(): number {
+    return this.water ? this.water.getTideOffset() : 0;
+  }
+
   getWaterLevel(): number {
     return this.water?.getWaterLevel() ?? 0.3;
   }
@@ -157,6 +167,7 @@ export class GardenTheme implements ThemeInstance<'garden'> {
 
   getObstacleMeshes(): THREE.Object3D[] {
     const list: THREE.Object3D[] = [];
+    if (this.terrain?.group) list.push(this.terrain.group);
     if (this.architecture?.group) list.push(this.architecture.group);
     if (this.vegetation?.group) list.push(this.vegetation.group);
     return list;

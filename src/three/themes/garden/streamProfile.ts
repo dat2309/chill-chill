@@ -111,14 +111,20 @@ export function getWaterSurfaceHeight(z: number, tideOffset: number = 0): number
 
 /**
  * Maximum water depth at the center of the stream channel.
+ * Seamless transition over z in [0.0, 1.0] centered at 0.5 with zero formula discontinuity.
  */
 export function getStreamMaxDepth(z: number): number {
   if (z <= -2.5) {
     return 0.20;
-  } else if (z <= 0.5) {
-    return 0.18;
-  } else {
+  } else if (z <= 0.0) {
+    const t = Math.min(1.0, (z - (-2.5)) / 2.5);
+    return THREE.MathUtils.lerp(0.20, 0.18, t);
+  } else if (z >= 1.0) {
     return 0.25;
+  } else {
+    // Smooth blending across cascade-lake transition [0.0, 1.0] centered at 0.5
+    const s = z * z * (3.0 - 2.0 * z);
+    return THREE.MathUtils.lerp(0.18, 0.25, s);
   }
 }
 
@@ -133,7 +139,7 @@ export function getStreamBedCenterHeight(z: number): number {
 /**
  * Cross-section riverbed/lakebed elevation Y at (x, z).
  * Reaches water surface at the banks (|x - center| = halfWidth).
- * In foreground lake basin (z >= 0.5), creates a broad, gentle, shallow bed (hồ nông).
+ * Smoothly blends parabolic channel profile into broad, shallow lake basin over z in [0.0, 1.0].
  */
 export function getStreamBedHeight(x: number, z: number): number {
   const center = getStreamCenter(z);
@@ -143,13 +149,112 @@ export function getStreamBedHeight(x: number, z: number): number {
   const baseWaterY = getBaseWaterSurfaceHeight(z);
   const maxDepth = getStreamMaxDepth(z);
 
-  if (z >= 0.5) {
-    // Broad, flat-bottomed shallow lake bed with gentle rise to the shoreline
-    const bedProfile = 1.0 - Math.pow(u, 2.6);
-    return baseWaterY - maxDepth * bedProfile;
+  const cascadeProfile = 1.0 - u * u;
+  const lakeProfile = 1.0 - Math.pow(u, 2.6);
+
+  let bedProfile: number;
+  if (z <= 0.0) {
+    bedProfile = cascadeProfile;
+  } else if (z >= 1.0) {
+    bedProfile = lakeProfile;
+  } else {
+    const s = z * z * (3.0 - 2.0 * z);
+    bedProfile = THREE.MathUtils.lerp(cascadeProfile, lakeProfile, s);
   }
-  // Parabolic channel profile in mountain gorge & cascades
-  return baseWaterY - maxDepth * (1.0 - u * u);
+
+  return baseWaterY - maxDepth * bedProfile;
+}
+
+/**
+ * Intersects a 3D ray with the continuous, height-varying water surface of the Garden stream.
+ * Takes current tide offset into account.
+ * Rejects vertical skirts and points outside the stream boundary.
+ */
+export function intersectGardenWater(
+  ray: THREE.Ray,
+  tideOffset: number = 0
+): { point: THREE.Vector3; distance: number } | null {
+  const o = ray.origin;
+  const d = ray.direction;
+
+  const minZ = STREAM_BOUNDS.minZ;
+  const maxZ = STREAM_BOUNDS.maxZ;
+
+  let tzMin = -Infinity;
+  let tzMax = Infinity;
+  if (Math.abs(d.z) > 1e-6) {
+    const t1 = (minZ - o.z) / d.z;
+    const t2 = (maxZ - o.z) / d.z;
+    tzMin = Math.min(t1, t2);
+    tzMax = Math.max(t1, t2);
+  } else {
+    if (o.z < minZ || o.z > maxZ) return null;
+  }
+
+  const minWaterY = BASE_WATER_LEVEL + tideOffset - 0.05;
+  const maxWaterY = 1.55 + tideOffset + 0.05;
+
+  let tyMin = -Infinity;
+  let tyMax = Infinity;
+  if (Math.abs(d.y) > 1e-6) {
+    const t1 = (minWaterY - o.y) / d.y;
+    const t2 = (maxWaterY - o.y) / d.y;
+    tyMin = Math.min(t1, t2);
+    tyMax = Math.max(t1, t2);
+  } else {
+    if (o.y < minWaterY || o.y > maxWaterY) return null;
+  }
+
+  const tStart = Math.max(0, tzMin, tyMin);
+  const tEnd = Math.min(tzMax, tyMax);
+
+  if (tStart >= tEnd) return null;
+
+  const f = (t: number): number => {
+    const z = o.z + t * d.z;
+    const waterY = getWaterSurfaceHeight(z, tideOffset);
+    return o.y + t * d.y - waterY;
+  };
+
+  const steps = 24;
+  const dt = (tEnd - tStart) / steps;
+  let prevT = tStart;
+  let prevF = f(prevT);
+
+  for (let i = 1; i <= steps; i++) {
+    const currT = tStart + i * dt;
+    const currF = f(currT);
+
+    if (prevF * currF <= 0) {
+      let a = prevT;
+      let b = currT;
+      for (let iter = 0; iter < 14; iter++) {
+        const mid = (a + b) * 0.5;
+        const fMid = f(mid);
+        if (f(a) * fMid <= 0) {
+          b = mid;
+        } else {
+          a = mid;
+        }
+      }
+      const rootT = (a + b) * 0.5;
+      const hitX = o.x + rootT * d.x;
+      const hitZ = o.z + rootT * d.z;
+      const hitY = getWaterSurfaceHeight(hitZ, tideOffset);
+
+      if (isInWater(hitX, hitZ, tideOffset)) {
+        return {
+          point: new THREE.Vector3(hitX, hitY, hitZ),
+          distance: rootT,
+        };
+      }
+    }
+
+    prevT = currT;
+    prevF = currF;
+  }
+
+  return null;
 }
 
 /**
