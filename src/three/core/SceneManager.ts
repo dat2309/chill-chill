@@ -511,11 +511,7 @@ export class SceneManager {
   }
 
   fitCamera(): void {
-    fitOrthographicCameraToBounds(this.camera, this.renderer, this.scene, {
-      paddingX: 1.16,
-      paddingY: 1.28,
-      minFrustumHeight: 23.5,
-    });
+    fitOrthographicCameraToBounds(this.camera, this.renderer, this.scene);
   }
 
   resetCurrentTheme(defaultState: ThemeState<any>): void {
