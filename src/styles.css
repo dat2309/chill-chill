@@ -652,7 +652,7 @@ input:focus-visible,
   .top-left-panel {
     top: 10px;
     left: 10px;
-    max-width: calc(100vw - 160px);
+    max-width: calc(100vw - 165px);
   }
   .logo-row {
     margin-bottom: 2px;
@@ -665,9 +665,14 @@ input:focus-visible,
   .logo-text {
     font-size: 16px;
   }
-  /* Hide verbose eyebrow on small screens so title & time never collide */
   .eyebrow {
-    display: none;
+    display: block;
+    font-size: 9px;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+    margin-bottom: 2px;
+    max-width: 100%;
+    word-break: break-word;
   }
   .hero-title {
     font-size: 15px;
@@ -703,25 +708,30 @@ input:focus-visible,
     padding: 4px 9px;
     font-size: 10px;
     border-radius: 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .theme-switch-btn svg {
-    width: 16px !important;
-    height: 16px !important;
-    min-width: 16px !important;
-    min-height: 16px !important;
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    min-height: 18px !important;
   }
-  /* Accessible complete toolbar on 390px screens */
+  /* Accessible complete toolbar on 390px screens: all buttons including Full are fully visible */
   .bottom-bar {
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
     padding: 3px 5px;
-    gap: 1px;
+    gap: 2px;
     max-width: calc(100vw - 12px);
     justify-content: center;
+    flex-wrap: nowrap;
   }
   .ctrl-btn {
     padding: 4px 6px;
     font-size: 10px;
-    gap: 3px;
+    gap: 2px;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
   .ctrl-btn svg, .ctrl-btn .btn-icon {
     width: 13px;
@@ -734,13 +744,28 @@ input:focus-visible,
   .season-selector {
     padding: 1px;
     gap: 1px;
+    flex-shrink: 0;
   }
   .season-btn {
-    padding: 4px 5px;
+    padding: 3px 5px;
     font-size: 10px;
+    flex-shrink: 0;
   }
   .season-selector .season-label {
     display: none;
+  }
+  /* Footer sits cleanly below bottom bar without any visual overlap */
+  .footer {
+    padding: 0 10px;
+    bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+  .footer-left {
+    display: none;
+  }
+  .footer-right {
+    font-size: 9px;
+    width: 100%;
+    justify-content: center;
   }
 }
 

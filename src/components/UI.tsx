@@ -319,7 +319,9 @@ export default function UI({
             aria-haspopup="dialog"
           >
             <LayersIcon />
-            <span className="theme-btn-text">{activeMetadata.name}</span>
+            <span className="theme-btn-text">
+              {activeThemeId === 'garden' ? 'Chillax Garden' : 'Phú Quốc Bay'}
+            </span>
           </button>
           <button
             ref={howBtnRef}
