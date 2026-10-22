@@ -80,73 +80,66 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 function getWestStairProfile(z: number): { x: number; y: number } {
-  if (z <= 0.60) {
-    return { x: -5.80, y: 1.48 };
-  } else if (z <= 1.25) {
-    const t = (z - 0.60) / (1.25 - 0.60);
-    return {
-      x: THREE.MathUtils.lerp(-5.80, -5.56, t),
-      y: THREE.MathUtils.lerp(1.48, 0.94, t),
-    };
-  } else if (z <= 1.85) {
-    return { x: -5.54, y: 0.94 };
-  } else if (z <= 2.30) {
-    const t = (z - 1.85) / (2.30 - 1.85);
-    return {
-      x: THREE.MathUtils.lerp(-5.50, -5.28, t),
-      y: THREE.MathUtils.lerp(0.94, 0.40, t),
-    };
+  const x = -6.15 + (z - 0.18) * 0.120579;
+  let y: number;
+  if (z <= 0.88) {
+    y = 1.48;
+  } else if (z <= 1.71) {
+    const t = (z - 0.88) / (1.71 - 0.88);
+    y = THREE.MathUtils.lerp(1.48, 0.94, t);
+  } else if (z <= 2.44) {
+    y = 0.94;
+  } else if (z <= 3.28) {
+    const t = (z - 2.44) / (3.28 - 2.44);
+    y = THREE.MathUtils.lerp(0.94, 0.40, t);
   } else {
-    return { x: -5.26, y: 0.40 };
+    y = 0.40;
   }
+  return { x, y };
 }
 
 function getEastStairProfile(z: number): { x: number; y: number } {
-  if (z <= 0.92) {
-    return { x: -1.85, y: 1.46 };
-  } else if (z <= 1.65) {
-    const t = (z - 0.92) / (1.65 - 0.92);
-    return {
-      x: THREE.MathUtils.lerp(-1.85, -1.50, t),
-      y: THREE.MathUtils.lerp(1.46, 0.93, t),
-    };
-  } else if (z <= 2.15) {
-    return { x: -1.48, y: 0.93 };
-  } else if (z <= 2.65) {
-    const t = (z - 2.15) / (2.65 - 2.15);
-    return {
-      x: THREE.MathUtils.lerp(-1.42, -1.18, t),
-      y: THREE.MathUtils.lerp(0.93, 0.40, t),
-    };
+  const x = -1.82 + (z - 0.48) * 0.120579;
+  let y: number;
+  if (z <= 1.18) {
+    y = 1.46;
+  } else if (z <= 2.01) {
+    const t = (z - 1.18) / (2.01 - 1.18);
+    y = THREE.MathUtils.lerp(1.46, 0.93, t);
+  } else if (z <= 2.74) {
+    y = 0.93;
+  } else if (z <= 3.58) {
+    const t = (z - 2.74) / (3.58 - 2.74);
+    y = THREE.MathUtils.lerp(0.93, 0.40, t);
   } else {
-    return { x: -1.15, y: 0.40 };
+    y = 0.40;
   }
+  return { x, y };
 }
 
 function applyStaircaseCorridorGrading(x: number, z: number, currentH: number): number {
   let gradedH = currentH;
 
-  // 1. West Staircase Corridor
-  // Covers top landing (z: 0.05-0.80), flights, mid landing, and bottom landing (z: 2.30-3.25)
-  if (x >= -6.8 && x <= -4.4 && z >= 0.05 && z <= 3.25) {
+  // 1. West Staircase Corridor (z: 0.10 to 4.15)
+  if (x >= -7.5 && x <= -4.6 && z >= 0.10 && z <= 4.15) {
     const prof = getWestStairProfile(z);
     const distToPath = Math.abs(x - prof.x);
     // Target excavated bedrock 8.5cm beneath the tread surface
     const targetBedH = prof.y - 0.085;
-    // Step/landing half-width up to 0.58m; blend smoothly over [0.70m, 1.20m]
-    const blend = 1.0 - smoothstep(0.70, 1.20, distToPath);
+    // Step half-width is 0.44m, curb outer edge is at 0.54m.
+    // Soft, organic blending over [0.55m, 1.65m] eliminates rigid trench walls
+    const blend = 1.0 - smoothstep(0.55, 1.65, distToPath);
     if (blend > 0 && targetBedH < gradedH) {
       gradedH = THREE.MathUtils.lerp(gradedH, targetBedH, blend);
     }
   }
 
-  // 2. East Staircase Corridor
-  // Covers top landing (z: 0.45-1.20), flights, mid landing, and bottom landing (z: 2.65-3.60)
-  if (x >= -2.8 && x <= -0.3 && z >= 0.45 && z <= 3.60) {
+  // 2. East Staircase Corridor (z: 0.40 to 4.45)
+  if (x >= -3.2 && x <= -0.4 && z >= 0.40 && z <= 4.45) {
     const prof = getEastStairProfile(z);
     const distToPath = Math.abs(x - prof.x);
     const targetBedH = prof.y - 0.085;
-    const blend = 1.0 - smoothstep(0.70, 1.20, distToPath);
+    const blend = 1.0 - smoothstep(0.55, 1.65, distToPath);
     if (blend > 0 && targetBedH < gradedH) {
       gradedH = THREE.MathUtils.lerp(gradedH, targetBedH, blend);
     }
@@ -797,11 +790,11 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   // ONLY 5 natural weathered accent boulders scattered organically (NO enclosing wall or pond ring!)
   const boulderSpots = [
     // Boulder 1: At foot of left cliff partly submerged in crystal water
-    { x: -1.3, z: 3.2, scale: 0.42, col: new THREE.Color(0x9e968b) },
+    { x: -0.25, z: 3.30, scale: 0.40, col: new THREE.Color(0x9e968b) },
     // Boulder 2: On right gravel spit, weathered river stone
     { x: 4.6, z: 3.6, scale: 0.38, col: new THREE.Color(0xaba092) },
     // Boulder 3: Near lower stairs landing, flat stepping stone
-    { x: -2.3, z: 2.5, scale: 0.35, col: new THREE.Color(0x8e877c) },
+    { x: -2.60, z: 2.40, scale: 0.35, col: new THREE.Color(0x8e877c) },
     // Boulder 4: Mountain gorge cascade boulder upstream
     { x: 2.8, z: -2.6, scale: 0.40, col: new THREE.Color(0xb0a696) },
     // Boulder 5: Downstream right bank, sand-washed boulder

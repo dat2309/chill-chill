@@ -580,7 +580,8 @@ stairList.forEach((stair) => {
       stair.topLanding.x,
       stair.topLanding.z,
       stair.topLanding.width,
-      stair.topLanding.depth
+      stair.topLanding.depth,
+      stair.topLanding.rotation ?? stair.rotation ?? 0
     ),
   });
 
@@ -617,7 +618,8 @@ stairList.forEach((stair) => {
       stair.midLanding.x,
       stair.midLanding.z,
       stair.midLanding.width,
-      stair.midLanding.depth
+      stair.midLanding.depth,
+      stair.midLanding.rotation ?? stair.rotation ?? 0
     ),
   });
 
@@ -654,7 +656,8 @@ stairList.forEach((stair) => {
       stair.bottomLanding.x,
       stair.bottomLanding.z,
       stair.bottomLanding.width,
-      stair.bottomLanding.depth
+      stair.bottomLanding.depth,
+      stair.bottomLanding.rotation ?? stair.rotation ?? 0
     ),
   });
 
@@ -758,9 +761,9 @@ stairList.forEach((stair) => {
 // Check 6: Flagstone Stepping Stone connections to stair landings
 const landingConnectionPoints = [
   { x: -5.85, z: 0.10, name: 'West Top Landing Connection' },
-  { x: -5.10, z: 3.15, name: 'West Bottom Landing Connection' },
+  { x: -5.55, z: 3.95, name: 'West Bottom Landing Connection' },
   { x: -2.00, z: 0.55, name: 'East Top Landing Connection' },
-  { x: -1.05, z: 3.45, name: 'East Bottom Landing Connection' },
+  { x: -1.30, z: 4.25, name: 'East Bottom Landing Connection' },
 ];
 
 let allConnectionsGrounded = true;
@@ -776,6 +779,78 @@ assert(
   allConnectionsGrounded,
   'All flagstone walking path connections to staircase landings contact solid ground smoothly',
   connectionFailMsg
+);
+
+// Check 7: Dome 3 Clearance to West Staircase (Clear walking corridor & entrance)
+const dome3Platform = { minX: -4.30 - 0.86, maxX: -4.30 + 0.86, minZ: 0.05 - 0.86, maxZ: 0.05 + 0.86 };
+const westStairLeftEdge = GARDEN_STAIRCASES.west.topLanding.x + Math.cos(GARDEN_STAIRCASES.west.rotation) * (GARDEN_STAIRCASES.west.topLanding.width / 2 + 0.05);
+const westStairClearance = Math.abs(dome3Platform.minX - westStairLeftEdge);
+assert(
+  westStairClearance >= 0.45,
+  `West staircase top landing maintains generous clearance from Dome 3 deck (${westStairClearance.toFixed(3)}m >= 0.45m)`,
+  `Clearance is only ${westStairClearance.toFixed(3)}m`
+);
+
+// Check 8: Boulder Clearance from all Staircase Corridors & Landings
+const stairListToCheck = [GARDEN_STAIRCASES.west, GARDEN_STAIRCASES.east];
+let boulderConflict = false;
+let boulderConflictMsg = '';
+const boulderSpotsToCheck = [
+  { x: -0.25, z: 3.30, name: 'Boulder 1' },
+  { x: 4.60, z: 3.60, name: 'Boulder 2' },
+  { x: -2.60, z: 2.40, name: 'Boulder 3' },
+  { x: 2.80, z: -2.60, name: 'Boulder 4' },
+  { x: 5.20, z: 5.80, name: 'Boulder 5' },
+];
+
+stairListToCheck.forEach((st) => {
+  const landingsToCheck = [st.topLanding, st.midLanding, st.bottomLanding];
+  boulderSpotsToCheck.forEach((b) => {
+    landingsToCheck.forEach((l) => {
+      const dist = Math.hypot(b.x - l.x, b.z - l.z);
+      if (dist < 0.65) {
+        boulderConflict = true;
+        boulderConflictMsg = `${b.name} at (${b.x}, ${b.z}) obstructs ${st.name} landing (${l.x}, ${l.z}) at distance ${dist.toFixed(3)}m < 0.65m`;
+      }
+    });
+  });
+});
+assert(
+  !boulderConflict,
+  'All river and cliff boulders remain strictly clear of all stair landings and walkways (zero obstruction)',
+  boulderConflictMsg
+);
+
+// Check 9: Co-aligned Landing & Flight Joint Geometry (Zero diagonal wedges or disjointed curbs)
+let jointsFlush = true;
+let jointFailMsg = '';
+stairListToCheck.forEach((st) => {
+  const uDx = st.upperFlight.endX - st.upperFlight.startX;
+  const uDz = st.upperFlight.endZ - st.upperFlight.startZ;
+  const uAngle = Math.atan2(uDx, uDz);
+  const lDx = st.lowerFlight.endX - st.lowerFlight.startX;
+  const lDz = st.lowerFlight.endZ - st.lowerFlight.startZ;
+  const lAngle = Math.atan2(lDx, lDz);
+
+  if (Math.abs(st.rotation - uAngle) > 0.01) {
+    jointsFlush = false;
+    jointFailMsg = `${st.name}: upper flight angle (${uAngle.toFixed(3)}) differs from staircase rotation (${st.rotation.toFixed(3)})`;
+  }
+  if (Math.abs(st.rotation - lAngle) > 0.01) {
+    jointsFlush = false;
+    jointFailMsg = `${st.name}: lower flight angle (${lAngle.toFixed(3)}) differs from staircase rotation (${st.rotation.toFixed(3)})`;
+  }
+  if (Math.abs(st.topLanding.rotation! - st.rotation) > 0.01 ||
+      Math.abs(st.midLanding.rotation! - st.rotation) > 0.01 ||
+      Math.abs(st.bottomLanding.rotation! - st.rotation) > 0.01) {
+    jointsFlush = false;
+    jointFailMsg = `${st.name}: landing rotations do not match staircase rotation`;
+  }
+});
+assert(
+  jointsFlush,
+  'All stair flights, mid landings (chiếu nghỉ), and entrance/exit platforms share unified orientation (100% square flush joints, zero wedge intersections)',
+  jointFailMsg
 );
 
 terrainSys.dispose();

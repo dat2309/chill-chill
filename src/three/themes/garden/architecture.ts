@@ -25,78 +25,90 @@ export interface StairFlightDef {
   treadDepth: number;
 }
 
+export interface StairLandingDef {
+  x: number;
+  z: number;
+  y: number;
+  width: number;
+  depth: number;
+  rotation?: number;
+}
+
 export interface StaircaseDef {
   id: string;
   name: string;
-  topLanding: { x: number; z: number; y: number; width: number; depth: number };
+  rotation: number;
+  topLanding: StairLandingDef;
   upperFlight: StairFlightDef;
-  midLanding: { x: number; z: number; y: number; width: number; depth: number };
+  midLanding: StairLandingDef;
   lowerFlight: StairFlightDef;
-  bottomLanding: { x: number; z: number; y: number; width: number; depth: number };
+  bottomLanding: StairLandingDef;
 }
 
 export const GARDEN_STAIRCASES: Record<'west' | 'east', StaircaseDef> = {
   west: {
     id: 'west',
     name: 'West Plateau Staircase',
-    topLanding: { x: -5.80, z: 0.45, y: 1.48, width: 1.05, depth: 0.70 },
+    rotation: 0.12,
+    topLanding: { x: -6.108, z: 0.527, y: 1.48, width: 0.88, depth: 0.70, rotation: 0.12 },
     upperFlight: {
-      startX: -5.78,
-      startZ: 0.68,
-      endX: -5.60,
-      endZ: 1.28,
+      startX: -6.066,
+      startZ: 0.875,
+      endX: -5.966,
+      endZ: 1.709,
       startY: 1.48,
       endY: 0.94,
       steps: 3,
       width: 0.88,
       riserHeight: 0.135,
-      treadDepth: 0.32,
+      treadDepth: 0.28,
     },
-    midLanding: { x: -5.54, z: 1.58, y: 0.94, width: 1.05, depth: 0.75 },
+    midLanding: { x: -5.921, z: 2.076, y: 0.94, width: 0.88, depth: 0.74, rotation: 0.12 },
     lowerFlight: {
-      startX: -5.48,
-      startZ: 1.88,
-      endX: -5.32,
-      endZ: 2.48,
+      startX: -5.877,
+      startZ: 2.444,
+      endX: -5.777,
+      endZ: 3.278,
       startY: 0.94,
       endY: 0.40,
       steps: 3,
       width: 0.88,
       riserHeight: 0.135,
-      treadDepth: 0.32,
+      treadDepth: 0.28,
     },
-    bottomLanding: { x: -5.26, z: 2.75, y: 0.40, width: 1.15, depth: 0.85 },
+    bottomLanding: { x: -5.729, z: 3.675, y: 0.40, width: 0.88, depth: 0.80, rotation: 0.12 },
   },
   east: {
     id: 'east',
     name: 'East Meadow Staircase',
-    topLanding: { x: -1.85, z: 0.85, y: 1.46, width: 1.05, depth: 0.70 },
+    rotation: 0.12,
+    topLanding: { x: -1.778, z: 0.827, y: 1.46, width: 0.88, depth: 0.70, rotation: 0.12 },
     upperFlight: {
-      startX: -1.80,
-      startZ: 1.08,
-      endX: -1.56,
-      endZ: 1.68,
+      startX: -1.736,
+      startZ: 1.175,
+      endX: -1.636,
+      endZ: 2.009,
       startY: 1.46,
       endY: 0.93,
       steps: 3,
       width: 0.88,
       riserHeight: 0.1325,
-      treadDepth: 0.32,
+      treadDepth: 0.28,
     },
-    midLanding: { x: -1.48, z: 1.98, y: 0.93, width: 1.05, depth: 0.75 },
+    midLanding: { x: -1.591, z: 2.376, y: 0.93, width: 0.88, depth: 0.74, rotation: 0.12 },
     lowerFlight: {
-      startX: -1.40,
-      startZ: 2.26,
-      endX: -1.22,
-      endZ: 2.86,
+      startX: -1.547,
+      startZ: 2.744,
+      endX: -1.447,
+      endZ: 3.578,
       startY: 0.93,
       endY: 0.40,
       steps: 3,
       width: 0.88,
       riserHeight: 0.1325,
-      treadDepth: 0.32,
+      treadDepth: 0.28,
     },
-    bottomLanding: { x: -1.15, z: 3.12, y: 0.40, width: 1.15, depth: 0.85 },
+    bottomLanding: { x: -1.399, z: 3.975, y: 0.40, width: 0.88, depth: 0.80, rotation: 0.12 },
   },
 };
 
@@ -232,7 +244,7 @@ export function createArchitecture(
   const domeConfigs = [
     { x: -6.0, z: -2.2, rotY: 0.15 }, // Dome 1 (Back left)
     { x: -3.8, z: -1.8, rotY: -0.20 }, // Dome 2 (Mid right)
-    { x: -4.7, z: 0.15, rotY: 0.05 },   // Dome 3 (Front left)
+    { x: -4.30, z: 0.05, rotY: 0.05 },   // Dome 3 (Front left)
   ];
 
   domeConfigs.forEach((cfg, idx) => {
@@ -585,27 +597,38 @@ export function createArchitecture(
   staircases.forEach((sc) => {
     // A. Render Landings (Top, Mid Chiếu Nghỉ, Bottom)
     const landings = [sc.topLanding, sc.midLanding, sc.bottomLanding];
+    const scTheta = sc.rotation ?? 0;
+
     landings.forEach((land) => {
+      const landTheta = land.rotation ?? scTheta;
+      const lnx = Math.cos(landTheta);
+      const lnz = -Math.sin(landTheta);
       const bedY = getHeightAt(land.x, land.z);
       const bottomY = Math.min(land.y - 0.22, bedY - 0.15);
       const landH = land.y - bottomY;
 
       // Solid stone landing platform
       const landGeo = new THREE.BoxGeometry(land.width, landH, land.depth).toNonIndexed();
+      landGeo.rotateY(landTheta);
       landGeo.translate(land.x, land.y - landH / 2, land.z);
       stoneGeometries.push(prepareGeometry(landGeo, COLORS.terrain.rock));
 
-      // Perimeter stone curb blocks
+      // Perimeter stone curb blocks aligned with staircase stringers
       const curbThick = 0.10;
-      const curbH = landH + 0.06;
-      [-land.width / 2, land.width / 2].forEach((ox) => {
-        const cGeo = new THREE.BoxGeometry(curbThick, curbH, land.depth).toNonIndexed();
-        cGeo.translate(land.x + ox, land.y - landH / 2 + 0.03, land.z);
+      const curbH = landH + 0.08;
+      [-1, 1].forEach((side) => {
+        const curbOffset = side * (land.width / 2 + 0.05);
+        const cx = land.x + lnx * curbOffset;
+        const cz = land.z + lnz * curbOffset;
+        const cGeo = new THREE.BoxGeometry(curbThick, curbH, land.depth + 0.02).toNonIndexed();
+        cGeo.rotateY(landTheta);
+        cGeo.translate(cx, land.y - landH / 2 + 0.04, cz);
         stoneGeometries.push(prepareGeometry(cGeo, COLORS.terrain.rockDark));
       });
 
       // Winter snow cap on landing surface
-      const snowGeo = new THREE.BoxGeometry(land.width - 0.06, 0.02, land.depth - 0.06).toNonIndexed();
+      const snowGeo = new THREE.BoxGeometry(land.width - 0.05, 0.02, land.depth - 0.05).toNonIndexed();
+      snowGeo.rotateY(landTheta);
       snowGeo.translate(land.x, land.y + 0.01, land.z);
       snowGeometries.push(prepareGeometry(snowGeo, COLORS.terrain.snow));
     });
@@ -690,17 +713,21 @@ export function createArchitecture(
     { x: -5.2, z: -1.5 },
     { x: -5.6, z: -1.1 },
     { x: -5.9, z: -0.8 },
-    // Connection to West top landing (-5.80, 0.45)
+    // Connection to West top landing (-6.11, 0.53)
     { x: -5.85, z: 0.10 },
-    // Connection from West bottom landing (-5.26, 2.75) to lake shore
-    { x: -5.10, z: 3.15 },
-    { x: -4.80, z: 3.55 },
-    // Connection to East top landing (-1.85, 0.85)
+    { x: -6.05, z: 0.32 },
+    // Connection from West bottom landing (-5.73, 3.68) to lake shore
+    { x: -5.55, z: 3.95 },
+    { x: -5.20, z: 4.25 },
+    { x: -4.80, z: 4.55 },
+    // Connection to East top landing (-1.78, 0.83)
     { x: -2.3, z: 0.2 },
     { x: -2.0, z: 0.55 },
-    // Connection from East bottom landing (-1.15, 3.12) to water edge
-    { x: -1.05, z: 3.45 },
-    { x: -0.85, z: 3.85 },
+    { x: -1.85, z: 0.70 },
+    // Connection from East bottom landing (-1.40, 3.98) to water edge
+    { x: -1.30, z: 4.25 },
+    { x: -1.00, z: 4.50 },
+    { x: -0.70, z: 4.70 },
     // Pebble bank path from lower stairs to water edge
     { x: -2.0, z: 2.7 },
     { x: -1.7, z: 3.1 },
