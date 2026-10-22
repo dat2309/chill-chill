@@ -1191,6 +1191,25 @@ assert(
   palmFrondFailDetails
 );
 
+// Verify complete absence of mushroom-like decorative round clusters, coastal bushes, and bougainvillea
+let unexpectedVegMeshCount = 0;
+let unexpectedVegMeshDetails = '';
+pqVeg.group.traverse((obj) => {
+  if (obj instanceof THREE.InstancedMesh) {
+    const isPineTrunk = obj.geometry instanceof THREE.CylinderGeometry;
+    const isPineCanopy = obj.geometry instanceof THREE.ConeGeometry;
+    if (!isPineTrunk && !isPineCanopy) {
+      unexpectedVegMeshCount++;
+      unexpectedVegMeshDetails = `Unexpected InstancedMesh found in vegetation with geometry ${obj.geometry.type}`;
+    }
+  }
+});
+assert(
+  unexpectedVegMeshCount === 0,
+  'All mushroom-like round clusters, coastal bushes, and bougainvillea are completely removed from Sunset Beach vegetation',
+  unexpectedVegMeshDetails
+);
+
 // Layout migrations discard both camera storage paths while retaining settings.
 const oldWindow = (globalThis as any).window;
 try {

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { PHUQUOC_COLORS, PhuQuocSeason, SEED } from './constants';
 import { getDistanceToShore, isInWater, BUNGALOW_SPOTS } from './shoreline';
 import { isInsidePhuQuocFootprint } from './footprint';
@@ -12,65 +11,6 @@ export interface PhuQuocVegetationSystem {
   dispose(): void;
 }
 
-/**
- * Creates an organic, multi-lobed bougainvillea floral cluster geometry with vertex colors.
- * Replaces hard polyhedral spheres with soft, cascading petal puffs and subtle green bract accents.
- */
-function createBougainvilleaClusterGeometry(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-
-  function applyVertexColor(geo: THREE.BufferGeometry, color: THREE.Color) {
-    const count = geo.attributes.position.count;
-    const colors = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  }
-
-  // 1. Central floret puff (soft rose)
-  const mainGeo = new THREE.SphereGeometry(0.16, 10, 8);
-  mainGeo.scale(1.2, 0.72, 1.15);
-  applyVertexColor(mainGeo, new THREE.Color(0xd75677));
-  parts.push(mainGeo);
-
-  // 2. Surrounding blooming petal puffs (soft varied tints of pink/coral-rose)
-  const petalPuffs = [
-    { pos: [0.11, -0.03, 0.07], r: 0.11, scale: [1.1, 0.65, 1.1], col: new THREE.Color(0xea6989) },
-    { pos: [-0.10, -0.02, 0.08], r: 0.10, scale: [1.1, 0.65, 1.05], col: new THREE.Color(0xe35f81) },
-    { pos: [0.03, -0.04, -0.10], r: 0.11, scale: [1.15, 0.65, 1.1], col: new THREE.Color(0xdc587a) },
-    { pos: [-0.06, 0.04, -0.05], r: 0.09, scale: [1.0, 0.7, 1.0], col: new THREE.Color(0xf07a97) },
-    { pos: [0.08, 0.05, 0.04], r: 0.085, scale: [1.0, 0.7, 1.0], col: new THREE.Color(0xf586a1) },
-  ];
-
-  petalPuffs.forEach((puff) => {
-    const pGeo = new THREE.SphereGeometry(puff.r, 8, 6);
-    pGeo.scale(puff.scale[0], puff.scale[1], puff.scale[2]);
-    pGeo.translate(puff.pos[0], puff.pos[1], puff.pos[2]);
-    applyVertexColor(pGeo, puff.col);
-    parts.push(pGeo);
-  });
-
-  // 3. Subtle foliage leaf accents at the underside
-  const leafAccents = [
-    { pos: [0.09, -0.08, -0.07], r: 0.065, col: new THREE.Color(0x4a6a36) },
-    { pos: [-0.08, -0.08, 0.06], r: 0.060, col: new THREE.Color(0x3e5b2d) },
-  ];
-
-  leafAccents.forEach((leaf) => {
-    const lGeo = new THREE.SphereGeometry(leaf.r, 6, 5);
-    lGeo.scale(1.4, 0.45, 1.0);
-    lGeo.translate(leaf.pos[0], leaf.pos[1], leaf.pos[2]);
-    applyVertexColor(lGeo, leaf.col);
-    parts.push(lGeo);
-  });
-
-  const merged = BufferGeometryUtils.mergeGeometries(parts, false);
-  merged.computeVertexNormals();
-  return merged;
-}
 
 // Exact world bounding boxes of thatched bungalow roofs (from 3D cone meshes)
 export const BUNGALOW_ROOF_BOUNDS = [
@@ -101,13 +41,7 @@ export function createPhuQuocVegetation(
     side: THREE.DoubleSide,
   });
   const casuarinaMat = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.vegetation.casuarina });
-  // Softer bougainvillea material using vertexColors and smooth Lambert shading
-  const bougainvilleaMat = new THREE.MeshLambertMaterial({
-    vertexColors: true,
-    flatShading: false,
-  });
-
-  materialsToDispose.push(palmTrunkMat, palmFrondMat, casuarinaMat, bougainvilleaMat);
+  materialsToDispose.push(palmTrunkMat, palmFrondMat, casuarinaMat);
 
   // --- Box3-based Bungalow Roof Exclusion ---
   // Evaluates the actual 3D bounding box (Box3) of the palm crown against each bungalow roof footprint.
@@ -324,46 +258,6 @@ export function createPhuQuocVegetation(
   pineCanopyMesh.instanceMatrix.needsUpdate = true;
   vegGroup.add(pineTrunkMesh);
   vegGroup.add(pineCanopyMesh);
-
-  // --- 3. Soft Rose Bougainvillea (Hoa Giấy Hồng Êm) ---
-  // Cascading multi-lobed floral clusters with soft rose-pink petals and subtle foliage undertones
-  const bougCount = 38;
-  const bougClusterGeo = createBougainvilleaClusterGeometry();
-  geometriesToDispose.push(bougClusterGeo);
-
-  const bougMesh = new THREE.InstancedMesh(bougClusterGeo, bougainvilleaMat, bougCount);
-  bougMesh.castShadow = true;
-
-  // Concentrated near bungalows walkways, stone paths and eastern headland rocks
-  const bougCenters = [
-    { x: -4.8, z: -0.6, r: 1.0 }, // Bungalow 1 walkway
-    { x: -1.8, z: -2.2, r: 1.0 }, // Bungalow 2 terrace
-    { x: 1.8, z: -1.5, r: 1.0 },  // Bungalow 3 terrace
-    { x: 4.5, z: 1.5, r: 1.5 },   // Eastern granite rocks
-    { x: -1.2, z: 0.5, r: 0.8 },  // Pier garden approach
-  ];
-
-  let placedBoug = 0;
-  for (let i = 0; i < bougCount; i++) {
-    const center = bougCenters[i % bougCenters.length];
-    const ox = rng.range(-center.r, center.r);
-    const oz = rng.range(-center.r, center.r);
-    const bx = center.x + ox;
-    const bz = center.z + oz;
-    if (!isInsidePhuQuocFootprint(bx, bz, 0.30) || isInWater(bx, bz)) continue;
-    const scale = rng.range(0.55, 1.15);
-    const by = getHeightAt(bx, bz) + 0.05 * scale;
-
-    dummy.position.set(bx, by, bz);
-    dummy.scale.set(scale * 1.2, scale * 0.85, scale * 1.15);
-    dummy.rotation.set(rng.range(0, 0.25), rng.range(0, Math.PI * 2), rng.range(0, 0.2));
-    dummy.updateMatrix();
-    bougMesh.setMatrixAt(placedBoug, dummy.matrix);
-    placedBoug++;
-  }
-  bougMesh.count = Math.max(1, placedBoug);
-  bougMesh.instanceMatrix.needsUpdate = true;
-  vegGroup.add(bougMesh);
 
   // Cached seasonal target colors
   const lushGreen = new THREE.Color(0x235f26);

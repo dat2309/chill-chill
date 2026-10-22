@@ -60,7 +60,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     this.boats = createPhuQuocBoats(this.group);
     await new Promise((r) => requestAnimationFrame(r));
 
-    // 5. Tropical Vegetation (Palms, pines, bougainvillea)
+    // 5. Tropical Vegetation (Palms, pines)
     this.vegetation = createPhuQuocVegetation(
       this.group,
       (x, z) => this.terrain.getHeightAt(x, z),

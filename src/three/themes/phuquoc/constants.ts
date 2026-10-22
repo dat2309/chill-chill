@@ -78,9 +78,6 @@ export const PHUQUOC_COLORS = {
     palmFrond: new THREE.Color(0x2e7d32),
     palmFrondLight: new THREE.Color(0x4caf50),
     casuarina: new THREE.Color(0x2d5a37), // Phi lao deep blue-green
-    bougainvilleaPink: new THREE.Color(0xc94966), // Natural coastal bougainvillea rose (softer, non-fluorescent)
-    bougainvilleaHotPink: new THREE.Color(0xdb5c79),
-    coastalBush: new THREE.Color(0x388e3c),
   },
   architecture: {
     lanternWarm: new THREE.Color(0xffaa33),

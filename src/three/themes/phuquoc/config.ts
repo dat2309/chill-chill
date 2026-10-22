@@ -39,7 +39,7 @@ export const PHUQUOC_METADATA: ThemeMetadata<'phuquoc'> = {
     {
       icon: '🌴',
       title: 'Tropical Coastal Flora',
-      content: 'Procedural curved coconut palms leaning seaward with pinnate frond crowns, coastal whistling pines (phi lao) on the low rear knolls, and pink bougainvillea (hoa giấy) blooming over coastal rock clusters.',
+      content: 'Procedural curved coconut palms leaning seaward with pinnate frond crowns and coastal whistling pines (phi lao) on the low rear knolls.',
     },
     {
       icon: '🌧️',
