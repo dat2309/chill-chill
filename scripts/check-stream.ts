@@ -363,7 +363,11 @@ assert(mat.side === THREE.FrontSide, 'Terrain material uses FrontSide rendering 
 
 // 7. Raycast Water Interaction & Obstacle Verification Tests
 import { intersectGardenWater } from '../src/three/themes/garden/streamProfile.js';
-import { createArchitecture, GARDEN_STEPPING_STONES } from '../src/three/themes/garden/architecture.js';
+import {
+  createArchitecture,
+  GARDEN_STEPPING_STONES,
+  createIrregularFlagstoneGeometry,
+} from '../src/three/themes/garden/architecture.js';
 
 // A. Oblique camera raycast tests across stream height profile at both High and Low tides
 const cameraPos = new THREE.Vector3(16.0, 15.2, 27.5);
@@ -648,8 +652,8 @@ assert(allStonesDry, 'All natural stepping stones remain strictly on dry land ab
 assert(allStonesGrounded, 'All natural stepping stones contact solid bedrock/topsoil with valid elevations', stoneGroundFail);
 
 // 8.6 Natural slope descent continuity along the hillside trail segment
-// Stones from z=0.80 to z=3.70
-const hillsideStones = GARDEN_STEPPING_STONES.filter(s => s.x < -1.4 && s.x > -2.7 && s.z >= 0.75 && s.z <= 3.80);
+// Stones from z=0.65 to z=3.70
+const hillsideStones = GARDEN_STEPPING_STONES.filter(s => s.x <= -0.85 && s.x >= -2.75 && s.z >= 0.60 && s.z <= 3.80);
 let hillsideContinuous = true;
 let hillsideFailMsg = '';
 for (let i = 1; i < hillsideStones.length; i++) {
@@ -689,6 +693,210 @@ boulderSpotsToCheck.forEach(b => {
   });
 });
 assert(!boulderConflict, 'All landscape boulders maintain generous clearance (>0.60m) from all walking path stones', boulderConflictMsg);
+
+// 8.8 Flagstone geometry winding, normal consistency & FrontSide test
+const testStoneGeo = createIrregularFlagstoneGeometry(0.25, 42);
+const tPosAttr = testStoneGeo.attributes.position;
+const tNormAttr = testStoneGeo.attributes.normal;
+let topWindingValid = true;
+let botWindingValid = true;
+let sideWindingValid = true;
+let windingFail = '';
+
+const wv0 = new THREE.Vector3();
+const wv1 = new THREE.Vector3();
+const wv2 = new THREE.Vector3();
+const we1 = new THREE.Vector3();
+const we2 = new THREE.Vector3();
+const wCross = new THREE.Vector3();
+
+// Top fan has 8 triangles (vertices 0..23)
+for (let tri = 0; tri < 8; tri++) {
+  wv0.fromBufferAttribute(tPosAttr, tri * 3 + 0);
+  wv1.fromBufferAttribute(tPosAttr, tri * 3 + 1);
+  wv2.fromBufferAttribute(tPosAttr, tri * 3 + 2);
+  we1.subVectors(wv1, wv0);
+  we2.subVectors(wv2, wv0);
+  wCross.crossVectors(we1, we2).normalize();
+  if (wCross.y < 0.95) {
+    topWindingValid = false;
+    windingFail = `Top tri #${tri} normal ${wCross.y.toFixed(3)} is not +Y`;
+    break;
+  }
+  for (let c = 0; c < 3; c++) {
+    const ny = tNormAttr.getY(tri * 3 + c);
+    if (ny < 0.95) {
+      topWindingValid = false;
+      windingFail = `Top tri #${tri} vertex ${c} normal attribute ${ny} does not face +Y`;
+    }
+  }
+}
+
+// Bottom fan has 8 triangles (vertices 24..47)
+for (let tri = 8; tri < 16; tri++) {
+  wv0.fromBufferAttribute(tPosAttr, tri * 3 + 0);
+  wv1.fromBufferAttribute(tPosAttr, tri * 3 + 1);
+  wv2.fromBufferAttribute(tPosAttr, tri * 3 + 2);
+  we1.subVectors(wv1, wv0);
+  we2.subVectors(wv2, wv0);
+  wCross.crossVectors(we1, we2).normalize();
+  if (wCross.y > -0.95) {
+    botWindingValid = false;
+    windingFail = `Bottom tri #${tri} normal ${wCross.y.toFixed(3)} is not -Y`;
+    break;
+  }
+  for (let c = 0; c < 3; c++) {
+    const ny = tNormAttr.getY(tri * 3 + c);
+    if (ny > -0.95) {
+      botWindingValid = false;
+      windingFail = `Bottom tri #${tri} vertex ${c} normal attribute ${ny} does not face -Y`;
+    }
+  }
+}
+
+// Side quads (vertices 48..95, 16 triangles)
+for (let tri = 16; tri < 32; tri++) {
+  wv0.fromBufferAttribute(tPosAttr, tri * 3 + 0);
+  wv1.fromBufferAttribute(tPosAttr, tri * 3 + 1);
+  wv2.fromBufferAttribute(tPosAttr, tri * 3 + 2);
+  we1.subVectors(wv1, wv0);
+  we2.subVectors(wv2, wv0);
+  wCross.crossVectors(we1, we2).normalize();
+  const centroid = new THREE.Vector3().add(wv0).add(wv1).add(wv2).multiplyScalar(1 / 3);
+  centroid.y = 0; // radial direction in XZ plane
+  if (centroid.dot(wCross) <= 0) {
+    sideWindingValid = false;
+    windingFail = `Side tri #${tri} normal faces inward`;
+    break;
+  }
+}
+
+assert(topWindingValid, 'Stepping stone top face triangles wind counter-clockwise with cross product pointing strictly +Y', windingFail);
+assert(botWindingValid, 'Stepping stone bottom face triangles wind with cross product pointing strictly -Y', windingFail);
+assert(sideWindingValid, 'Stepping stone side wall triangles wind with cross product pointing outward', windingFail);
+
+// 8.9 Stepping Stone Raycast Test (Top-down ray must hit FrontSide top face without culling)
+const stoneMeshSingle = new THREE.Mesh(
+  testStoneGeo,
+  new THREE.MeshStandardMaterial({ side: THREE.FrontSide })
+);
+const stoneRay = new THREE.Raycaster();
+stoneRay.set(new THREE.Vector3(0, 1.0, 0), new THREE.Vector3(0, -1, 0));
+const stoneHits = stoneRay.intersectObject(stoneMeshSingle, false);
+const hitTopFace = stoneHits.length > 0 && !!stoneHits[0].face && (stoneHits[0].face.normal.y > 0.95);
+assert(hitTopFace, 'Downward raycast from above hits stone top face with positive outward normal (FrontSide verified)');
+
+// 8.10 Regression check: Stepping stone at steep 41° section (-1.75, 2.62) is eliminated
+const hasRegressionStone = GARDEN_STEPPING_STONES.some(s => Math.hypot(s.x - (-1.75), s.z - 2.62) < 0.15);
+assert(!hasRegressionStone, 'Former steep regression stone at (-1.75, 2.62) is removed from walking trail');
+
+// 8.11 Transformed Stone Grounding & Top Surface Reveal Test on actual scene mesh
+const stoneSceneMesh = archSys.group.getObjectByName('GardenStoneMesh') as THREE.Mesh;
+assert(stoneSceneMesh !== undefined, 'Garden diorama stone mesh instantiated and found in architecture group');
+
+let allOrientationsCorrect = true;
+let stoneMeshFail = '';
+
+GARDEN_STEPPING_STONES.forEach((st, idx) => {
+  const tNorm = terrainSys.getNormalAt(st.x, st.z);
+  const slopeDeg = Math.acos(Math.min(1, Math.max(0, tNorm.y))) * 180 / Math.PI;
+
+  if (slopeDeg > 40.0) {
+    allOrientationsCorrect = false;
+    stoneMeshFail = `Stone #${idx} at (${st.x}, ${st.z}) is placed on steep terrain ${slopeDeg.toFixed(1)}° > 40°`;
+  }
+});
+assert(allOrientationsCorrect, 'All stepping stones are placed on comfortable terrain gradients (<40°) avoiding steep cliffs', stoneMeshFail);
+
+// Raycast downward onto actual stoneSceneMesh at each stone center to verify top face is exposed above terrain
+let sceneRayHitsAll = true;
+let sceneRayFail = '';
+GARDEN_STEPPING_STONES.forEach((st, idx) => {
+  const terrY = getMeshElevationAt(st.x, st.z);
+  stoneRay.set(new THREE.Vector3(st.x, terrY + 1.0, st.z), new THREE.Vector3(0, -1, 0));
+  const hits = stoneRay.intersectObject(stoneSceneMesh, false);
+  if (hits.length === 0) {
+    sceneRayHitsAll = false;
+    sceneRayFail = `Stone #${idx} at (${st.x}, ${st.z}) raycast from above did not hit stone mesh`;
+  } else {
+    const hitY = hits[0].point.y;
+    const reveal = hitY - terrY;
+    if (reveal < 0.008 || reveal > 0.050) {
+      sceneRayHitsAll = false;
+      sceneRayFail = `Stone #${idx} at (${st.x}, ${st.z}) top reveal ${reveal.toFixed(3)}m is outside target [0.008, 0.050]m`;
+    }
+  }
+});
+assert(sceneRayHitsAll, 'All stepping stones have cleanly exposed top faces above terrain mesh (reveal >= 0.8cm, <= 5.0cm)', sceneRayFail);
+
+// 8.12 Detailed Vertex Reveal & Embedment Verification across all stones
+let allVerticesGrounded = true;
+let vertexFail = '';
+
+GARDEN_STEPPING_STONES.forEach((st, idx) => {
+  const gY = terrainSys.getHeightAt(st.x, st.z);
+  const eps = (st.r ?? 0.22) * 0.9;
+  const hL = terrainSys.getHeightAt(st.x - eps, st.z);
+  const hR = terrainSys.getHeightAt(st.x + eps, st.z);
+  const hD = terrainSys.getHeightAt(st.x, st.z - eps);
+  const hU = terrainSys.getHeightAt(st.x, st.z + eps);
+  const tNorm = new THREE.Vector3(hL - hR, 2.0 * eps, hD - hU).normalize();
+
+  const geo = createIrregularFlagstoneGeometry(st.r ?? 0.22, idx);
+  geo.rotateY(st.rot ?? (idx * 0.77));
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), tNorm);
+  geo.applyQuaternion(q);
+
+  const pAttr = geo.attributes.position;
+  let minReveal = 999;
+  for (let i = 0; i < 24; i++) {
+    const vx = pAttr.getX(i);
+    const vy = pAttr.getY(i);
+    const vz = pAttr.getZ(i);
+    const terrAtV = terrainSys.getHeightAt(st.x + vx, st.z + vz);
+    const diff = (gY + vy) - terrAtV;
+    if (diff < minReveal) minReveal = diff;
+  }
+  let lift = 0.006;
+  if (minReveal < 0.004) {
+    lift += (0.004 - minReveal);
+  }
+  const sY = gY + lift;
+  geo.translate(st.x, sY, st.z);
+
+  // Check top vertices (0..23) are revealed
+  for (let i = 0; i < 24; i++) {
+    const vx = pAttr.getX(i);
+    const vy = pAttr.getY(i);
+    const vz = pAttr.getZ(i);
+    const meshY = getMeshElevationAt(vx, vz);
+    if (vy < meshY - 0.002) {
+      allVerticesGrounded = false;
+      vertexFail = `Stone #${idx} at (${st.x}, ${st.z}) top vertex ${i} is submerged: ${vy.toFixed(3)} < terrain ${meshY.toFixed(3)}`;
+      break;
+    }
+  }
+
+  // Check bottom vertices (24..47) are embedded
+  let bottomBuried = false;
+  for (let i = 24; i < 48; i++) {
+    const vx = pAttr.getX(i);
+    const vy = pAttr.getY(i);
+    const vz = pAttr.getZ(i);
+    const meshY = getMeshElevationAt(vx, vz);
+    if (vy <= meshY + 0.002) {
+      bottomBuried = true;
+      break;
+    }
+  }
+  if (!bottomBuried) {
+    allVerticesGrounded = false;
+    vertexFail = `Stone #${idx} at (${st.x}, ${st.z}) bottom is not embedded into terrain`;
+  }
+  geo.dispose();
+});
+
+assert(allVerticesGrounded, 'All stepping stone top vertices remain above terrain mesh and bottoms remain embedded in ground', vertexFail);
 
 archSys.dispose();
 terrainSys.dispose();

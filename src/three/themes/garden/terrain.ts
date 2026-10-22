@@ -111,12 +111,13 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
 
   const plateauGentle = PLATEAU_HEIGHT + SimplexNoise2D(x * 0.3 + 1.0, z * 0.3 + 1.0) * 0.02;
 
-  // 3. Natural Organic Cliff Face (NO horizontal rice terrace steps!)
-  // Drops naturally from meadow down to stream bank with organic rock crags and crevices
+  // 3. Natural Organic Slope (sườn dốc tự nhiên thoải giữa thềm glamping và bờ suối)
+  // Drops gently and naturally from meadow down to stream bank with organic rock crags and crevices
   const bankFloor = 0.40 + SimplexNoise2D(x * 0.4, z * 0.4) * 0.04;
-  const cliffDrop = smoothstep(frontEdgeZ, frontEdgeZ + 1.40, z);
-  const cragNoise = SimplexNoise2D(x * 1.8, z * 1.8) * 0.06 + SimplexNoise2D(x * 0.8 + 5.0, z * 0.8 + 5.0) * 0.04;
-  const naturalCliffH = THREE.MathUtils.lerp(plateauGentle, bankFloor, cliffDrop) + cragNoise * (1.0 - cliffDrop) * cliffDrop * 1.8;
+  const slopeSpan = 1.85;
+  const cliffDrop = smoothstep(frontEdgeZ, frontEdgeZ + slopeSpan, z);
+  const cragNoise = SimplexNoise2D(x * 1.8, z * 1.8) * 0.05 + SimplexNoise2D(x * 0.8 + 5.0, z * 0.8 + 5.0) * 0.03;
+  const naturalCliffH = THREE.MathUtils.lerp(plateauGentle, bankFloor, cliffDrop) + cragNoise * (1.0 - cliffDrop) * cliffDrop * 1.5;
 
   // 4. Right bank: lower and gently rolling with knolls embracing the wide lake basin
   const rightKnoll1 = Math.exp(-Math.pow((x - 4.8) / 1.9, 2) - Math.pow((z - 2.5) / 1.9, 2)) * 0.28;
@@ -140,7 +141,7 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
     const pFactor = smoothstep(-0.4, 0.5, distEdge);
     baseH = THREE.MathUtils.lerp(0.55, plateauGentle, pFactor);
     currentZone = pFactor > 0.6 ? 'plateau' : 'cliff';
-  } else if (x <= rightEdgeX + 0.6 && z >= frontEdgeZ && z <= frontEdgeZ + 1.40) {
+  } else if (x <= rightEdgeX + 0.6 && z >= frontEdgeZ && z <= frontEdgeZ + 1.85) {
     baseH = naturalCliffH;
     currentZone = 'cliff';
   } else if (x > 1.0) {

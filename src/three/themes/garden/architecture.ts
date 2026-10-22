@@ -68,19 +68,20 @@ export const GARDEN_STEPPING_STONES: SteppingStoneSpot[] = [
   { x: -2.55, z: 0.50,  r: 0.21, rot: 0.80 },
 
   // 9. Continuous Gentle Hillside Trail (men theo sườn thoải từ thềm xuống bãi sỏi)
-  { x: -2.60, z: 0.80,  r: 0.22, rot: 0.40 },
-  { x: -2.55, z: 1.02,  r: 0.21, rot: 1.15 },
-  { x: -2.48, z: 1.25,  r: 0.23, rot: 0.25 },
-  { x: -2.38, z: 1.48,  r: 0.22, rot: 0.75 },
-  { x: -2.25, z: 1.70,  r: 0.24, rot: 1.35 },
-  { x: -2.12, z: 1.92,  r: 0.21, rot: 0.10 },
-  { x: -1.98, z: 2.15,  r: 0.23, rot: 0.60 },
-  { x: -1.86, z: 2.38,  r: 0.22, rot: 1.05 },
-  { x: -1.75, z: 2.62,  r: 0.24, rot: 0.35 },
-  { x: -1.65, z: 2.88,  r: 0.21, rot: 0.90 },
-  { x: -1.58, z: 3.15,  r: 0.23, rot: 0.15 },
-  { x: -1.52, z: 3.42,  r: 0.22, rot: 0.70 },
-  { x: -1.48, z: 3.70,  r: 0.24, rot: 1.25 },
+  // Winding S-curve trail avoiding steep ~41° cliff, maintaining gentle descent gradients
+  { x: -2.70, z: 0.65,  r: 0.22, rot: 0.40 },
+  { x: -2.45, z: 0.88,  r: 0.21, rot: 1.15 },
+  { x: -2.20, z: 1.10,  r: 0.23, rot: 0.25 },
+  { x: -1.95, z: 1.32,  r: 0.22, rot: 0.75 },
+  { x: -1.70, z: 1.54,  r: 0.24, rot: 1.35 },
+  { x: -1.45, z: 1.76,  r: 0.21, rot: 0.10 },
+  { x: -1.22, z: 2.00,  r: 0.23, rot: 0.60 },
+  { x: -1.02, z: 2.25,  r: 0.22, rot: 1.05 },
+  { x: -0.90, z: 2.52,  r: 0.24, rot: 0.35 },
+  { x: -0.92, z: 2.80,  r: 0.21, rot: 0.90 },
+  { x: -1.08, z: 3.08,  r: 0.23, rot: 0.15 },
+  { x: -1.30, z: 3.36,  r: 0.22, rot: 0.70 },
+  { x: -1.48, z: 3.68,  r: 0.24, rot: 1.25 },
 
   // 10. Bãi sỏi ven suối (Left bank dry gravel shoreline)
   { x: -1.45, z: 4.05,  r: 0.22, rot: 0.50 },
@@ -97,7 +98,7 @@ export const GARDEN_STEPPING_STONES: SteppingStoneSpot[] = [
   { x: 5.85,  z: 3.55,  r: 0.22, rot: 1.30 },
 ];
 
-function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.BufferGeometry {
+export function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.BufferGeometry {
   const segments = 8;
   const positions: number[] = [];
   const colors: number[] = [];
@@ -124,7 +125,7 @@ function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.B
     rBot.push(rt * 0.88); // bottom bevel into soil
   }
 
-  // Top face fan (faces UP)
+  // Top face fan (faces strictly UP +Y, CCW order when viewed from +Y: topCenter, p1, p0)
   const topCenter = new THREE.Vector3(0, halfH, 0);
   for (let k = 0; k < segments; k++) {
     const kNext = (k + 1) % segments;
@@ -136,8 +137,8 @@ function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.B
 
     positions.push(
       topCenter.x, topCenter.y, topCenter.z,
-      p0.x, p0.y, p0.z,
-      p1.x, p1.y, p1.z
+      p1.x, p1.y, p1.z,
+      p0.x, p0.y, p0.z
     );
     for (let c = 0; c < 3; c++) {
       colors.push(topColor.r, topColor.g, topColor.b);
@@ -145,7 +146,7 @@ function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.B
     }
   }
 
-  // Bottom face fan (faces DOWN)
+  // Bottom face fan (faces strictly DOWN -Y, CCW order when viewed from -Y: botCenter, b0, b1)
   const botCenter = new THREE.Vector3(0, -halfH, 0);
   for (let k = 0; k < segments; k++) {
     const kNext = (k + 1) % segments;
@@ -157,8 +158,8 @@ function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.B
 
     positions.push(
       botCenter.x, botCenter.y, botCenter.z,
-      b1.x, b1.y, b1.z,
-      b0.x, b0.y, b0.z
+      b0.x, b0.y, b0.z,
+      b1.x, b1.y, b1.z
     );
     for (let c = 0; c < 3; c++) {
       colors.push(bottomColor.r, bottomColor.g, bottomColor.b);
@@ -166,7 +167,7 @@ function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.B
     }
   }
 
-  // Side quads (facing OUTWARD)
+  // Side quads (facing OUTWARD: t0, t1, b1 and t0, b1, b0)
   for (let k = 0; k < segments; k++) {
     const kNext = (k + 1) % segments;
     const ang0 = (k / segments) * Math.PI * 2;
@@ -179,15 +180,15 @@ function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.B
 
     positions.push(
       t0.x, t0.y, t0.z,
-      b0.x, b0.y, b0.z,
+      t1.x, t1.y, t1.z,
       b1.x, b1.y, b1.z,
 
       t0.x, t0.y, t0.z,
       b1.x, b1.y, b1.z,
-      t1.x, t1.y, t1.z
+      b0.x, b0.y, b0.z
     );
 
-    const edge1 = new THREE.Vector3().subVectors(b0, t0);
+    const edge1 = new THREE.Vector3().subVectors(t1, t0);
     const edge2 = new THREE.Vector3().subVectors(b1, t0);
     const sideNorm = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
 
@@ -627,18 +628,40 @@ export function createArchitecture(
 
   // 5. NATURAL STEPPING STONE TRAIL (LỐI ĐI LÓT ĐÁ TỰ NHIÊN MEN THEO ĐỊA HÌNH)
   // Winding gently between tents, cabin, picnic table, and down the gentle slope to the waterside pebble shore.
-  // Flat, irregular stones partially buried into soil/turf, aligned with terrain slope.
+  // Flat, irregular stones partially buried into soil/turf, aligned with terrain normal.
   GARDEN_STEPPING_STONES.forEach((fp, idx) => {
     const groundY = getHeightAt(fp.x, fp.z);
-    const eps = 0.20;
-    const slopeX = (getHeightAt(fp.x + eps, fp.z) - getHeightAt(fp.x - eps, fp.z)) / (2 * eps);
-    const slopeZ = (getHeightAt(fp.x, fp.z + eps) - getHeightAt(fp.x, fp.z - eps)) / (2 * eps);
+    const eps = (fp.r ?? 0.22) * 0.9;
+    const hL = getHeightAt(fp.x - eps, fp.z);
+    const hR = getHeightAt(fp.x + eps, fp.z);
+    const hD = getHeightAt(fp.x, fp.z - eps);
+    const hU = getHeightAt(fp.x, fp.z + eps);
+    const terrainNormal = new THREE.Vector3(hL - hR, 2.0 * eps, hD - hU).normalize();
 
-    const stoneY = groundY + 0.005; // Base buried ~1.8cm, top raised ~2.7cm
     const stoneGeo = createIrregularFlagstoneGeometry(fp.r ?? 0.22, idx);
+    // 1. Decorative yaw rotation around local +Y
     stoneGeo.rotateY(fp.rot ?? (idx * 0.77));
-    stoneGeo.rotateZ(-Math.atan(slopeX));
-    stoneGeo.rotateX(Math.atan(slopeZ));
+    // 2. Terrain slope alignment: orient stone's top surface normal parallel to true terrain normal
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), terrainNormal);
+    stoneGeo.applyQuaternion(q);
+
+    // 3. Terrain grounding: ensure all top vertices stay above terrain mesh (reveal >= 0.6cm)
+    // while bottom remains embedded into the soil/turf
+    const pAttr = stoneGeo.attributes.position;
+    let minReveal = 999;
+    for (let i = 0; i < 24; i++) {
+      const vx = pAttr.getX(i);
+      const vy = pAttr.getY(i);
+      const vz = pAttr.getZ(i);
+      const terrAtV = getHeightAt(fp.x + vx, fp.z + vz);
+      const diff = (groundY + vy) - terrAtV;
+      if (diff < minReveal) minReveal = diff;
+    }
+    let lift = 0.006;
+    if (minReveal < 0.004) {
+      lift += (0.004 - minReveal);
+    }
+    const stoneY = groundY + lift;
     stoneGeo.translate(fp.x, stoneY, fp.z);
     stoneGeometries.push(stoneGeo);
   });
@@ -739,7 +762,11 @@ export function createArchitecture(
   if (mergedWood) rootGroup.add(new THREE.Mesh(mergedWood, woodMaterial));
 
   const mergedStone = BufferGeometryUtils.mergeGeometries(stoneGeometries, false);
-  if (mergedStone) rootGroup.add(new THREE.Mesh(mergedStone, stoneMaterial));
+  if (mergedStone) {
+    const stoneMesh = new THREE.Mesh(mergedStone, stoneMaterial);
+    stoneMesh.name = 'GardenStoneMesh';
+    rootGroup.add(stoneMesh);
+  }
 
   const mergedProp = BufferGeometryUtils.mergeGeometries(propGeometries, false);
   if (mergedProp) rootGroup.add(new THREE.Mesh(mergedProp, propMaterial));

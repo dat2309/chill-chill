@@ -456,8 +456,8 @@ export function createVegetation(
     { cx: -4.8, cz: -2.8, colIdx: 2, radius: 0.50 },  // Golden Buttercup bed behind dome 1
     { cx: -3.4, cz: 0.95, colIdx: 0, radius: 0.45 },  // Pink cluster along meadow edge
     { cx: -5.8, cz: 1.80, colIdx: 2, radius: 0.55 },  // Golden Buttercup on west natural slope
-    { cx: -2.7, cz: 2.30, colIdx: 1, radius: 0.45 },  // White Chamomile cluster on natural slope
-    { cx: -1.1, cz: 2.10, colIdx: 0, radius: 0.45 },  // Pink Cosmos on east natural slope flank
+    { cx: -3.2, cz: 2.10, colIdx: 1, radius: 0.45 },  // White Chamomile cluster on natural slope
+    { cx: -0.45, cz: 2.20, colIdx: 0, radius: 0.45 }, // Pink Cosmos on east natural slope flank
     { cx: 3.8,  cz: 2.10, colIdx: 2, radius: 0.70 },  // Golden bed on right bank
     { cx: 4.6,  cz: 3.00, colIdx: 0, radius: 0.65 },  // Pink bed on right bank
     { cx: 5.3,  cz: 3.60, colIdx: 1, radius: 0.55 },  // White bed above pebble beach
