@@ -17,7 +17,8 @@ export type PhuQuocWeatherSystem = BeachWeatherSystem;
 export function createBeachWeather(
   parentGroup: THREE.Group,
   onSeasonProgress: (season: BeachSeason, progress: number) => void,
-  onRainSplash?: (x: number, z: number, strength: number) => void
+  onRainSplash?: (x: number, z: number, strength: number) => void,
+  getRainHitHeight?: (x: number, z: number) => number
 ): BeachWeatherSystem {
   const weatherGroup = new THREE.Group();
   weatherGroup.name = 'BeachWeather';
@@ -34,7 +35,7 @@ export function createBeachWeather(
 
   for (let i = 0; i < MAX_RAINDROPS; i++) {
     const rx = (Math.random() - 0.5) * DIORAMA_WIDTH * 1.1;
-    const ry = Math.random() * 8.0 + 0.5;
+    const ry = 8.0 + Math.random() * 2.0;
     const rz = (Math.random() - 0.5) * DIORAMA_DEPTH * 1.1;
     const len = 0.25 + Math.random() * 0.2;
 
@@ -130,11 +131,13 @@ export function createBeachWeather(
 
         // Trail vertex
         positions[idx + 3] = positions[idx] - windTilt * 0.25;
-        positions[idx + 4] = positions[idx + 1] - len;
+        const hitHeight = Math.max(waterLevel, getRainHitHeight?.(positions[idx], positions[idx+2]) ?? waterLevel,
+          getRainHitHeight?.(positions[idx+3], positions[idx+5]) ?? waterLevel);
+        positions[idx + 4] = Math.max(hitHeight, positions[idx + 1] - len);
         positions[idx + 5] = positions[idx + 2];
 
-        // Check hit against physical sea level (waterLevel)
-        if (positions[idx + 1] <= waterLevel) {
+        // Stop at the first roof/ground/sea hit; never draw the streak below that surface.
+        if (positions[idx + 1] <= hitHeight) {
           // Splash ripple using engine simulation time
           if (onRainSplash && elapsed - lastSplashSimTime > 0.14 && Math.random() < 0.28) {
             onRainSplash(positions[idx], positions[idx + 2], 0.16);
@@ -193,7 +196,7 @@ export function createBeachWeather(
           const idx = i * 6;
           const len = streakLengths[i];
           positions[idx] = (Math.random() - 0.5) * DIORAMA_WIDTH * 1.1;
-          positions[idx + 1] = 4.0 + Math.random() * 6.0;
+          positions[idx + 1] = 8.0 + Math.random() * 2.0;
           positions[idx + 2] = (Math.random() - 0.5) * DIORAMA_DEPTH * 1.1;
           positions[idx + 3] = positions[idx];
           positions[idx + 4] = positions[idx + 1] - len;

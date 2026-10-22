@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createBeachSurfaceWeather, BeachSurfaceWeather } from './surfaceWeather';
+import { getBeachCoverHeight } from './rainExposure';
 import { ThemeInstance, ThemeState, BeachSeason, Quality } from '../../core/types';
 import { BEACH_METADATA, BEACH_CAMERA_PRESET } from './config';
 import { createBeachTerrain, BeachTerrainSystem } from './terrain';
@@ -23,6 +25,7 @@ export class BeachTheme implements ThemeInstance<'beach'> {
   private water!: BeachWaterSystem;
   private architecture!: BeachArchitectureSystem;
   private boats!: BeachBoatsSystem;
+  private surfaceWeather?: BeachSurfaceWeather;
   private vegetation!: BeachVegetationSystem;
   private fish!: BeachFishSystem;
   private weather!: BeachWeatherSystem;
@@ -59,6 +62,8 @@ export class BeachTheme implements ThemeInstance<'beach'> {
     );
     await nextFrame();
 
+    this.surfaceWeather = createBeachSurfaceWeather(this.group, this.terrain, this.architecture.group);
+
     // 4. Vietnamese Boats (Thung & Ghe)
     this.boats = createBeachBoats(this.group);
     await nextFrame();
@@ -83,7 +88,6 @@ export class BeachTheme implements ThemeInstance<'beach'> {
       this.group,
       (season, progress) => {
         // Continuous transition factor [0, 1] applied uniformly across all subsystems
-        this.terrain.updateSeason(progress);
         this.architecture.updateSeason(progress);
         this.vegetation.updateSeason(progress);
       },
@@ -91,6 +95,10 @@ export class BeachTheme implements ThemeInstance<'beach'> {
         if (this.isInWater(x, z) && !this.architecture.isUnderRoof(x, z)) {
           this.water?.addRipple(x, z, strength);
         }
+      },
+      (x,z) => {
+        const cover = getBeachCoverHeight(x,z);
+        return cover > -Infinity ? cover : this.terrain.getHeightAt(x,z);
       }
     );
 
@@ -179,6 +187,8 @@ export class BeachTheme implements ThemeInstance<'beach'> {
     if (this.boats && this.water?.updateBoatCavities) {
       this.water.updateBoatCavities(this.boats.getCavities());
     }
+    this.surfaceWeather?.update(dt, elapsed, rainIntensity, this.water?.getWaterLevel() ?? waterLevel,
+      this.lighting?.skyColor, this.lighting?.sunDirection);
     this.vegetation?.update(dt, elapsed, effectiveWind, rainIntensity);
     this.fish?.update(dt, elapsed, waterLevel);
   }
@@ -275,6 +285,8 @@ export class BeachTheme implements ThemeInstance<'beach'> {
     this.water?.dispose();
     this.architecture?.dispose();
     this.boats?.dispose();
+    this.surfaceWeather?.dispose();
+    this.surfaceWeather = undefined;
     this.vegetation?.dispose();
     this.fish?.dispose();
     this.weather?.dispose();

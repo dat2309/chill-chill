@@ -1500,6 +1500,10 @@ boatsSys.dispose();
     bTheme.update(0.01667, 0.1 + i * 0.01667, { ...beachBaseState, season: 'rainy' });
   }
   const rainAt03 = bTheme.getRainIntensity();
+  const surfaceState = (bTheme as any).surfaceWeather;
+  const moistureBefore = { ...surfaceState.moisture };
+  const volumeBefore = surfaceState.basins.map((basin: any) => basin.amount);
+  assert(moistureBefore.sand > 0 && volumeBefore.some((v: number) => v > 0), 'Live rain transition reaches real ground moisture and retained pond volume');
   assert(rainAt03 > 0.12 && rainAt03 < 0.22, `Rain intensity at ~0.3s is within expected transition range [0.12, 0.22] (actual: ${rainAt03.toFixed(3)})`);
 
   // Query terrain and sky colors before reversal
@@ -1517,6 +1521,9 @@ boatsSys.dispose();
 
   const rainAfter0001 = bTheme.getRainIntensity();
   assert(rainAfter0001 <= rainAt03, 'Rain intensity smoothly reverses towards 0 without snapping');
+  const moistureJump = Math.max(...Object.keys(moistureBefore).map(key => Math.abs(surfaceState.moisture[key] - moistureBefore[key])));
+  const volumeJump = Math.max(...surfaceState.basins.map((basin: any, i: number) => Math.abs(basin.amount - volumeBefore[i])));
+  assert(moistureJump < .002 && volumeJump < .002, 'Live dry/rain reversal preserves actual ground moisture and puddle volume continuously');
 
   const topGeoColorsAfter = Array.from((beachTerrainMesh.geometry.getAttribute('color') as THREE.BufferAttribute).array as Float32Array);
   let maxTerrainColorJump = 0;
@@ -1543,6 +1550,7 @@ boatsSys.dispose();
     bTheme.update(0.02, 0.5 + i * 0.02, { ...beachBaseState, season: 'dry' });
   }
   assert(bTheme.getRainIntensity() === 0.0, 'Beach smoothly finishes transition and settles at 0.0 rain intensity');
+  assert(surfaceState.moisture.sand > 0 && surfaceState.basins.some((basin: any) => basin.amount > 0), 'After rain stops, the live theme retains damp ground and gradually draining puddles');
 
   // 5.2 Unified Effective Wind Consistency
   const baseWind = 0.35;

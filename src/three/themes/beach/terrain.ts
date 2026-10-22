@@ -30,6 +30,8 @@ import { SeededRandom, SimplexNoise2D } from '../../core/noise';
 
 export interface BeachTerrainSystem {
   group: THREE.Group;
+  surfaceGeometry: THREE.BufferGeometry;
+  surfaceVertexCount: number;
   getHeightAt(x: number, z: number): number;
   getNormalAt(x: number, z: number): THREE.Vector3;
   getSlopeAt(x: number, z: number): number;
@@ -76,14 +78,11 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
   const colors: number[] = [];
   const indices: number[] = [];
 
-  const dryColors = new Float32Array(topVertCount * 3);
-  const rainyColors = new Float32Array(topVertCount * 3);
 
   const tempNorm = new THREE.Vector3();
   const cDry = new THREE.Color();
-  const cRainy = new THREE.Color();
 
-  function evaluateSurfaceColor(x: number, y: number, z: number, norm: THREE.Vector3): { dry: THREE.Color; rainy: THREE.Color } {
+  function evaluateSurfaceColor(x: number, y: number, z: number, norm: THREE.Vector3): THREE.Color {
     const slope = 1.0 - Math.max(0.0, norm.y);
     const dist = getDistanceToShore(x, z);
 
@@ -93,14 +92,11 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
       const deepSand = PHUQUOC_COLORS.sand.deep;
       const shallowBlend = Math.min(1, Math.max(0, 1 + dist * 0.55));
       cDry.copy(deepSand).lerp(shallowSand, shallowBlend);
-      cRainy.copy(cDry).multiplyScalar(0.92);
     }
     // B. Wet swash zone
     else if (dist < 0.8) {
       const t = dist / 0.8;
       cDry.copy(PHUQUOC_COLORS.sand.wet).lerp(PHUQUOC_COLORS.sand.dry, t);
-      // Rainy season expands wet sand
-      cRainy.copy(PHUQUOC_COLORS.sand.wet).multiplyScalar(0.90);
     }
     // Continuous sand → coastal grass → granite transitions. Hard x/zone
     // thresholds produce visible saw teeth on a densely tessellated mesh.
@@ -119,10 +115,9 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
       const rock = PHUQUOC_COLORS.rock.graniteWarm.clone()
         .lerp(PHUQUOC_COLORS.rock.graniteLight, 0.35);
       cDry.lerp(rock, rockBlend);
-      cRainy.copy(cDry).multiplyScalar(THREE.MathUtils.lerp(0.88, 0.94, grassBlend));
     }
 
-    return { dry: cDry, rainy: cRainy };
+    return cDry;
   }
 
   // 1. Top Surface (Radial Polar Tessellation from PHUQUOC_CENTER to Boundary)
@@ -134,13 +129,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
   positions.push(cX, cY, cZ);
   normals.push(cNorm.x, cNorm.y, cNorm.z);
   const centerColors = evaluateSurfaceColor(cX, cY, cZ, cNorm);
-  dryColors[0] = centerColors.dry.r;
-  dryColors[1] = centerColors.dry.g;
-  dryColors[2] = centerColors.dry.b;
-  rainyColors[0] = centerColors.rainy.r;
-  rainyColors[1] = centerColors.rainy.g;
-  rainyColors[2] = centerColors.rainy.b;
-  colors.push(centerColors.dry.r, centerColors.dry.g, centerColors.dry.b);
+  colors.push(centerColors.r, centerColors.g, centerColors.b);
 
   for (let ir = 1; ir <= numRings; ir++) {
     const frac = ir / numRings;
@@ -156,14 +145,8 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
 
       const vIdx = 1 + (ir - 1) * numSegments + it;
       const vertCols = evaluateSurfaceColor(x, y, z, norm);
-      dryColors[vIdx * 3] = vertCols.dry.r;
-      dryColors[vIdx * 3 + 1] = vertCols.dry.g;
-      dryColors[vIdx * 3 + 2] = vertCols.dry.b;
-      rainyColors[vIdx * 3] = vertCols.rainy.r;
-      rainyColors[vIdx * 3 + 1] = vertCols.rainy.g;
-      rainyColors[vIdx * 3 + 2] = vertCols.rainy.b;
 
-      colors.push(vertCols.dry.r, vertCols.dry.g, vertCols.dry.b);
+      colors.push(vertCols.r, vertCols.g, vertCols.b);
     }
   }
 
@@ -420,7 +403,8 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
   }
   boulderGeo.computeVertexNormals();
 
-  const boulderMat = new THREE.MeshLambertMaterial({
+  const boulderMat = new THREE.MeshStandardMaterial({
+    roughness: .82,
     color: PHUQUOC_COLORS.rock.graniteWarm,
   });
   const boulderMesh = new THREE.InstancedMesh(boulderGeo, boulderMat, boulderCount);
@@ -472,24 +456,13 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
 
   return {
     group: terrainGroup,
+    surfaceGeometry: topGeo,
+    surfaceVertexCount: topVertCount,
     getHeightAt: sampleHeight,
     getNormalAt: sampleNormal,
     getSlopeAt: sampleSlope,
-    updateSeason(seasonOrFactor: BeachSeason | number, t?: number) {
-      const colorAttr = topGeo.attributes.color as THREE.BufferAttribute;
-      let rainFactor: number;
-      if (typeof seasonOrFactor === 'number') {
-        rainFactor = THREE.MathUtils.clamp(seasonOrFactor, 0.0, 1.0);
-      } else if (t !== undefined) {
-        rainFactor = seasonOrFactor === 'rainy' ? t : (1.0 - t);
-      } else {
-        rainFactor = seasonOrFactor === 'rainy' ? 1.0 : 0.0;
-      }
-
-      for (let i = 0; i < topVertCount * 3; i++) {
-        colorAttr.array[i] = dryColors[i] + (rainyColors[i] - dryColors[i]) * rainFactor;
-      }
-      colorAttr.needsUpdate = true;
+    updateSeason(_seasonOrFactor: BeachSeason | number, _t?: number) {
+      // Weather changes material moisture, roughness and retained water; dry vertex colors stay fixed.
     },
     dispose() {
       topGeo.dispose();

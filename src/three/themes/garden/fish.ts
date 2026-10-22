@@ -320,7 +320,7 @@ export function createFish(
       currentFreezeProgress = THREE.MathUtils.clamp(freezeProgress, 0.0, 1.0);
       // Clamp delta time to avoid large physics steps
       const safeDt = Math.min(dt, 0.06);
-      fishUniforms.uTime.value = elapsed;
+      fishUniforms.uTime.value += Math.max(0, safeDt) * (1 - currentFreezeProgress * .65);
       const tideOffset = waterLevel - BASE_WATER_LEVEL;
 
       // Group center calculation for loose schooling cohesion
@@ -392,7 +392,7 @@ export function createFish(
         const probeRightX = fish.position.x + rightDirX * probeDist;
         const probeRightZ = fish.position.z + rightDirZ * probeDist;
 
-        const localWaterLevel = getWaterSurfaceHeight(fish.position.z, tideOffset);
+        let localWaterLevel = getWaterSurfaceHeight(fish.position.z, tideOffset);
         const aheadInWater = isInWater(probeAheadX, probeAheadZ, tideOffset);
         const aheadWaterH = getWaterSurfaceHeight(probeAheadZ, tideOffset);
         const aheadDepth = aheadWaterH - getHeightAt(probeAheadX, probeAheadZ);
@@ -460,10 +460,17 @@ export function createFish(
 
         // 6. Depth management: stay between terrain height and localWaterLevel - 0.03
         // In winter, fish stay deeper below the ice and never poke through the ice surface
-        const iceMargin = 0.03 + currentFreezeProgress * 0.045;
-        const terrainHeight = getHeightAt(fish.position.x, fish.position.z);
+        let terrainHeight = getHeightAt(fish.position.x, fish.position.z);
+        localWaterLevel = getWaterSurfaceHeight(fish.position.z, tideOffset);
+        // A fish body must fit below the surface, including its pitch and dorsal fin.
+        // Recover toward the deeper channel if a falling tide strands its previous position.
+        const bodyClearance = .065 + currentFreezeProgress * .045;
+        if (localWaterLevel - terrainHeight < bodyClearance + .035) {
+          fish.position.x = getStreamCenter(fish.position.z);
+          terrainHeight = getHeightAt(fish.position.x, fish.position.z);
+        }
         const safeMinY = terrainHeight + 0.03;
-        const safeMaxY = localWaterLevel - iceMargin;
+        const safeMaxY = localWaterLevel - bodyClearance;
 
         let targetY: number;
         if (safeMaxY > safeMinY) {
@@ -481,8 +488,8 @@ export function createFish(
 
         fish.velocity.y = (targetY - fish.position.y) * 3.5;
         fish.position.y += fish.velocity.y * safeDt;
-        const physicalMaxY = localWaterLevel - (0.015 + currentFreezeProgress * 0.035);
-        fish.position.y = THREE.MathUtils.clamp(fish.position.y, terrainHeight + 0.015, physicalMaxY);
+        const physicalMaxY = localWaterLevel - bodyClearance;
+        fish.position.y = Math.min(physicalMaxY, Math.max(terrainHeight + .025, fish.position.y));
 
         // 7. Update InstancedMesh transform matrix
         const headingDirX = fish.velocity.x;
@@ -510,6 +517,7 @@ export function createFish(
     },
 
     reactToRipple(x: number, z: number): void {
+      if (currentFreezeProgress >= .94) return;
       const RIPPLE_RADIUS = 2.4;
       // In winter, fish are more sluggish under cold water, but still respond to disturbances in open water
       const fleeSuppression = 1.0 - currentFreezeProgress * 0.55;

@@ -12,6 +12,7 @@ import {
   isInWater,
   getGardenIcePotential,
   getGardenLocalIce,
+  getGardenIceAmount,
   isGardenWaterFrozen,
 } from '../src/three/themes/garden/streamProfile.js';
 import { computeRawTerrainHeight, createTerrain } from '../src/three/themes/garden/terrain.js';
@@ -970,189 +971,110 @@ for (const sz of sampleZPoints) {
 }
 assert(midFreezeDifferentiates, 'At freezeProgress = 0.5, shallow bank is frozen while deep center remains open liquid');
 
-// 5. In full winter (freezeProgress = 1.0), banks are frozen while central flowing core stays open
-let winterPreservesFlowingChannel = true;
-let winterBanksFrozen = true;
-for (const sz of sampleZPoints) {
-  const sc = getStreamCenter(sz);
-  const shw = getStreamHalfWidth(sz);
-  if (isGardenWaterFrozen(sc, sz, 1.0)) {
-    winterPreservesFlowingChannel = false;
-  }
-  if (!isGardenWaterFrozen(sc + shw * 0.92, sz, 1.0)) {
-    winterBanksFrozen = false;
-  }
-}
-assert(winterBanksFrozen, 'In deep winter (freezeProgress = 1.0), shallow stream margins are frozen');
-assert(winterPreservesFlowingChannel, 'In deep winter (freezeProgress = 1.0), the deepest central channel remains open flowing water');
-
-// 6. Monotonic melting transition over time without NaN
-let smoothMelting = true;
-for (let p = 100; p >= 0; p -= 5) {
-  const fp = p / 100;
-  const isF = isGardenWaterFrozen(1.0, 4.0, fp);
-  if (Number.isNaN(fp) || typeof isF !== 'boolean') {
-    smoothMelting = false;
-    break;
-  }
-}
-assert(smoothMelting, 'Melting transition from winter to spring/summer is continuous and valid');
-
-// 7. ACTUAL IMPLEMENTATION: Garden Water Shader vs CPU Alignment & Interaction Consistency
+// Complete winter: every water vertex and interior cross-section, including cascades, is sealed.
 const mockRenderer = {} as THREE.WebGLRenderer;
-const gardenWaterScene = new THREE.Scene();
-const waterSys = createWater(mockRenderer, gardenWaterScene, (x, z) => terrainSys.getHeightAt(x, z));
-
-// 7.1 Regression verification: x≈3.055, z=-7.5, winter (freezeProgress=1.0), high tide
-waterSys.setTide('high', false);
-waterSys.setFreezeProgress(1.0);
-
-const regX = 3.055;
-const regZ = -7.5;
-const regLocalIce = waterSys.getLocalIce(regX, regZ);
-const regIsFrozen = waterSys.isFrozen(regX, regZ);
-
-assert(
-  !regIsFrozen && regLocalIce < 0.25,
-  'Regression fixed: at x≈3.055, z=-7.5 (winter, high tide), CPU evaluates water as liquid (not frozen) matching shader open water',
-  `regLocalIce=${regLocalIce.toFixed(3)}, isFrozen=${regIsFrozen}`
-);
-
-// Check that nearest shader vertex has aIcePotential < 0.25
-const waterGeo = waterSys.mesh.geometry;
-const wPosAttr = waterGeo.getAttribute('position') as THREE.BufferAttribute;
-const wIceAttr = waterGeo.getAttribute('aIcePotential') as THREE.BufferAttribute;
-let nearestIcePot = 1.0;
-let minDist = Infinity;
-for (let i = 0; i < wPosAttr.count; i++) {
-  const vx = wPosAttr.getX(i);
-  const vz = wPosAttr.getZ(i);
-  const d = Math.hypot(vx - regX, vz - regZ);
-  if (d < minDist) {
-    minDist = d;
-    nearestIcePot = wIceAttr.getX(i);
-  }
+const waterSys = createWater(mockRenderer, new THREE.Scene(), terrainSys.getHeightAt);
+const geo=waterSys.mesh.geometry;
+const position=geo.getAttribute('position'), potential=geo.getAttribute('aIcePotential'), bed=geo.getAttribute('aTerrainHeight');
+let initialAligned=true;
+for(let i=0;i<position.count;i++) {
+  const expected=getGardenIcePotential(position.getX(i),position.getZ(i),getWaterSurfaceHeight(position.getZ(i),TIDE_OFFSETS.high),bed.getX(i));
+  if(Math.abs(expected-potential.getX(i))>1e-6)initialAligned=false;
 }
-assert(
-  nearestIcePot < 0.25,
-  `Water mesh aIcePotential at nearest vertex to (${regX}, ${regZ}) is ${nearestIcePot.toFixed(3)} < 0.25 (shader vLocalIce = 0.0)`
-);
+assert(initialAligned,'Initial high tide ice data matches local elevation before any setTide/update call');
+for(const tide of ['high','low'] as const) {
+  waterSys.setTide(tide,false);waterSys.setFreezeProgress(1);
+  let sealed=true, samples=0;
+  for(let i=0;i<position.count;i++) {
+    const x=position.getX(i),z=position.getZ(i);
+    if(getWaterSurfaceHeight(z,TIDE_OFFSETS[tide])<=bed.getX(i)+.003)continue;
+    samples++;
+    if(Math.abs(waterSys.getLocalIce(x,z)-1)>1e-6 || getGardenIceAmount(potential.getX(i),1)!==1 || !waterSys.isFrozen(x,z))sealed=false;
+  }
+  for(let z=-7.5;z<=8;z+=.11)for(let f=-.95;f<=.95;f+=.095) {
+    const x=getStreamCenter(z)+getStreamHalfWidth(z)*f;
+    if(waterSys.isInWater(x,z) && waterSys.getLocalIce(x,z)<.99999)sealed=false;
+  }
+  assert(sealed && samples>5000,`Every wet vertex/interior point is sealed in complete winter at ${tide} tide`,`${samples} wet vertices`);
+}
+// Real queued impulses and time uniforms must stop, including impulses that predate freezing.
+const lakeX=getStreamCenter(4),lakeZ=4;
+const state={themeId:'garden' as const,timeOfDay:12,season:'summer' as const,tide:'high' as const,rippleStrength:.5,flowSpeed:.5,windStrength:.5,autoRotate:false,quality:'high' as const};
+const material=waterSys.mesh.material as THREE.ShaderMaterial;
+waterSys.setFreezeProgress(0);waterSys.addRipple(lakeX,lakeZ,.5);waterSys.update(.02,1,state);
+assert((material.uniforms.uAnalyticalRipples.value as Float32Array).some(v=>v!==0),'Liquid click queues a real analytical ripple');
+waterSys.setFreezeProgress(1);
+const stopped=material.uniforms.uTime.value;
+waterSys.addRipple(lakeX,lakeZ,.5);waterSys.update(.05,8,state);
+assert(material.uniforms.uTime.value===stopped && (material.uniforms.uAnalyticalRipples.value as Float32Array).every(v=>v===0),'Complete ice pauses liquid shader time, clears old ripples and rejects new impulses');
+waterSys.setFreezeProgress(0);waterSys.update(.02,9,state);
+assert(material.uniforms.uTime.value===9,'Liquid animation resumes after thaw');
 
-// 7.2 Solid ice bank verification at x=4.0, z=-7.5 (shallow margin)
-const bankX = 4.0;
-const bankZ = -7.5;
-const bankLocalIce = waterSys.getLocalIce(bankX, bankZ);
-const bankIsFrozen = waterSys.isFrozen(bankX, bankZ);
-assert(
-  bankIsFrozen && bankLocalIce >= 0.5,
-  'Shallow margin at x=4.0, z=-7.5 is solid frozen (localIce >= 0.5) blocking interactions',
-  `bankLocalIce=${bankLocalIce.toFixed(3)}, isFrozen=${bankIsFrozen}`
-);
-
-// 7.3 Multi-zone verification: Upstream (z=-7.5), Waterfall (z=-1.0), Foreground lake (z=4.0) at High and Low tide
-const keyZones = [
-  { name: 'Upstream mountain gorge', z: -7.5 },
-  { name: 'Midstream cascade waterfall', z: -1.0 },
-  { name: 'Foreground lake basin', z: 4.0 },
-];
-let allTidesAligned = true;
-let tideAlignDetails = '';
-
-for (const tide of ['low', 'high'] as const) {
-  waterSys.setTide(tide, false);
-  const tideOffset = TIDE_OFFSETS[tide];
-
-  for (const zone of keyZones) {
-    const sc = getStreamCenter(zone.z);
-    const shw = getStreamHalfWidth(zone.z);
-
-    // Deep center must stay liquid in winter
-    const centerIce = waterSys.getLocalIce(sc, zone.z);
-    const centerFrozen = waterSys.isFrozen(sc, zone.z);
-
-    // Margin must be solid frozen
-    const marginX = sc + shw * 0.94;
-    const marginIce = waterSys.getLocalIce(marginX, zone.z);
-    const marginFrozen = waterSys.isFrozen(marginX, zone.z);
-
-    if (centerFrozen || centerIce > 0.35 || !marginFrozen || marginIce < 0.5) {
-      allTidesAligned = false;
-      tideAlignDetails = `[${tide}] ${zone.name} (z=${zone.z}): centerIce=${centerIce.toFixed(2)}, marginIce=${marginIce.toFixed(2)}`;
-      break;
+// Compare actual fish transforms, including a positive liquid-water control.
+const fishMesh=(system: ReturnType<typeof createFish>)=>system.group.children.find(o=>o instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+for(const freeze of [0,1]) {
+  const a=createFish(new THREE.Scene(),terrainSys.getHeightAt,waterSys.isInWater);
+  const b=createFish(new THREE.Scene(),terrainSys.getHeightAt,waterSys.isInWater);
+  a.update(.016,1,waterSys.getWaterLevel(),freeze);b.update(.016,1,waterSys.getWaterLevel(),freeze);
+  const m=new THREE.Matrix4();fishMesh(a).getMatrixAt(0,m);const p=new THREE.Vector3().setFromMatrixPosition(m);
+  a.reactToRipple(p.x+.1,p.z);
+  a.update(.016,1.016,waterSys.getWaterLevel(),freeze);b.update(.016,1.016,waterSys.getWaterLevel(),freeze);
+  const aa=fishMesh(a).instanceMatrix.array,bb=fishMesh(b).instanceMatrix.array;
+  const difference=Array.from(aa).reduce((sum,v,i)=>sum+Math.abs(v-bb[i]),0);
+  assert(freeze===1?difference===0:difference>1e-5,freeze===1?'Real fish transforms are unchanged by a click beneath complete ice':'Positive control: liquid ripple actually changes fish motion');
+  a.dispose();b.dispose();
+}
+// Entire rendered fish bodies, not only their centers, remain beneath the local ice surface.
+const fishSys=createFish(new THREE.Scene(),terrainSys.getHeightAt,waterSys.isInWater);
+let fishBelow=true;
+const matrix=new THREE.Matrix4(),vertex=new THREE.Vector3();
+for(const tide of ['high','low'] as const) {
+  waterSys.setTide(tide,false);
+  for(let frame=0;frame<180;frame++) {
+    fishSys.update(1/60,frame/60,waterSys.getWaterLevel(),1);
+    const mesh=fishMesh(fishSys),p=mesh.geometry.getAttribute('position');
+    for(let i=0;i<mesh.count;i++) {
+      mesh.getMatrixAt(i,matrix);
+      for(let j=0;j<p.count;j++) {
+        vertex.fromBufferAttribute(p,j).applyMatrix4(matrix);
+        if(!Number.isFinite(vertex.y)||vertex.y>=getWaterSurfaceHeight(vertex.z,TIDE_OFFSETS[tide])-.003)fishBelow=false;
+      }
     }
   }
 }
-assert(
-  allTidesAligned,
-  'Across upstream, waterfall and lake at both low and high tide: deep center stays open while margins freeze solid',
-  tideAlignDetails
-);
+assert(fishBelow,'Full fish geometry stays below ice at high/low tide over 360 simulation steps');
 
-// 7.4 Dynamic aIcePotential update on tide change
-waterSys.setTide('low', false);
-const lowTideVals = Array.from(wIceAttr.array as Float32Array);
-waterSys.setTide('high', false);
-const highTideVals = Array.from(wIceAttr.array as Float32Array);
-let maxTideDiff = 0;
-for (let i = 0; i < lowTideVals.length; i++) {
-  const diff = Math.abs(lowTideVals[i] - highTideVals[i]);
-  if (diff > maxTideDiff) maxTideDiff = diff;
-}
-assert(
-  maxTideDiff > 0.05,
-  'Water geometry aIcePotential attribute dynamically updates when tide level changes (not static)',
-  `maxTideDiff=${maxTideDiff.toFixed(3)}`
-);
-
-// 8. GARDEN FISH INTERACTION UNDER ICE
-const fishScene = new THREE.Scene();
-const fishSys = createFish(fishScene, (x, z) => terrainSys.getHeightAt(x, z), (x, z) => waterSys.isInWater(x, z));
-
-// In winter (freezeProgress = 1.0), clicking open water triggers reaction with reduced winter factor
-fishSys.update(0.016, 1.0, waterSys.getWaterLevel(), 1.0);
-const fish0 = (fishSys as any).group; // fish system group exists
-
-// Test open water reaction at regX, regZ
-fishSys.reactToRipple(regX, regZ);
-// Fish must not be completely blocked in open water
-let fishReactedInOpenWater = true;
 (async () => {
-  const gardenTheme = new GardenTheme(mockRenderer);
-  await gardenTheme.init();
-  gardenTheme.applyState({
-    themeId: 'garden',
-    timeOfDay: 12,
-    season: 'winter',
-    tide: 'high',
-    rippleStrength: 0.5,
-    flowSpeed: 0.5,
-    windStrength: 0.3,
-    autoRotate: false,
-  });
-  // Advance freeze progress to winter
-  for (let f = 0; f < 120; f++) {
-    gardenTheme.update(0.02, f * 0.02, {
-      themeId: 'garden',
-      timeOfDay: 12,
-      season: 'winter',
-      tide: 'high',
-      rippleStrength: 0.5,
-      flowSpeed: 0.5,
-      windStrength: 0.3,
-      autoRotate: false,
-    });
-  }
-  assert(gardenTheme.getFreezeProgress() > 0.95, 'GardenTheme freezeProgress reaches winter freeze');
-
-  // Solid ice click at margin (bankX, bankZ): should be suppressed
-  gardenTheme.reactToSplash(regX, regZ); // on open water, creates ripple and fish react
-  gardenTheme.reactToSplash(bankX, bankZ); // on solid ice, blocked internally
-
-  assert(true, 'GardenTheme splash interaction respects ice boundary: open water reacts, solid ice suppresses disturbances');
-
-  waterSys.dispose();
-  fishSys.dispose();
-  gardenTheme.dispose();
+  const gardenTheme=new GardenTheme(mockRenderer);await gardenTheme.init();
+  const fish=(gardenTheme as any).fish as ReturnType<typeof createFish>;
+  let reactions=0;const react=fish.reactToRipple.bind(fish);
+  fish.reactToRipple=(x,z)=>{reactions++;react(x,z);};
+  gardenTheme.reactToSplash(lakeX,lakeZ);
+  assert(reactions===1,'Garden liquid click delegates to the real fish system');
+  gardenTheme.applyState({...state,season:'winter'});
+  for(let f=0;f<240;f++)gardenTheme.update(1/60,f/60,{...state,season:'winter'});
+  gardenTheme.reactToSplash(lakeX,lakeZ);
+  gardenTheme.reactToSplash(getStreamCenter(-7.5),-7.5);
+  gardenTheme.reactToSplash(getStreamCenter(-1),-1);
+  assert(gardenTheme.getFreezeProgress()>.99 && reactions===1,'Winter lake, upstream and cascade clicks never invoke fish reactions');
+  const before=gardenTheme.getFreezeProgress();
+  gardenTheme.applyState({...state,season:'spring'});
+  assert(gardenTheme.getFreezeProgress()===before,'Reversing winter does not reset displayed freeze progress');
+  gardenTheme.update(.001,5,{...state,season:'spring'});
+  const after=gardenTheme.getFreezeProgress();
+  assert(after<before && before-after<.002,'Thaw starts continuously from the current freeze progress');
+  const fps30=new GardenTheme(mockRenderer),fps60=new GardenTheme(mockRenderer);
+  await fps30.init();await fps60.init();
+  for(const theme of [fps30,fps60])theme.applyState({...state,season:'winter'});
+  for(let i=0;i<30;i++)fps30.update(1/30,i/30,{...state,season:'winter'});
+  for(let i=0;i<60;i++)fps60.update(1/60,i/60,{...state,season:'winter'});
+  assert(Math.abs(fps30.getFreezeProgress()-fps60.getFreezeProgress())<1e-12,'Actual Garden freeze progress is independent of FPS');
+  fps30.applyState({...state,season:'spring'});fps60.applyState({...state,season:'spring'});
+  for(let i=0;i<30;i++)fps30.update(1/30,1+i/30,{...state,season:'spring'});
+  for(let i=0;i<60;i++)fps60.update(1/60,1+i/60,{...state,season:'spring'});
+  assert(Number.isFinite(fps30.getFreezeProgress())&&Math.abs(fps30.getFreezeProgress()-fps60.getFreezeProgress())<1e-12,'Actual reversed Garden thaw is finite and independent of FPS');
+  fps30.dispose();fps60.dispose();
+  waterSys.dispose();fishSys.dispose();gardenTheme.dispose();
 
   // Summary
   const totalPassed = results.filter(r => r.passed).length;

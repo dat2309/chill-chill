@@ -327,36 +327,30 @@ export function getGardenIcePotential(
   return THREE.MathUtils.clamp(p, 0.0, 1.0);
 }
 
-/**
- * Computes local ice factor [0, 1] matching the water vertex shader:
- * smoothstep(threshold - 0.08, threshold + 0.08, aIcePotential) * step(0.01, uFreezeProgress).
- * - 0.0: open liquid water
- * - (0.0, 0.5): transitional frost / slush
- * - >= 0.5: solid ice covering the surface
- */
-export function getGardenLocalIce(
-  x: number,
-  z: number,
-  freezeProgress: number,
-  waterLevel?: number,
-  terrainH?: number
-): number {
-  if (freezeProgress <= 0.001) return 0.0;
-  const pIce = getGardenIcePotential(x, z, waterLevel, terrainH);
-  const threshold = 1.0 - 0.75 * freezeProgress;
-  const edge0 = threshold - 0.08;
-  const edge1 = threshold + 0.08;
-  const t = THREE.MathUtils.clamp((pIce - edge0) / (edge1 - edge0), 0.0, 1.0);
-  return t * t * (3.0 - 2.0 * t);
+/** Depth/flow determine the freezing order, never an exemption from complete winter ice. */
+export function getGardenIceAmount(potential: number, progress: number): number {
+  if (!Number.isFinite(progress)) return 0;
+  if (progress >= .94) return 1;
+  const start = 0.04 + (1 - THREE.MathUtils.clamp(Number.isFinite(potential) ? potential : 0, 0, 1)) * 0.60;
+  return THREE.MathUtils.smoothstep(THREE.MathUtils.clamp(progress, 0, 1), start, start + 0.30);
 }
 
-/**
- * Checks whether water is frozen solid at (x, z) given current freezeProgress in [0, 1].
- * Distinguishes transitional ice (localIce < 0.5) from solid ice (localIce >= 0.5)
- * that blocks surface ripples and fish disturbance reactions.
- * Even at full winter (freezeProgress = 1.0), the deepest central flowing channel
- * (P_ice < 0.25, localIce = 0) remains open as liquid water.
- */
+// Same transition and constants are consumed by the actual surface shader.
+export const GARDEN_ICE_GLSL = `
+float gardenIceAmount(float potential, float progress) {
+  if (progress >= .94) return 1.0;
+  float start = 0.04 + (1.0 - clamp(potential, 0.0, 1.0)) * 0.60;
+  return smoothstep(start, start + 0.30, clamp(progress, 0.0, 1.0));
+}
+`;
+
+export function getGardenLocalIce(
+  x: number, z: number, freezeProgress: number, waterLevel?: number, terrainH?: number
+): number {
+  return getGardenIceAmount(getGardenIcePotential(x, z, waterLevel, terrainH), freezeProgress);
+}
+
+/** Transitional slush does not block clicks; continuous cover does. */
 export function isGardenWaterFrozen(
   x: number,
   z: number,

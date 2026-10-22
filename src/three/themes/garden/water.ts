@@ -15,8 +15,9 @@ import {
   isInWater as checkIsInWater,
   getTideOffset,
   getGardenIcePotential,
+  GARDEN_ICE_GLSL,
   getGardenLocalIce,
-  isGardenWaterFrozen,
+  getGardenIceAmount,
 } from './streamProfile';
 import { isInsideGardenFootprint } from './footprint';
 
@@ -96,6 +97,7 @@ const dropFragmentShader = `
 `;
 
 const waterVertexShader = `
+  ${GARDEN_ICE_GLSL}
   attribute float aTerrainHeight;
   attribute float aIsFrontCut;
   attribute float aIcePotential;
@@ -145,8 +147,7 @@ const waterVertexShader = `
     vIcePotential = aIcePotential;
 
     // Local ice factor based on freezeProgress and vertex ice potential
-    float threshold = 1.0 - 0.75 * uFreezeProgress;
-    float localIce = smoothstep(threshold - 0.08, threshold + 0.08, aIcePotential) * step(0.01, uFreezeProgress);
+    float localIce = gardenIceAmount(aIcePotential, uFreezeProgress);
     vLocalIce = localIce;
 
     vec3 pos = position;
@@ -185,7 +186,7 @@ const waterVertexShader = `
       float gentleWaves = (w1 + w2) * (0.5 + uWindStrength * 0.6);
 
       // Waves and ripples are frozen / suppressed on ice surface
-      float waveSuppression = 1.0 - localIce * 0.95;
+      float waveSuppression = 1.0 - localIce;
       pos.y += (ripDisp + gentleWaves) * shoreDamping * sin(3.14159265 * uv.y) * waveSuppression;
     }
 
@@ -254,7 +255,13 @@ const waterFragmentShader = `
       return vec3(0.0, 0.0, 1.0); // Clean flat vertical front cut normal
     }
 
-    vec3 norm = vec3(0.0, 1.0, 0.0);
+    // At complete cover no time-dependent liquid normal is evaluated.
+    if (vLocalIce >= 1.0) {
+      float frost = sin(vWorldPosition.x * 24.0 + vWorldPosition.z * 18.0)
+        * cos(vWorldPosition.x * 14.0 - vWorldPosition.z * 28.0) * .035;
+      return normalize(vNormal + vec3(frost, 0.0, frost * .7));
+    }
+    vec3 norm = normalize(vNormal);
 
     if (uUseGpuRipples > 0.5) {
       vec2 texel = vec2(1.0 / 256.0);
@@ -291,7 +298,7 @@ const waterFragmentShader = `
     vec3 normalOut = normalize(norm);
     if (vLocalIce > 0.01) {
       // Flatten liquid waves under ice
-      normalOut = normalize(mix(normalOut, vec3(0.0, 1.0, 0.0), vLocalIce * 0.85));
+      normalOut = normalize(mix(normalOut, normalize(vNormal), vLocalIce));
       // Fine crystalline frost micro-texture
       float frostNoise = sin(vWorldPosition.x * 24.0 + vWorldPosition.z * 18.0)
                        * cos(vWorldPosition.x * 14.0 - vWorldPosition.z * 28.0) * 0.06;
@@ -343,14 +350,14 @@ const waterFragmentShader = `
 
     // Animated rapids foam in upper cascade zone (z in [-2.5, 0.5])
     float cascadeRapidFoam = 0.0;
-    if (vWorldPosition.z >= -2.5 && vWorldPosition.z <= 0.8 && vIsFrontCut < 0.5) {
+    if (vWorldPosition.z >= -2.5 && vWorldPosition.z <= 0.8 && vIsFrontCut < 0.5 && vLocalIce < 1.0) {
       float cascadeZ = (vWorldPosition.z - (-2.5)) / 3.3;
       float rapidNoise = sin(vWorldPosition.x * 12.0 + vWorldPosition.z * 18.0 - uTime * 6.5)
                        * cos(vWorldPosition.x * 7.0 - uTime * 4.2);
       cascadeRapidFoam = smoothstep(0.15, 0.85, rapidNoise) * (1.0 - abs(cascadeZ - 0.5) * 1.6) * 0.55;
     }
 
-    float foamTotal = clamp(shoreFoam + cascadeRapidFoam, 0.0, 1.0) * (1.0 - vLocalIce * 0.95);
+    float foamTotal = clamp(shoreFoam + cascadeRapidFoam, 0.0, 1.0) * (1.0 - vLocalIce);
 
     // Final color compositing
     vec3 color = mix(baseCol, skyReflect, fresnel * 0.35);
@@ -361,7 +368,23 @@ const waterFragmentShader = `
     if (vLocalIce > 0.005) {
       float frostRim = smoothstep(0.05, 0.35, vLocalIce) * (1.0 - smoothstep(0.65, 0.98, vLocalIce));
       vec3 effectiveIceColor = mix(uIceColor, uFrostColor, frostRim * 0.75);
-      color = mix(color, effectiveIceColor, vLocalIce * 0.88);
+      // Static cellular fracture lines and sparse snow; the sloping stream profile stays intact.
+      vec2 cell = vWorldPosition.xz * 3.4;
+      vec2 tile = floor(cell); vec2 within = fract(cell);
+      float first = 10.0; float second = 10.0;
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 n = vec2(float(i), float(j));
+        vec2 id = tile + n;
+        vec2 seed = .5 + .38 * sin(vec2(dot(id,vec2(127.1,311.7)),dot(id,vec2(269.5,183.3))));
+        float d = length(n + seed - within);
+        if (d < first) { second = first; first = d; } else second = min(second,d);
+      }
+      float crack = 1.0 - smoothstep(.006,.027,second-first);
+      float snow = smoothstep(.22,.70, sin(vWorldPosition.x*2.3)*cos(vWorldPosition.z*1.7)) * smoothstep(.8,1.0,N.y);
+      vec3 ice = mix(vec3(.38,.64,.74), effectiveIceColor, .55 + .18 * sin(vWorldPosition.z*1.4 + vWorldPosition.x*2.1));
+      ice = mix(ice, vec3(.20,.43,.54), crack * .65);
+      ice = mix(ice, uFrostColor, snow * .65);
+      color = mix(color, ice, vLocalIce * .94);
     }
 
     // Clean alpha gradient
@@ -530,6 +553,7 @@ export function createStreamGeometry(getHeightAt: (x: number, z: number) => numb
   geo.setAttribute('aIcePotential', new THREE.BufferAttribute(icePotentials, 1));
   geo.setAttribute('aIsFrontCut', new THREE.BufferAttribute(isFrontCut, 1));
   geo.setIndex(indices);
+  geo.userData.waterGrid = { segmentsX, segmentsZ };
   geo.computeVertexNormals();
   return geo;
 }
@@ -718,14 +742,41 @@ export function createWater(
     iceAttr.needsUpdate = true;
   }
 
-  function isFrozen(worldX: number, worldZ: number): boolean {
-    const localWaterLevel = getWaterSurfaceHeight(worldZ, currentTideOffset);
-    return isGardenWaterFrozen(worldX, worldZ, currentFreezeProgress, localWaterLevel, getHeightAt(worldX, worldZ));
-  }
+  // Geometry is built at base tide. Align its freezing data before the first render/query.
+  updateIcePotentials(currentTideOffset);
 
   function getLocalIce(worldX: number, worldZ: number): number {
-    const localWaterLevel = getWaterSurfaceHeight(worldZ, currentTideOffset);
-    return getGardenLocalIce(worldX, worldZ, currentFreezeProgress, localWaterLevel, getHeightAt(worldX, worldZ));
+    // Interpolate the same vertex factors as the shader, rather than evaluating a different
+    // nonlinear function at a click between vertices. XZ is unchanged by liquid displacement.
+    const positions = geometry.getAttribute('position');
+    const potentials = geometry.getAttribute('aIcePotential');
+    const { segmentsX: columns, segmentsZ: rows } = geometry.userData.waterGrid as { segmentsX: number; segmentsZ: number };
+    const rowSize = columns + 1;
+    const row = THREE.MathUtils.clamp(Math.floor((worldZ - STREAM_BOUNDS.minZ) / (STREAM_BOUNDS.maxZ - STREAM_BOUNDS.minZ) * rows), 0, rows - 1);
+    const lower = row * rowSize, upper = lower + rowSize;
+    const z0 = positions.getZ(lower), z1 = positions.getZ(upper);
+    const tz = THREE.MathUtils.clamp((worldZ-z0)/(z1-z0),0,1);
+    const left = THREE.MathUtils.lerp(positions.getX(lower),positions.getX(upper),tz);
+    const right = THREE.MathUtils.lerp(positions.getX(lower+columns),positions.getX(upper+columns),tz);
+    const col = THREE.MathUtils.clamp(Math.floor((worldX-left)/(right-left)*columns),0,columns-1);
+    const interpolate = (a: number,b: number,c: number): number | undefined => {
+      const ax=positions.getX(a),az=positions.getZ(a),bx=positions.getX(b),bz=positions.getZ(b),cx=positions.getX(c),cz=positions.getZ(c);
+      const denominator=(bz-cz)*(ax-cx)+(cx-bx)*(az-cz);
+      const wa=((bz-cz)*(worldX-cx)+(cx-bx)*(worldZ-cz))/denominator;
+      const wb=((cz-az)*(worldX-cx)+(ax-cx)*(worldZ-cz))/denominator;
+      const wc=1-wa-wb;
+      if(Math.min(wa,wb,wc)<-.00001)return undefined;
+      return wa*getGardenIceAmount(potentials.getX(a),currentFreezeProgress)
+        +wb*getGardenIceAmount(potentials.getX(b),currentFreezeProgress)
+        +wc*getGardenIceAmount(potentials.getX(c),currentFreezeProgress);
+    };
+    const i0=lower+col,i1=i0+1,i2=upper+col,i3=i2+1;
+    return THREE.MathUtils.clamp(interpolate(i0,i2,i1) ?? interpolate(i1,i2,i3)
+      ?? getGardenLocalIce(worldX,worldZ,currentFreezeProgress,getWaterSurfaceHeight(worldZ,currentTideOffset),getHeightAt(worldX,worldZ)),0,1);
+  }
+
+  function isFrozen(worldX: number, worldZ: number): boolean {
+    return getLocalIce(worldX,worldZ) >= .5;
   }
 
   function addRipple(worldX: number, worldZ: number, strength: number): void {
@@ -765,7 +816,7 @@ export function createWater(
       tideTransition = 1.0;
       waterUniforms.uTideOffset.value = target;
       waterUniforms.uWaterLevel.value = BASE_WATER_LEVEL + target;
-      if (Math.abs(currentTideOffset - lastIceTideOffset) > 0.001) {
+      if (currentTideOffset !== lastIceTideOffset) {
         updateIcePotentials(currentTideOffset);
         lastIceTideOffset = currentTideOffset;
       }
@@ -797,12 +848,13 @@ export function createWater(
       currentTideOffset = THREE.MathUtils.lerp(startTideOffset, targetTideOffset, s);
       waterUniforms.uTideOffset.value = currentTideOffset;
       waterUniforms.uWaterLevel.value = BASE_WATER_LEVEL + currentTideOffset;
-      if (Math.abs(currentTideOffset - lastIceTideOffset) > 0.002) {
+      if (currentTideOffset !== lastIceTideOffset) {
         updateIcePotentials(currentTideOffset);
         lastIceTideOffset = currentTideOffset;
       }
     }
 
+    if (currentFreezeProgress >= .94) return;
     waterUniforms.uTime.value = elapsed;
     waterUniforms.uFlowSpeed.value = state.flowSpeed;
     waterUniforms.uWindStrength.value = state.windStrength;
@@ -853,7 +905,23 @@ export function createWater(
   }
 
   function setFreezeProgress(progress: number): void {
-    currentFreezeProgress = THREE.MathUtils.clamp(progress, 0.0, 1.0);
+    const wasComplete = currentFreezeProgress >= .94;
+    currentFreezeProgress = THREE.MathUtils.clamp(Number.isFinite(progress) ? progress : 0, 0.0, 1.0);
+    if (!wasComplete && currentFreezeProgress >= .94) {
+      pendingRipples.length = 0;
+      analyticalRipples.forEach(r => { r.strength = 0; });
+      analyticalArray.fill(0);
+      simAccumulator = 0;
+      if (gpuSimulationSupported) {
+        const target = renderer.getRenderTarget();
+        const clear = renderer.getClearColor(new THREE.Color()).clone();
+        const alpha = renderer.getClearAlpha();
+        renderer.setClearColor(0, 0);
+        renderer.setRenderTarget(currentRT); renderer.clear();
+        renderer.setRenderTarget(nextRT); renderer.clear();
+        renderer.setRenderTarget(target); renderer.setClearColor(clear, alpha);
+      }
+    }
     waterUniforms.uFreezeProgress.value = currentFreezeProgress;
   }
 

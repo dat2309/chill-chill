@@ -1,0 +1,50 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Weather WebGL verification</title>
+<style>body{margin:0;font:14px sans-serif;background:#d7e2e7}#grid{display:grid;grid-template-columns:repeat(3,480px)}figure{margin:0}img{width:480px;height:380px}pre{white-space:pre-wrap}</style></head>
+<body><pre id="result">RUNNING</pre><div id="grid"></div><script type="module">
+import * as THREE from '/node_modules/three/build/three.module.js';
+import {GardenTheme} from '/src/three/themes/garden/index.ts';
+import {BeachTheme} from '/src/three/themes/beach/index.ts';
+const errors=[];const originalError=console.error;console.error=(...args)=>{errors.push(args.join(' '));originalError(...args);};
+// Theme construction uses RAF only to yield between procedural systems. Keep headless startup deterministic.
+window.requestAnimationFrame=callback=>setTimeout(()=>callback(performance.now()),0);
+const renderer=new THREE.WebGLRenderer({preserveDrawingBuffer:true,antialias:true});renderer.setSize(1280,1013);
+renderer.shadowMap.enabled=true;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+const gl=renderer.getContext();const checks=[];
+function check(ok,name){checks.push({ok,name});if(!ok)throw Error(name);}
+function cameraFor(theme){const p=theme.cameraPreset,h=p.baseFrustumHeight,aspect=480/380;const c=new THREE.OrthographicCamera(-h*aspect/2,h*aspect/2,h/2,-h/2,.1,150);c.position.copy(p.position);c.lookAt(p.target);return c;}
+function snapshot(scene,camera,label){renderer.render(scene,camera);const f=document.createElement('figure');const title=document.createElement('figcaption');title.textContent=label;const img=document.createElement('img');img.src=renderer.domElement.toDataURL();f.append(title,img);document.querySelector('#grid').append(f);}
+function pixels(scene,camera){renderer.render(scene,camera);const width=renderer.domElement.width,height=renderer.domElement.height;const data=new Uint8Array(width*height*4);gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,data);return data;}
+function differences(a,b){let n=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i])n++;return n;}
+try{
+ const base={timeOfDay:14,tide:'high',rippleStrength:.5,flowSpeed:.5,windStrength:.45,autoRotate:false,quality:'high'};
+ const garden=new GardenTheme({});await garden.init();const scene=new THREE.Scene();scene.background=new THREE.Color(0xbcd1da);scene.add(garden.group);const camera=cameraFor(garden);
+ garden.applyState({...base,themeId:'garden',season:'summer'});for(let i=0;i<50;i++)garden.update(.15,i*.15,{...base,themeId:'garden',season:'summer'});
+ snapshot(scene,camera,'Garden summer · 14:00 · high tide');
+ const geometryBefore=Array.from(garden.water.mesh.geometry.attributes.position.array);
+ garden.applyState({...base,themeId:'garden',season:'winter'});for(let i=0;i<60;i++)garden.update(.15,10+i*.15,{...base,themeId:'garden',season:'winter'});
+ snapshot(scene,camera,'Garden complete winter · 14:00 · high tide');
+ check(geometryBefore.every((v,i)=>v===garden.water.mesh.geometry.attributes.position.array[i]),'Ice keeps the complete sloping stream profile');
+ camera.position.set(25,8,17);camera.lookAt(0,1,0);snapshot(scene,camera,'Garden complete winter · side');
+ const isolated=new THREE.Scene();isolated.background=new THREE.Color(.3,.4,.5);isolated.add(garden.water.mesh);const wc=cameraFor(garden),material=garden.water.mesh.material;
+ for(const tide of ['high','low']){
+   garden.water.setTide(tide,false);garden.water.setFreezeProgress(1);
+   material.uniforms.uTime.value=1;material.uniforms.uWindStrength.value=.2;const first=pixels(isolated,wc);
+   material.uniforms.uTime.value=17;material.uniforms.uWindStrength.value=1.1;const second=pixels(isolated,wc);
+   check(differences(first,second)===0,`Actual complete-ice pixels are invariant to liquid time/wind at ${tide} tide (waves, foam and normals)`);
+ }
+ garden.water.setFreezeProgress(0);material.uniforms.uTime.value=1;const liquidA=pixels(isolated,wc);material.uniforms.uTime.value=17;const liquidB=pixels(isolated,wc);
+ check(differences(liquidA,liquidB)>100,'Positive control: actual liquid-water pixels animate');garden.dispose();
+ const beach=new BeachTheme({});await beach.init();const bs=new THREE.Scene();bs.background=new THREE.Color(0xbcd1da);bs.add(beach.group);const bc=cameraFor(beach);
+ const update=(seconds,season,start)=>{const state={...base,themeId:'beach',season};beach.applyState(state);for(let i=0;i<seconds/.1;i++)beach.update(.1,start+i*.1,state);};
+ update(3,'dry',0);snapshot(bs,bc,'Beach before rain · 14:00 · high tide');
+ update(40,'rainy',3);snapshot(bs,bc,'Beach sustained rain · 14:00 · high tide');
+ check(beach.surfaceWeather.basins.some(b=>b.mesh.visible&&b.amount>.5),'Live Beach theme accumulates visible retained water');
+ const withPonds=pixels(bs,bc);beach.surfaceWeather.group.visible=false;const withoutPonds=pixels(bs,bc);beach.surfaceWeather.group.visible=true;
+ const pondPixelChannels=differences(withPonds,withoutPonds);check(pondPixelChannels>250,`Real ponds change ${pondPixelChannels} pixel channels in the full default-camera scene`);
+
+ const wet=beach.surfaceWeather.basins.map(b=>b.amount);update(12,'dry',43);snapshot(bs,bc,'Beach 12 seconds after rain · same camera/time/tide');
+ check(beach.surfaceWeather.basins.every((b,i)=>b.amount>0&&b.amount<wet[i]),'Live Beach theme drains gradually after effective rain stops');
+ bc.position.set(0,35,.01);bc.lookAt(0,1,0);snapshot(bs,bc,'Beach after rain · top');bc.position.set(25,8,17);bc.lookAt(0,1,0);snapshot(bs,bc,'Beach after rain · side');
+ beach.dispose();check(errors.length===0,'No WebGL shader/runtime errors');document.querySelector('#result').textContent=JSON.stringify({status:'PASS',checks,errors});
+}catch(error){document.querySelector('#result').textContent=JSON.stringify({status:'FAIL',message:error.stack,checks,errors});}
+</script></body></html>

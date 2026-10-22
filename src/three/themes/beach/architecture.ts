@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getBeachCoverHeight } from './rainExposure';
 import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason } from './constants';
 import { BUNGALOW_SPOTS, PIER_CONFIG } from './shoreline';
 
@@ -27,10 +28,10 @@ export function createBeachArchitecture(
   const materialsToDispose: THREE.Material[] = [];
 
   // Materials
-  const deckMat = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.wood.deck });
-  const postMat = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.wood.weathered });
-  const wallMat = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.wood.bamboo });
-  const thatchMatDry = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.wood.thatch });
+  const deckMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.wood.deck });
+  const postMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.wood.weathered });
+  const wallMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.wood.bamboo });
+  const thatchMatDry = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.wood.thatch });
   materialsToDispose.push(deckMat, postMat, wallMat, thatchMatDry);
 
   const lanternMat = new THREE.MeshStandardMaterial({
@@ -219,7 +220,7 @@ export function createBeachArchitecture(
 
   // --- 3. Beach Relaxation Elements ---
   // A. Sun Loungers (2 wooden beach chairs on dry sand)
-  const loungerMat = new THREE.MeshLambertMaterial({ color: 0xe0d2b4 });
+  const loungerMat = new THREE.MeshStandardMaterial({ color: 0xe0d2b4 });
   materialsToDispose.push(loungerMat);
   const loungerGeo = new THREE.BoxGeometry(0.45, 0.06, 1.0);
   geometriesToDispose.push(loungerGeo);
@@ -239,7 +240,7 @@ export function createBeachArchitecture(
   archGroup.add(lounger2);
 
   // B. Beach Umbrella (Dù che bãi biển)
-  const umbrellaPoleMat = new THREE.MeshLambertMaterial({ color: 0x4a4036 });
+  const umbrellaPoleMat = new THREE.MeshStandardMaterial({ color: 0x4a4036 });
   materialsToDispose.push(umbrellaPoleMat);
   const poleGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.3, 8);
   geometriesToDispose.push(poleGeo);
@@ -254,7 +255,7 @@ export function createBeachArchitecture(
 
   const canopyGeo = new THREE.ConeGeometry(0.85, 0.4, 8);
   geometriesToDispose.push(canopyGeo);
-  const canopyMat = new THREE.MeshLambertMaterial({
+  const canopyMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.architecture.umbrellaStripe1,
   });
   materialsToDispose.push(canopyMat);
@@ -269,7 +270,7 @@ export function createBeachArchitecture(
   supGeo.scale(0.8, 1.0, 0.12);
   supGeo.rotateX(Math.PI / 2);
 
-  const supMat = new THREE.MeshLambertMaterial({
+  const supMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.architecture.supBoard,
   });
   materialsToDispose.push(supMat);
@@ -311,7 +312,7 @@ export function createBeachArchitecture(
   );
   const hamGeo = new THREE.TubeGeometry(hamCurve, 12, 0.14, 6, false);
   geometriesToDispose.push(hamGeo);
-  const hamMat = new THREE.MeshLambertMaterial({ color: 0xdfd3be });
+  const hamMat = new THREE.MeshStandardMaterial({ color: 0xdfd3be });
   materialsToDispose.push(hamMat);
   const hamMesh = new THREE.Mesh(hamGeo, hamMat);
   hamMesh.castShadow = true;
@@ -353,20 +354,7 @@ export function createBeachArchitecture(
       thatchMatDry.color.copy(BEACH_COLORS.wood.thatch).lerp(BEACH_COLORS.wood.thatchWet, rainFactor);
     },
     isUnderRoof(x: number, z: number): boolean {
-      for (const spot of BUNGALOW_SPOTS) {
-        const dx = x - spot.x;
-        const dz = z - spot.z;
-        if (dx * dx + dz * dz < 2.25) return true; // 1.5m radius roof overhang
-      }
-      if (
-        x >= PIER_CONFIG.startX - PIER_CONFIG.width * 0.8 &&
-        x <= PIER_CONFIG.startX + PIER_CONFIG.width * 0.8 &&
-        z >= PIER_CONFIG.startZ &&
-        z <= PIER_CONFIG.endZ
-      ) {
-        return true;
-      }
-      return false;
+      return getBeachCoverHeight(x,z) > -Infinity;
     },
     dispose() {
       geometriesToDispose.forEach((g) => g.dispose());
