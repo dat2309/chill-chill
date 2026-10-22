@@ -23,7 +23,7 @@ import {
   BEACH_FOOTPRINT_BOUNDS,
   PHUQUOC_FOOTPRINT_BOUNDS,
 } from './footprint';
-import { generateGheCavityShaderGlsl } from './boats';
+import { generateGheCavityShaderGlsl, THUNG_SLICES } from './boats';
 
 export interface BeachWaterSystem {
   group: THREE.Group;
@@ -572,7 +572,10 @@ export function createBeachWater(
             ? mix(0.28, 0.45, (localThung.y + 0.11) / 0.16)
             : mix(0.45, 0.51, (localThung.y - 0.05) / 0.17);
           float rDist = length(localThung.xz);
-          if (rDist < rInner - 0.015) {
+          float sector=6.28318530718/${THUNG_SLICES.toFixed(1)};
+          float angle=mod(atan(localThung.z,localThung.x),sector)-sector*.5;
+          float wallRadius=rInner*cos(sector*.5)/cos(angle);
+          if (rDist < wallRadius-.0003) {
             discard;
           }
         }

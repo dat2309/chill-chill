@@ -1,8 +1,20 @@
+import * as THREE from 'three';
 import { BUNGALOW_SPOTS, PIER_CONFIG, getTerrainHeight } from './shoreline';
+
+/** Keep the complete deck footprint above terrain without moving the bungalow in XZ. */
+export function getBungalowFloorHeight(spot: {x:number;z:number;rotationY:number}, height=getTerrainHeight): number {
+  const matrix=new THREE.Matrix4().compose(new THREE.Vector3(spot.x,0,spot.z),new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),spot.rotationY),new THREE.Vector3(1,1,1));
+  let highest=-Infinity;const p=new THREE.Vector3();
+  for(let ix=0;ix<=8;ix++)for(let iz=0;iz<=8;iz++){
+    p.set(-1.05+ix*2.1/8,0,-1.05+iz*2.1/8).applyMatrix4(matrix);
+    highest=Math.max(highest,height(p.x,p.z));
+  }
+  return Math.max(height(spot.x,spot.z)+.45,highest+.14);
+}
 
 const covers = BUNGALOW_SPOTS.map(spot => ({ ...spot,
   cos: Math.cos(spot.rotationY), sin: Math.sin(spot.rotationY),
-  floor: getTerrainHeight(spot.x,spot.z)+.45,
+  floor: getBungalowFloorHeight(spot),
 }));
 const umbrellaTop = getTerrainHeight(-3.3,.3)+1.47;
 const umbrellaNormals = Array.from({length:8},(_,i)=>{
@@ -39,7 +51,7 @@ export const BEACH_COVER_GLSL = `
 float beachCoverHeight(vec2 p) {
   float height = -1000.0;
   ${BUNGALOW_SPOTS.map(spot => {
-    const floor = getTerrainHeight(spot.x, spot.z) + .45;
+    const floor = getBungalowFloorHeight(spot);
     const c = Math.cos(spot.rotationY), s = Math.sin(spot.rotationY);
     return `{
       vec2 d = p - vec2(${spot.x.toFixed(8)},${spot.z.toFixed(8)});

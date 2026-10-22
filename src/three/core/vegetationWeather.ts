@@ -7,13 +7,14 @@ export function createVegetationWeather() {
     vegRain: { value: 0 }, vegSnow: { value: 0 }, vegDensity: { value: 1 },
   };
   const owned: THREE.Material[] = [];
-  function attach(mesh: THREE.Mesh, softness: number, rootAt?: (i: number) => THREE.Vector3, deciduous = false, tip = false) {
+  function attach(mesh: THREE.Mesh, softness: number, rootAt?: (i: number) => THREE.Vector3, deciduous = false, tip = false, articulation?: {stem:number; joint:(i:number)=>THREE.Vector3}) {
     // Geometry can be shared by other meshes with different roots.
     mesh.geometry = mesh.geometry.clone();
     const inst = mesh as THREE.InstancedMesh;
     const count = inst.isInstancedMesh ? inst.count : mesh.geometry.attributes.position.count;
     const roots = new Float32Array(count * 3);
     const centers = new Float32Array(count * 3);
+    const joints = new Float32Array(count * 3);
     const m = new THREE.Matrix4();
     const p = new THREE.Vector3();
     for (let i = 0; i < count; i++) {
@@ -24,13 +25,15 @@ export function createVegetationWeather() {
       if (inst.isInstancedMesh) { inst.getMatrixAt(i, m); p.setFromMatrixPosition(m); }
       else p.set(0, 0, 0);
       p.toArray(centers, i * 3);
+      (articulation?.joint(i)??new THREE.Vector3().fromArray(roots,i*3)).toArray(joints,i*3);
     }
     mesh.geometry.setAttribute('vegRoot', inst.isInstancedMesh
       ? new THREE.InstancedBufferAttribute(roots, 3) : new THREE.BufferAttribute(roots, 3));
     mesh.geometry.setAttribute('vegCenter', inst.isInstancedMesh
       ? new THREE.InstancedBufferAttribute(centers, 3) : new THREE.BufferAttribute(centers, 3));
+    mesh.geometry.setAttribute('vegJoint',inst.isInstancedMesh?new THREE.InstancedBufferAttribute(joints,3):new THREE.BufferAttribute(joints,3));
     const declarations = `
-attribute vec3 vegRoot, vegCenter;
+attribute vec3 vegRoot, vegCenter, vegJoint;
 uniform float vegTime, vegWind, vegSnow, vegDensity;
 varying float vegUp;
 vec3 vegetationDeform(vec3 p, vec3 root) {
@@ -42,6 +45,13 @@ vec3 vegetationDeform(vec3 p, vec3 root) {
   p.x += bend;
   return p;
 }
+${articulation ? `vec3 vegetationDeformJoint(vec3 p,vec3 root,vec3 joint) {
+  vec3 delta=vegetationDeform(p,root)-p;
+  float h2=min(pow(abs(p.y-root.y),2.0),9.0);
+  float child2=min(pow(max(p.y-joint.y,0.0),2.0),9.0);
+  float stemRatio=${(articulation?.stem/softness).toFixed(6)};
+  return p+delta*(stemRatio+(1.0-stemRatio)*child2/max(h2,.0001));
+}` : ''}
 `;
     const deform = `
 vec4 vp = vec4(transformed, 1.0);
@@ -57,7 +67,7 @@ float trunkPhase = root.x * .63 + root.z * .41;
 float trunkGust = .64 + .22 * sin(vegTime * .63 - trunkPhase * .35) + .14 * sin(vegTime * 1.13 + trunkPhase);
 float trunkSway = .65 + .35 * sin(vegTime * 1.25 - trunkPhase);
 vp.xyz = vegetationDeform(vp.xyz, crown);
-vp.x += min(pow(abs(crown.y-root.y),2.0),9.0) * .009 * vegWind * trunkGust * trunkSway / (1.0 + vegSnow * 1.6);` : 'vp.xyz = vegetationDeform(vp.xyz, root);'}
+vp.x += min(pow(abs(crown.y-root.y),2.0),9.0) * .009 * vegWind * trunkGust * trunkSway / (1.0 + vegSnow * 1.6);` : articulation ? 'vp.xyz = vegetationDeformJoint(vp.xyz,root,(modelMatrix*vec4(vegJoint,1.0)).xyz);' : 'vp.xyz = vegetationDeform(vp.xyz, root);'}
 vec4 mvPosition = viewMatrix * vp;
 gl_Position = projectionMatrix * mvPosition;
 vec3 vn = normal;
@@ -83,7 +93,7 @@ vegUp = clamp(normalize(mat3(modelMatrix) * vn).y, 0.0, 1.0);
           if (mat instanceof THREE.MeshStandardMaterial) shader.fragmentShader = shader.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= 1.0 - vegWet * .28 - vegRain * .1;');
         }
       };
-      mat.customProgramCacheKey = () => `vegetation-${softness}-${deciduous}-${tip}-${surface}`;
+      mat.customProgramCacheKey = () => `vegetation-${softness}-${deciduous}-${tip}-${surface}-${articulation?.stem??0}`;
       owned.push(mat);
     };
     patch(material, true);
@@ -99,7 +109,7 @@ vegUp = clamp(normalize(mat3(modelMatrix) * vn).y, 0.0, 1.0);
     const sphere = inst.isInstancedMesh ? inst.boundingSphere : mesh.geometry.boundingSphere;
     if (box) { box.min.x -= .05; box.max.x += .45; box.min.y -= .12; box.max.y += .12; box.min.z -= .1; box.max.z += .1; }
     if (sphere) sphere.radius += .55;
-    mesh.userData.vegetationWeather = { uniforms, softness, deciduous, tip };
+    mesh.userData.vegetationWeather = { uniforms, softness, deciduous, tip, stem:articulation?.stem };
     geometries.push(mesh.geometry);
   }
   const geometries: THREE.BufferGeometry[] = [];

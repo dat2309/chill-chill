@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { groundRock } from '../../core/objectGeometry';
 import {
   DIORAMA_WIDTH,
   DIORAMA_DEPTH,
@@ -728,6 +729,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   ];
 
   const boulderMesh = new THREE.InstancedMesh(boulderGeom, boulderMat, boulderSpots.length);
+  boulderMesh.name='GardenBoulders';
   boulderMesh.castShadow = true;
   boulderMesh.receiveShadow = true;
 
@@ -737,8 +739,8 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     const h = getHeightAt(s.x, s.z);
     bDummy.position.set(s.x, h + s.scale * 0.22, s.z);
     bDummy.rotation.set(0.1, (i * 1.7) % (Math.PI * 2), 0.1);
-    bDummy.scale.set(s.scale, s.scale, s.scale);
-    bDummy.updateMatrix();
+    bDummy.scale.set(s.scale*(.84+.12*(i%3)),s.scale*(.86+.09*((i+1)%3)),s.scale*(1.08-.09*(i%3)));
+    groundRock(boulderGeom,bDummy,getHeightAt,.035);
 
     boulderMesh.setMatrixAt(i, bDummy.matrix);
     boulderMesh.setColorAt(i, s.col);

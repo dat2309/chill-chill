@@ -99,28 +99,32 @@ export function createBeachVegetation(
     const cosD = Math.cos(leanDir);
     const sinD = Math.sin(leanDir);
 
-    for (let s = 0; s < segments; s++) {
-      const t = s / (segments - 1);
-      const rBot = 0.14 * (1 - t * 0.45);
-      const rTop = 0.14 * (1 - (t + 1 / segments) * 0.45);
-
-      const segGeo = new THREE.CylinderGeometry(rTop, rBot, segHeight, 8, 3);
-      geometriesToDispose.push(segGeo);
-      const segMesh = new THREE.Mesh(segGeo, palmTrunkMat);
-      segMesh.castShadow = true;
-
-      const lean = leanAngle * Math.pow(t, 1.4);
-      segMesh.position.copy(currPos).add(new THREE.Vector3(0, segHeight / 2, 0));
-      segMesh.rotation.z = -lean * cosD;
-      segMesh.rotation.x = lean * sinD;
-
-      trunkCurve.add(segMesh);
-
-      // Advance currPos along lean
-      currPos.y += segHeight * Math.cos(lean);
-      currPos.x += segHeight * Math.sin(lean) * cosD;
-      currPos.z -= segHeight * Math.sin(lean) * sinD;
+    const trunkPoints=[currPos.clone()];
+    for(let s=0;s<segments;s++){
+      const t=s/(segments-1),lean=leanAngle*Math.pow(t,1.4);
+      currPos.add(new THREE.Vector3(segHeight*Math.sin(lean)*cosD,segHeight*Math.cos(lean),-segHeight*Math.sin(lean)*sinD));
+      trunkPoints.push(currPos.clone());
     }
+    const path=new THREE.CatmullRomCurve3(trunkPoints);
+    const tube=new THREE.TubeGeometry(path,28,.14,8,false);
+    const tp=tube.getAttribute('position');
+    for(let ring=0;ring<=28;ring++){
+      const center=path.getPointAt(ring/28),taper=1-.45*ring/28;
+      for(let side=0;side<=8;side++){
+        const i=ring*9+side,p=new THREE.Vector3().fromBufferAttribute(tp,i).sub(center).multiplyScalar(taper).add(center);tp.setXYZ(i,p.x,p.y,p.z);
+      }
+    }
+    for(let side=0;side<=8;side++)tp.setY(side,getHeightAt(x+tp.getX(side),z+tp.getZ(side))-groundH-.008);
+    const positions=Array.from(tp.array),indices=Array.from(tube.index!.array);
+    for(const end of [0,28]){
+      const center=path.getPointAt(end/28),index=positions.length/3;positions.push(center.x,center.y,center.z);
+      for(let side=0;side<8;side++){
+        const a=end*9+side,b=a+1;
+        if(end===0)indices.push(index,a,b);else indices.push(index,b,a);
+      }
+    }
+    const trunkGeo=new THREE.BufferGeometry();trunkGeo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));trunkGeo.setIndex(indices);trunkGeo.computeVertexNormals();tube.dispose();geometriesToDispose.push(trunkGeo);
+    const trunkMesh=new THREE.Mesh(trunkGeo,palmTrunkMat);trunkMesh.name='PalmTrunk';trunkMesh.castShadow=true;trunkCurve.add(trunkMesh);
     palmObj.add(trunkCurve);
 
     // Crown of arching palm fronds in 3 realistic tiers (upper upright, middle spreading, lower drooping)
@@ -214,8 +218,14 @@ export function createBeachVegetation(
   pineTrunkGeo.translate(0, 0.7, 0);
   geometriesToDispose.push(pineTrunkGeo);
 
-  const pineCanopyGeo = new THREE.ConeGeometry(0.7, 2.2, 7);
-  pineCanopyGeo.translate(0, 1.1, 0);
+  const pineCanopyGeo = new THREE.ConeGeometry(0.7, 2.2, 9, 5);
+  pineCanopyGeo.translate(0,1.1,0);
+  const needles=pineCanopyGeo.getAttribute('position');
+  for(let i=0;i<needles.count;i++){
+    const y=needles.getY(i),factor=.94+.075*Math.sin(y*7+.4);
+    needles.setX(i,needles.getX(i)*factor);needles.setZ(i,needles.getZ(i)*factor*(.94+.04*Math.sin(y*3)));
+  }
+  pineCanopyGeo.computeVertexNormals();
   geometriesToDispose.push(pineCanopyGeo);
 
   const maxPines = 35;
@@ -241,7 +251,7 @@ export function createBeachVegetation(
       dummy.updateMatrix();
       pineTrunkMesh.setMatrixAt(placedPines, dummy.matrix);
 
-      dummy.position.set(px, py + 1.7 * scale, pz);
+      dummy.position.set(px, py + .75 * scale, pz);
       dummy.updateMatrix();
       pineCanopyMesh.setMatrixAt(placedPines, dummy.matrix);
 
@@ -260,10 +270,12 @@ export function createBeachVegetation(
   vegGroup.traverse(obj => {
     if (!(obj instanceof THREE.Mesh)) return;
     if (obj === pineTrunkMesh || obj === pineCanopyMesh) {
-      weather.attach(obj, obj === pineTrunkMesh ? .009 : .024, i => {
+      weather.attach(obj, obj === pineTrunkMesh ? .009 : .018, i => {
         const m = new THREE.Matrix4(); pineTrunkMesh.getMatrixAt(i, m);
         return new THREE.Vector3().setFromMatrixPosition(m);
-      });
+      },false,false,obj===pineCanopyMesh?{stem:.009,joint:i=>{
+        const m=new THREE.Matrix4();pineCanopyMesh.getMatrixAt(i,m);return new THREE.Vector3().setFromMatrixPosition(m);
+      }}:undefined);
     } else {
       const frond = obj.material === palmFrondMat;
       // Each frond bends from its attachment; trunk segments share the palm's ground anchor.

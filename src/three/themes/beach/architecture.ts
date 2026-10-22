@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getBeachCoverHeight } from './rainExposure';
+import { getBeachCoverHeight, getBungalowFloorHeight } from './rainExposure';
 import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason } from './constants';
 import { BUNGALOW_SPOTS, PIER_CONFIG } from './shoreline';
 
@@ -49,14 +49,14 @@ export function createBeachArchitecture(
     const bGroup = new THREE.Group();
     bGroup.position.set(spot.x, 0, spot.z);
     bGroup.rotation.y = spot.rotationY;
+    bGroup.name = `Bungalow_${idx}`;
+    archGroup.add(bGroup);
+    bGroup.updateWorldMatrix(true,false);
 
-    const groundH = getHeightAt(spot.x, spot.z);
-    const floorH = groundH + 0.45; // Stilt elevation
+    const floorH = getBungalowFloorHeight(spot,getHeightAt); // Stilt elevation
 
     // A. Wooden Stilts (4 corner posts)
     const postRadius = 0.055;
-    const postGeo = new THREE.CylinderGeometry(postRadius, postRadius, 1, 8);
-    geometriesToDispose.push(postGeo);
 
     const cornerOffsets = [
       [-0.9, -0.9],
@@ -66,17 +66,23 @@ export function createBeachArchitecture(
     ];
 
     cornerOffsets.forEach(([ox, oz]) => {
-      // Rotate offset to world space to query ground height
-      const cosR = Math.cos(spot.rotationY);
-      const sinR = Math.sin(spot.rotationY);
-      const wx = spot.x + ox * cosR - oz * sinR;
-      const wz = spot.z + ox * sinR + oz * cosR;
-      const cornerGroundH = getHeightAt(wx, wz);
-
-      const stiltLen = Math.max(0.2, floorH - cornerGroundH);
-      const stiltMesh = new THREE.Mesh(postGeo, postMat);
-      stiltMesh.scale.set(1, stiltLen, 1);
-      stiltMesh.position.set(ox, cornerGroundH + stiltLen / 2, oz);
+      const postGeo = new THREE.CylinderGeometry(postRadius,postRadius,1,8);
+      geometriesToDispose.push(postGeo);
+      const sample = (px:number,pz:number) => {
+        const point=bGroup.localToWorld(new THREE.Vector3(px,0,pz));
+        point.y=getHeightAt(point.x,point.z)-.012;
+        return bGroup.worldToLocal(point).y;
+      };
+      let base=-Infinity;
+      const positions=postGeo.getAttribute('position');
+      for(let i=0;i<positions.count;i++)if(positions.getY(i)<0)base=Math.max(base,sample(ox+positions.getX(i),oz+positions.getZ(i)));
+      const top=floorH-.034,stiltLen=top-base;
+      const stiltMesh=new THREE.Mesh(postGeo,postMat);
+      stiltMesh.name=`BungalowPost_${idx}_${ox}_${oz}`;
+      stiltMesh.scale.set(1,stiltLen,1);
+      stiltMesh.position.set(ox,base+stiltLen/2,oz);
+      for(let i=0;i<positions.count;i++)if(positions.getY(i)<0)positions.setY(i,(sample(ox+positions.getX(i),oz+positions.getZ(i))-stiltMesh.position.y)/stiltLen);
+      postGeo.computeVertexNormals();
       stiltMesh.castShadow = true;
       stiltMesh.receiveShadow = true;
       bGroup.add(stiltMesh);
@@ -99,22 +105,21 @@ export function createBeachArchitecture(
     bGroup.add(stepMesh);
 
     // C. Woven Bamboo Walls
-    const wallGeo = new THREE.BoxGeometry(1.7, 1.1, 1.5);
-    geometriesToDispose.push(wallGeo);
-    const wallMesh = new THREE.Mesh(wallGeo, wallMat);
-    wallMesh.position.set(0, floorH + 0.58, -0.15);
-    wallMesh.castShadow = true;
-    wallMesh.receiveShadow = true;
-    bGroup.add(wallMesh);
-
-    // Door cutout (darkened box)
-    const doorMat = new THREE.MeshBasicMaterial({ color: 0x2b1d0e });
-    materialsToDispose.push(doorMat);
-    const doorGeo = new THREE.PlaneGeometry(0.5, 0.85);
-    geometriesToDispose.push(doorGeo);
-    const doorMesh = new THREE.Mesh(doorGeo, doorMat);
-    doorMesh.position.set(0, floorH + 0.45, 0.605);
-    bGroup.add(doorMesh);
+    const wallParts = [
+      {w:.065,h:1.10,d:1.50,x:-.8175,y:.58,z:-.15},
+      {w:.065,h:1.10,d:1.50,x:.8175,y:.58,z:-.15},
+      {w:1.70,h:1.10,d:.065,x:0,y:.58,z:-.8675},
+      {w:.60,h:1.10,d:.065,x:-.55,y:.58,z:.5675},
+      {w:.60,h:1.10,d:.065,x:.55,y:.58,z:.5675},
+      {w:.50,h:.25,d:.065,x:0,y:1.005,z:.5675},
+    ];
+    wallParts.forEach(part=>{
+      const geometry=new THREE.BoxGeometry(part.w,part.h,part.d);geometriesToDispose.push(geometry);
+      const mesh=new THREE.Mesh(geometry,wallMat);mesh.position.set(part.x,floorH+part.y,part.z);mesh.castShadow=true;mesh.receiveShadow=true;bGroup.add(mesh);
+    });
+    const doorMat=new THREE.MeshStandardMaterial({color:0x61492f,roughness:.8});materialsToDispose.push(doorMat);
+    const doorGeo=new THREE.BoxGeometry(.49,.84,.035);geometriesToDispose.push(doorGeo);
+    const doorMesh=new THREE.Mesh(doorGeo,doorMat);doorMesh.name='BungalowDoor';doorMesh.position.set(0,floorH+.45,.60);bGroup.add(doorMesh);
 
     // D. Steep Thatched Roof (Mái lá dừa dạng tháp dốc truyền thống)
     const roofGeo = new THREE.ConeGeometry(1.65, 1.2, 4);
@@ -140,11 +145,11 @@ export function createBeachArchitecture(
 
     // Small point light for lantern glow
     const pLight = new THREE.PointLight(0xff9922, 0.85, 3.8);
-    pLight.position.set(spot.x + 0.65, floorH + 0.9, spot.z + 0.85);
+    lanternMesh.updateWorldMatrix(true,false);
+    pLight.position.copy(archGroup.worldToLocal(lanternMesh.getWorldPosition(new THREE.Vector3())));
     archGroup.add(pLight);
     lanternLights.push(pLight);
 
-    archGroup.add(bGroup);
   });
 
   // --- 2. Wooden Jetty / Pier (Cầu Tàu Gỗ) ---

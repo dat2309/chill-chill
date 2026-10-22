@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createSurfaceCoating, createFabricShell } from '../../core/objectGeometry';
 import { COLORS, GLAMPING_CENTER_X, GLAMPING_CENTER_Z, Season } from './constants';
 import { rng } from './noise';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
@@ -264,20 +265,20 @@ function createGeodesicDomeHemisphere(): { domeGeo: THREE.BufferGeometry; edgesG
     const y2 = posAttr.getY(i + 2);
     const cy = (y0 + y1 + y2) / 3;
 
-    if (cy >= -0.05) {
-      const cx = (posAttr.getX(i) + posAttr.getX(i + 1) + posAttr.getX(i + 2)) / 3;
-      const cz = (posAttr.getZ(i) + posAttr.getZ(i + 1) + posAttr.getZ(i + 2)) / 3;
-
-      const isDoor = cz > 0.45 && Math.abs(cx) < 0.28 && cy < 0.40;
-      const triColor = isDoor ? doorColor : ((i / 3) % 2 === 0 ? tentBaseColor : tentAltColor);
-
-      for (let v = 0; v < 3; v++) {
-        const vx = posAttr.getX(i + v) * radius;
-        const vy = Math.max(0, posAttr.getY(i + v)) * height;
-        const vz = posAttr.getZ(i + v) * radius;
-
-        positions.push(vx, vy, vz);
-        colors.push(triColor.r, triColor.g, triColor.b);
+    if (Math.max(y0,y1,y2) >= 0) {
+      const cx=(posAttr.getX(i)+posAttr.getX(i+1)+posAttr.getX(i+2))/3;
+      const cz=(posAttr.getZ(i)+posAttr.getZ(i+1)+posAttr.getZ(i+2))/3;
+      const isDoor=cz>.45&&Math.abs(cx)<.28&&cy<.40;
+      const color=isDoor?doorColor:((i/3)%2===0?tentBaseColor:tentAltColor);
+      const tri=[0,1,2].map(j=>new THREE.Vector3(posAttr.getX(i+j)*radius,posAttr.getY(i+j)*height,posAttr.getZ(i+j)*radius));
+      const polygon:THREE.Vector3[]=[];
+      for(let j=0;j<3;j++){
+        const a=tri[j],b=tri[(j+1)%3];
+        if(a.y>=0)polygon.push(a);
+        if((a.y>=0)!==(b.y>=0))polygon.push(a.clone().lerp(b,a.y/(a.y-b.y)));
+      }
+      for(let j=1;j+1<polygon.length;j++)for(const v of [polygon[0],polygon[j],polygon[j+1]]){
+        positions.push(v.x,v.y,v.z);colors.push(color.r,color.g,color.b);
       }
     }
   }
@@ -327,12 +328,6 @@ export function createArchitecture(
     flatShading: true,
   });
 
-  const frameLineMaterial = new THREE.LineBasicMaterial({
-    color: 0xb29f86, // sand-bronze delicate frame
-    transparent: true,
-    opacity: 0.55,
-  });
-
   // 1. THREE GEODESIC DOME TENTS ON INDIVIDUAL WOODEN DECKS
   // Separated across the meadow with space and natural vegetation between them
   const domeConfigs = [
@@ -347,7 +342,10 @@ export function createArchitecture(
     const platformW = 1.72;
     const platformD = 1.72;
     const platformH = 0.09;
-    const platformTopY = groundY + platformH;
+    let highest=groundY;
+    for(let ix=0;ix<=6;ix++)for(let iz=0;iz<=6;iz++)highest=Math.max(highest,getHeightAt(cfg.x-.86+ix*1.72/6,cfg.z-.86+iz*1.72/6));
+    const platformTopY=Math.max(groundY+platformH,highest+platformH+.015);
+    const deckBottomY=platformTopY-platformH;
 
     // Separate wooden planks
     const plankCount = 8;
@@ -355,8 +353,9 @@ export function createArchitecture(
     for (let p = 0; p < plankCount; p++) {
       const plankGeo = new THREE.BoxGeometry(plankW - 0.015, platformH, platformD).toNonIndexed();
       const px = -platformW / 2 + 0.015 + (p + 0.5) * plankW;
-      plankGeo.translate(cfg.x + px, groundY + platformH / 2, cfg.z);
+      plankGeo.translate(cfg.x + px, deckBottomY + platformH / 2, cfg.z);
 
+      plankGeo.userData.role='deck';
       const baseCol = p % 2 === 0 ? COLORS.wood.plank.clone() : COLORS.wood.light.clone();
       woodGeometries.push(prepareGeometry(plankGeo, (_p, norm) => {
         return Math.abs(norm.x) > 0.8 ? COLORS.wood.dark : baseCol;
@@ -377,10 +376,15 @@ export function createArchitecture(
     ];
     cornerOffsets.forEach(([cx, cz]) => {
       const cornerGround = getHeightAt(cfg.x + cx, cfg.z + cz);
-      const postH = Math.max(0.12, platformTopY - cornerGround + 0.12);
+      const postTop=deckBottomY+.006;
+      const postH=postTop-cornerGround+.03;
       const post = new THREE.BoxGeometry(0.09, postH, 0.09).toNonIndexed();
-      post.translate(cfg.x + cx, platformTopY - postH / 2, cfg.z + cz);
-      woodGeometries.push(prepareGeometry(post, COLORS.wood.dark));
+      post.translate(cfg.x + cx, postTop - postH / 2, cfg.z + cz);
+      const foot=post.getAttribute('position');
+      for(let v=0;v<foot.count;v++)if(foot.getY(v)<postTop-postH+.001)foot.setY(v,getHeightAt(foot.getX(v),foot.getZ(v))-.025);
+      post.computeVertexNormals();
+      post.userData.role='foundation';
+      woodGeometries.push(prepareGeometry(post,COLORS.wood.dark));
     });
 
     // Geodesic Dome Mesh
@@ -393,32 +397,39 @@ export function createArchitecture(
       emissive: new THREE.Color(0xff9a2e),
       emissiveIntensity: 0.0,
       flatShading: true,
-      side: THREE.DoubleSide,
+      side: THREE.FrontSide,
     });
 
-    const domeMesh = new THREE.Mesh(domeGeo, domeFabricMat);
+    const domeShell=createFabricShell(domeGeo,.008);
+    const domeMesh = new THREE.Mesh(domeShell, domeFabricMat);
     domeMesh.name = `domeTent_${idx}`;
     domeMesh.position.set(cfg.x, platformTopY, cfg.z);
     domeMesh.rotation.y = cfg.rotY;
     rootGroup.add(domeMesh);
     emissiveMeshes.push(domeMesh);
 
-    const frameLines = new THREE.LineSegments(edgesGeo, frameLineMaterial);
-    frameLines.position.set(cfg.x, platformTopY, cfg.z);
-    frameLines.rotation.y = cfg.rotY;
-    frameLines.scale.set(1.001, 1.001, 1.001);
-    rootGroup.add(frameLines);
-
-    // Winter snow cap on dome top
-    const snowCapGeo = new THREE.IcosahedronGeometry(0.48, 1).toNonIndexed();
-    const snowCapPos = snowCapGeo.attributes.position;
-    for (let s = 0; s < snowCapPos.count; s++) {
-      const sy = Math.max(0, snowCapPos.getY(s)) * 0.16;
-      snowCapPos.setY(s, sy);
+    // The structural struts sit beneath the fabric; their lower ends seat into the deck.
+    const strutGeo=new THREE.CylinderGeometry(.006,.006,1,5);
+    const strutMat=new THREE.MeshStandardMaterial({color:0xb29f86,roughness:.7});
+    const ep=edgesGeo.getAttribute('position');
+    const struts=new THREE.InstancedMesh(strutGeo,strutMat,ep.count/2);struts.name=`DomeFrame_${idx}`;
+    const frameDummy=new THREE.Object3D(),axis=new THREE.Vector3(0,1,0);
+    const inward=(v:THREE.Vector3)=>v.addScaledVector(new THREE.Vector3(v.x/(.72*.72),v.y/(.62*.62),v.z/(.72*.72)).normalize(),-.014);
+    for(let e=0;e<ep.count;e+=2){
+      const a=inward(new THREE.Vector3().fromBufferAttribute(ep,e)),b=inward(new THREE.Vector3().fromBufferAttribute(ep,e+1));
+      frameDummy.position.copy(a).add(b).multiplyScalar(.5);
+      frameDummy.quaternion.setFromUnitVectors(axis,b.clone().sub(a).normalize());frameDummy.scale.set(1,a.distanceTo(b),1);frameDummy.updateMatrix();struts.setMatrixAt(e/2,frameDummy.matrix);
     }
-    snowCapGeo.computeVertexNormals();
-    snowCapGeo.translate(cfg.x, platformTopY + 0.60, cfg.z);
-    snowGeometries.push(prepareGeometry(snowCapGeo, COLORS.terrain.snow));
+    struts.position.copy(domeMesh.position);struts.rotation.copy(domeMesh.rotation);struts.castShadow=true;rootGroup.add(struts);
+    const snowCapGeo=createSurfaceCoating(domeGeo,{
+      thickness:.018,
+      coverage:p=>p.y-.24-.018*Math.sin(p.x*12+p.z*7),
+      normal:p=>new THREE.Vector3(p.x/(.72*.72),p.y/(.62*.62),p.z/(.72*.72)).normalize(),
+    });
+    domeMesh.updateMatrix();snowCapGeo.applyMatrix4(domeMesh.matrix);
+    snowGeometries.push(prepareGeometry(snowCapGeo,COLORS.terrain.snow));
+    domeGeo.dispose();edgesGeo.dispose();
+
   });
 
   // 2. A-FRAME CABIN WITH TEAL ROOF
@@ -427,7 +438,9 @@ export function createArchitecture(
   const cabinZ = -2.5;
   const cabinGroundY = getHeightAt(cabinX, cabinZ);
   const cabinFloorH = 0.10;
-  const cabinFloorY = cabinGroundY + cabinFloorH;
+  let cabinSupportHeight=cabinGroundY;
+  for(let ix=0;ix<=8;ix++)for(let iz=0;iz<=10;iz++)cabinSupportHeight=Math.max(cabinSupportHeight,getHeightAt(cabinX-.925+ix*1.85/8,cabinZ-1+iz*2.7/10));
+  const cabinFloorY=Math.max(cabinGroundY+cabinFloorH,cabinSupportHeight+cabinFloorH+.015);
 
   const cabinW = 1.6;
   const cabinD = 2.0;
@@ -437,35 +450,36 @@ export function createArchitecture(
 
   // Deck platform
   const cabinDeckGeo = new THREE.BoxGeometry(cabinW + 0.25, cabinFloorH, totalDeckD).toNonIndexed();
-  cabinDeckGeo.translate(cabinX, cabinGroundY + cabinFloorH / 2, cabinZ + porchD / 2);
+  cabinDeckGeo.translate(cabinX, cabinFloorY - cabinFloorH / 2, cabinZ + porchD / 2);
+  cabinDeckGeo.userData.role='deck';
   woodGeometries.push(prepareGeometry(cabinDeckGeo, (_p, norm) => {
     return Math.abs(norm.y) > 0.8 ? COLORS.wood.plank : COLORS.wood.dark;
   }));
 
   // Deck posts into ground
   const cabinPostOffsets = [
-    [-(cabinW + 0.1) / 2, -cabinD / 2],
-    [(cabinW + 0.1) / 2, -cabinD / 2],
-    [-(cabinW + 0.1) / 2, cabinD / 2 + porchD],
-    [(cabinW + 0.1) / 2, cabinD / 2 + porchD],
+    [-(cabinW + 0.1) / 2, -cabinD / 2+.08],
+    [(cabinW + 0.1) / 2, -cabinD / 2+.08],
+    [-(cabinW + 0.1) / 2, cabinD / 2 + porchD-.08],
+    [(cabinW + 0.1) / 2, cabinD / 2 + porchD-.08],
   ];
   cabinPostOffsets.forEach(([cx, cz]) => {
     const cgY = getHeightAt(cabinX + cx, cabinZ + cz);
-    const stiltH = Math.max(0.12, cabinFloorY - cgY + 0.12);
+    const postTop=cabinFloorY-cabinFloorH+.006;
+    const stiltH=postTop-cgY+.04;
     const post = new THREE.BoxGeometry(0.12, stiltH, 0.12).toNonIndexed();
-    post.translate(cabinX + cx, cabinFloorY - stiltH / 2, cabinZ + cz);
-    woodGeometries.push(prepareGeometry(post, COLORS.wood.dark));
+    post.translate(cabinX + cx, postTop - stiltH / 2, cabinZ + cz);
+    const foot=post.getAttribute('position');
+    for(let v=0;v<foot.count;v++)if(foot.getY(v)<postTop-stiltH+.001)foot.setY(v,getHeightAt(foot.getX(v),foot.getZ(v))-.03);
+    post.computeVertexNormals();
+    post.userData.role='foundation';
+    woodGeometries.push(prepareGeometry(post,COLORS.wood.dark));
   });
 
   // Porch step
   const cabinStep = new THREE.BoxGeometry(0.9, 0.05, 0.28).toNonIndexed();
   cabinStep.translate(cabinX, cabinGroundY + 0.025, cabinZ + cabinD / 2 + porchD + 0.14);
   woodGeometries.push(prepareGeometry(cabinStep, COLORS.wood.light));
-
-  // Solid skirting under deck so no light gaps under cabin
-  const cabinSkirt = new THREE.BoxGeometry(cabinW + 0.16, 0.22, totalDeckD - 0.08).toNonIndexed();
-  cabinSkirt.translate(cabinX, cabinGroundY, cabinZ + porchD / 2);
-  woodGeometries.push(prepareGeometry(cabinSkirt, COLORS.wood.dark));
 
   // Front porch railing posts
   const porchPostL = new THREE.CylinderGeometry(0.04, 0.04, 0.8, 6).toNonIndexed();
@@ -476,32 +490,28 @@ export function createArchitecture(
   porchPostR.translate(cabinX + cabinW / 2 - 0.06, cabinFloorY + 0.4, cabinZ + cabinD / 2 + porchD - 0.06);
   woodGeometries.push(prepareGeometry(porchPostR, COLORS.wood.dark));
 
-  // Triangular End Walls (front & back) - Warm Cedar Wood
-  const wallPositions: number[] = [];
-  const wallColors: number[] = [];
-  const cedarWood = new THREE.Color(0x78532f);
-
-  function addTriWall(zVal: number, facingSign: number): void {
-    const halfW = cabinW / 2;
-    const pL = new THREE.Vector3(cabinX - halfW, cabinFloorY, cabinZ + zVal);
-    const pR = new THREE.Vector3(cabinX + halfW, cabinFloorY, cabinZ + zVal);
-    const pTop = new THREE.Vector3(cabinX, cabinFloorY + ridgeH, cabinZ + zVal);
-
-    const verts = facingSign > 0 ? [pL, pR, pTop] : [pL, pTop, pR];
-    verts.forEach((v) => {
-      wallPositions.push(v.x, v.y, v.z);
-      wallColors.push(cedarWood.r, cedarWood.g, cedarWood.b);
-    });
+  // Side rails have a rear upright of their own; the sloped cabin cannot support a high rail at its eaves.
+  for(const side of [-1,1]){
+    const backPost=new THREE.CylinderGeometry(.04,.04,.8,6).toNonIndexed();
+    backPost.translate(cabinX+side*(cabinW/2-.06),cabinFloorY+.4,cabinZ+cabinD/2+.23);
+    woodGeometries.push(prepareGeometry(backPost,COLORS.wood.dark));
+    for(const height of [.30,.77]){
+      const rail=new THREE.BoxGeometry(.045,.045,porchD-.25).toNonIndexed();
+      rail.translate(cabinX+side*(cabinW/2-.06),cabinFloorY+height,cabinZ+cabinD/2+porchD/2+.085);
+      woodGeometries.push(prepareGeometry(rail,COLORS.wood.dark));
+    }
   }
 
-  addTriWall(-cabinD / 2, -1);
-  addTriWall(cabinD / 2, 1);
+  // Triangular End Walls (front & back) - Warm Cedar Wood
+  const cedarWood = new THREE.Color(0x78532f);
 
-  const triWallGeo = new THREE.BufferGeometry();
-  triWallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPositions, 3));
-  triWallGeo.setAttribute('color', new THREE.Float32BufferAttribute(wallColors, 3));
-  triWallGeo.computeVertexNormals();
-  woodGeometries.push(triWallGeo);
+  function addTriWall(zVal:number):void {
+    const outline=new THREE.Shape();outline.moveTo(-cabinW/2,0);outline.lineTo(cabinW/2,0);outline.lineTo(0,ridgeH);outline.closePath();
+    const geometry=new THREE.ExtrudeGeometry(outline,{depth:.055,bevelEnabled:false});
+    geometry.translate(cabinX,cabinFloorY,cabinZ+zVal);
+    woodGeometries.push(prepareGeometry(geometry,cedarWood));
+  }
+  addTriWall(-cabinD/2);addTriWall(cabinD/2-.055);
 
   // Front Door
   const doorGeo = new THREE.BoxGeometry(0.48, 0.78, 0.04).toNonIndexed();
@@ -509,8 +519,9 @@ export function createArchitecture(
   woodGeometries.push(prepareGeometry(doorGeo, new THREE.Color(0x3e2c1e)));
 
   // Upper Triangular Glass Window with warm glow
-  const windowGeo = new THREE.PlaneGeometry(0.38, 0.38).toNonIndexed();
-  windowGeo.translate(cabinX, cabinFloorY + 0.95, cabinZ + cabinD / 2 + 0.025);
+  const windowShape=new THREE.Shape();windowShape.moveTo(-.18,0);windowShape.lineTo(.18,0);windowShape.lineTo(0,.30);windowShape.closePath();
+  const windowGeo=new THREE.ExtrudeGeometry(windowShape,{depth:.015,bevelEnabled:false});
+  windowGeo.translate(cabinX,cabinFloorY+.79,cabinZ+cabinD/2+.005);
   const windowMat = new THREE.MeshStandardMaterial({
     color: COLORS.architecture.windowGlow,
     emissive: COLORS.architecture.windowGlow,
@@ -545,16 +556,11 @@ export function createArchitecture(
   ridgeBeam.translate(cabinX, cabinFloorY + ridgeH + 0.04, cabinZ);
   woodGeometries.push(prepareGeometry(ridgeBeam, COLORS.wood.dark));
 
-  // Winter snow on roof slopes
-  const snowRoofL = new THREE.BoxGeometry(slopeLen - 0.06, 0.03, roofD - 0.06).toNonIndexed();
-  snowRoofL.rotateZ(roofAngle);
-  snowRoofL.translate(cabinX - cabinW / 4, cabinFloorY + ridgeH / 2 + 0.035, cabinZ);
-  snowGeometries.push(prepareGeometry(snowRoofL, COLORS.terrain.snow));
-
-  const snowRoofR = new THREE.BoxGeometry(slopeLen - 0.06, 0.03, roofD - 0.06).toNonIndexed();
-  snowRoofR.rotateZ(-roofAngle);
-  snowRoofR.translate(cabinX + cabinW / 4, cabinFloorY + ridgeH / 2 + 0.035, cabinZ);
-  snowGeometries.push(prepareGeometry(snowRoofR, COLORS.terrain.snow));
+  // Snow is offset along each actual roof normal, including the roof's existing thickness.
+  const roofNormalL=new THREE.Vector3(-Math.sin(roofAngle),Math.cos(roofAngle),0);
+  const roofNormalR=new THREE.Vector3(Math.sin(roofAngle),Math.cos(roofAngle),0);
+  snowGeometries.push(prepareGeometry(createSurfaceCoating(roofL,{thickness:.018,face:n=>n.dot(roofNormalL)>.99}),COLORS.terrain.snow));
+  snowGeometries.push(prepareGeometry(createSurfaceCoating(roofR,{thickness:.018,face:n=>n.dot(roofNormalR)>.99}),COLORS.terrain.snow));
 
   // 3. CAMPFIRE CIRCLE IN CENTRAL MEADOW
   const fireX = -3.2;
@@ -758,8 +764,10 @@ export function createArchitecture(
   propGeometries.push(prepareGeometry(dryBag, new THREE.Color(0xdcd4c4)));
 
   // Merge static geometries
+  const timberParts:{role:string;start:number;count:number}[]=[];let timberOffset=0;
+  woodGeometries.forEach(g=>{const count=g.getAttribute('position').count;if(g.userData.role)timberParts.push({role:g.userData.role,start:timberOffset,count});timberOffset+=count;});
   const mergedWood = BufferGeometryUtils.mergeGeometries(woodGeometries, false);
-  if (mergedWood) rootGroup.add(new THREE.Mesh(mergedWood, woodMaterial));
+  if (mergedWood) {const mesh=new THREE.Mesh(mergedWood,woodMaterial);mesh.name='GardenTimber';mesh.userData.parts=timberParts;rootGroup.add(mesh);}
 
   const mergedStone = BufferGeometryUtils.mergeGeometries(stoneGeometries, false);
   if (mergedStone) {
@@ -769,7 +777,7 @@ export function createArchitecture(
   }
 
   const mergedProp = BufferGeometryUtils.mergeGeometries(propGeometries, false);
-  if (mergedProp) rootGroup.add(new THREE.Mesh(mergedProp, propMaterial));
+  if (mergedProp) {const mesh=new THREE.Mesh(mergedProp,propMaterial);mesh.name='GardenProps';rootGroup.add(mesh);}
 
   const mergedSnow = BufferGeometryUtils.mergeGeometries(snowGeometries, false);
   let snowMesh: THREE.Mesh | null = null;
@@ -782,9 +790,11 @@ export function createArchitecture(
       opacity: 0.0,
     });
     snowMesh = new THREE.Mesh(mergedSnow, snowMat);
+    snowMesh.name = 'GardenSnow';
     rootGroup.add(snowMesh);
   }
 
+  [...woodGeometries,...stoneGeometries,...propGeometries,...snowGeometries].forEach(g=>g.dispose());
   scene.add(rootGroup);
 
   function update(dt: number, elapsed: number, timeOfDay: number): void {
@@ -814,7 +824,9 @@ export function createArchitecture(
       woodMaterial.dispose();
       stoneMaterial.dispose();
       propMaterial.dispose();
-      frameLineMaterial.dispose();
+      rootGroup.traverse(obj=>{
+        if(obj instanceof THREE.Mesh||obj instanceof THREE.LineSegments){obj.geometry.dispose();const mats=Array.isArray(obj.material)?obj.material:[obj.material];mats.forEach(m=>m.dispose());}
+      });
       rootGroup.removeFromParent();
     },
   };

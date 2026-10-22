@@ -12,7 +12,7 @@ export interface BeachBoatsSystem {
   thungGroup: THREE.Group;
   gheGroup: THREE.Group;
   getCavities(): BoatCavityState;
-  update(dt: number, elapsed: number, waterLevel: number, windStrength: number, flowSpeed: number): void;
+  update(dt: number, elapsed: number, waterLevel: number, windStrength: number, flowSpeed: number, rainIntensity?: number): void;
   dispose(): void;
 }
 export type PhuQuocBoatsSystem = BeachBoatsSystem;
@@ -23,6 +23,8 @@ export type PhuQuocBoatsSystem = BeachBoatsSystem;
  * Everything with y > 0 is freeboard (above water at static equilibrium).
  * Everything with y < 0 is submerged hull / draft.
  */
+export const THUNG_SLICES = 28;
+
 export const BOAT_SPECS = {
   thung: {
     dwlY: 0.0,
@@ -373,7 +375,11 @@ export function isInsideThungCavity(local: THREE.Vector3): boolean {
     ? THREE.MathUtils.lerp(0.28, 0.45, (local.y + 0.11) / 0.16)
     : THREE.MathUtils.lerp(0.45, 0.51, (local.y - 0.05) / 0.17);
   const r = Math.hypot(local.x, local.z);
-  return r < rInner - 0.015;
+  // Intersect the actual regular-polygon facet, rather than leaving a wet circular band.
+  const sector=Math.PI*2/THUNG_SLICES;
+  const angle=((Math.atan2(local.z,local.x)%sector)+sector)%sector-sector/2;
+  const wallRadius=rInner*Math.cos(sector/2)/Math.cos(angle);
+  return r < wallRadius-.0003;
 }
 
 
@@ -409,7 +415,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   thungGroup.name = 'ThuyenThung';
 
   const tSpecs = BOAT_SPECS.thung;
-  const nSlices = 28;
+  const nSlices = THUNG_SLICES;
 
   // Revolved profile points (r, y) forming hollow double-walled basket
   // 0: inner bottom center, 1: inner bottom rim, 2: inner mid, 3: inner top rim,
@@ -474,11 +480,25 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   thungHullGeo.computeVertexNormals();
   geometriesToDispose.push(thungHullGeo);
 
-  const thungMat = new THREE.MeshLambertMaterial({
+  const thungMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.boats.thungPitch,
     side: THREE.FrontSide,
   });
   materialsToDispose.push(thungMat);
+  const basketWet={value:0};
+  thungMat.onBeforeCompile=shader=>{
+    shader.uniforms.uBasketWet=basketWet;
+    shader.vertexShader='varying vec3 vBasketLocal;varying float vBasketOutside;\n'+shader.vertexShader;
+    shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvBasketLocal=position;vBasketOutside=dot(normal,vec3(position.x,0.0,position.z));');
+    shader.fragmentShader='varying vec3 vBasketLocal;varying float vBasketOutside;uniform float uBasketWet;\n'+shader.fragmentShader;
+    shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      float angle=atan(vBasketLocal.z,vBasketLocal.x);
+      float weave=.88+.12*sin(angle*44.0+sin(vBasketLocal.y*80.0))*sin(vBasketLocal.y*95.0);
+      vec3 bamboo=vec3(.43,.29,.12)*weave;
+      float exposed=max(1.0-step(0.0,vBasketOutside),smoothstep(.025,.10,vBasketLocal.y));
+      diffuseColor.rgb=mix(diffuseColor.rgb,bamboo,exposed)*(1.0-uBasketWet*.10);`);
+  };
+  thungMat.customProgramCacheKey=()=> 'procedural-basket-weave-v1';
   const thungHullMesh = new THREE.Mesh(thungHullGeo, thungMat);
   thungHullMesh.name = 'ThungHull';
   thungHullMesh.castShadow = true;
@@ -496,7 +516,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   thungRimGeo.translate(0, tSpecs.gunwaleY, 0);
   geometriesToDispose.push(thungRimGeo);
 
-  const thungRimMat = new THREE.MeshLambertMaterial({
+  const thungRimMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.boats.thungRimBlue,
   });
   materialsToDispose.push(thungRimMat);
@@ -509,7 +529,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   thungSeatGeo.translate(0, tSpecs.seatY, 0);
   geometriesToDispose.push(thungSeatGeo);
 
-  const thungSeatMat = new THREE.MeshLambertMaterial({
+  const thungSeatMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.boats.thungBamboo,
   });
   materialsToDispose.push(thungSeatMat);
@@ -525,7 +545,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   paddleShaftGeo.translate(0.12, 0.10, 0.08);
   geometriesToDispose.push(paddleShaftGeo);
 
-  const paddleMat = new THREE.MeshLambertMaterial({ color: 0x8a603c });
+  const paddleMat = new THREE.MeshStandardMaterial({ color: 0x8a603c });
   materialsToDispose.push(paddleMat);
   const paddleShaft = new THREE.Mesh(paddleShaftGeo, paddleMat);
   thungGroup.add(paddleShaft);
@@ -657,7 +677,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   gheHullGeo.computeVertexNormals();
   geometriesToDispose.push(gheHullGeo);
 
-  const gheHullMat = new THREE.MeshLambertMaterial({
+  const gheHullMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.boats.gheHull,
     side: THREE.FrontSide,
   });
@@ -711,7 +731,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   bowTrim.translate(0, gSpecs.bowSheerY + 0.02, 1.20);
   trimSegments.push(bowTrim);
 
-  const trimMat = new THREE.MeshLambertMaterial({
+  const trimMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.boats.gheRedTrim,
   });
   materialsToDispose.push(trimMat);
@@ -725,16 +745,16 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
 
   // Transverse wooden thwarts / benches inside the open cockpit
   // Forward thwart at z = +0.35, y = +0.08m above DWL
-  const thwartFwdGeo = new THREE.BoxGeometry(0.56, 0.035, 0.16);
+  const thwartFwdGeo = new THREE.BoxGeometry(2*(getGheInnerWidthAt(gSpecs.thwartY,.35)+.012),0.035,0.16);
   thwartFwdGeo.translate(0, gSpecs.thwartY, 0.35);
   geometriesToDispose.push(thwartFwdGeo);
 
   // Aft thwart at z = -0.45, y = +0.08m above DWL
-  const thwartAftGeo = new THREE.BoxGeometry(0.58, 0.035, 0.16);
+  const thwartAftGeo = new THREE.BoxGeometry(2*(getGheInnerWidthAt(gSpecs.thwartY,-.45)+.012),0.035,0.16);
   thwartAftGeo.translate(0, gSpecs.thwartY, -0.45);
   geometriesToDispose.push(thwartAftGeo);
 
-  const thwartMat = new THREE.MeshLambertMaterial({
+  const thwartMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.boats.gheWood,
   });
   materialsToDispose.push(thwartMat);
@@ -749,13 +769,22 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   thwartAft.castShadow = true;
   gheGroup.add(thwartAft);
 
-  // Wooden cockpit bottom floorboard
-  const floorboardGeo = new THREE.BoxGeometry(0.28, 0.02, 1.45);
-  floorboardGeo.translate(0, -0.12, -0.10);
-  geometriesToDispose.push(floorboardGeo);
-  const floorboard = new THREE.Mesh(floorboardGeo, thwartMat);
-  floorboard.receiveShadow = true;
-  gheGroup.add(floorboard);
+  // Narrow floor planks and ribs follow the real V-floor instead of slicing through the rising bow.
+  for(const x of [-.08,0,.08])for(let i=1;i<4;i++){
+    const a=gheStations[i],b=gheStations[i+1];
+    const p=new THREE.Vector3(x,a.yFloorIn+(a.yChineIn-a.yFloorIn)*Math.abs(x)/a.wChineIn+.012,a.z);
+    const q=new THREE.Vector3(x,b.yFloorIn+(b.yChineIn-b.yFloorIn)*Math.abs(x)/b.wChineIn+.012,b.z);
+    const geometry=new THREE.BoxGeometry(.073,.014,p.distanceTo(q));geometry.lookAt(q.clone().sub(p));geometry.translate((p.x+q.x)/2,(p.y+q.y)/2,(p.z+q.z)/2);geometriesToDispose.push(geometry);
+    const plank=new THREE.Mesh(geometry,thwartMat);plank.name='GheFloorPlank';plank.receiveShadow=true;gheGroup.add(plank);
+  }
+  for(const st of gheStations.slice(1,5)){
+    const points=[new THREE.Vector3(-st.wSheerIn+.008,st.ySheerIn-.03,st.z),new THREE.Vector3(-st.wChineIn+.008,st.yChineIn+.008,st.z),new THREE.Vector3(0,st.yFloorIn+.008,st.z),new THREE.Vector3(st.wChineIn-.008,st.yChineIn+.008,st.z),new THREE.Vector3(st.wSheerIn-.008,st.ySheerIn-.03,st.z)];
+    for(let i=0;i+1<points.length;i++){
+      const a=points[i],b=points[i+1],geometry=new THREE.CylinderGeometry(.009,.009,a.distanceTo(b),5);
+      geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),b.clone().sub(a).normalize()));geometry.translate((a.x+b.x)/2,(a.y+b.y)/2,st.z);geometriesToDispose.push(geometry);
+      const rib=new THREE.Mesh(geometry,thwartMat);rib.name='GheRib';gheGroup.add(rib);
+    }
+  }
 
   // Traditional painted boat eyes on port & starboard bow flare
   const eyeMatYellow = new THREE.MeshBasicMaterial({ color: PHUQUOC_COLORS.boats.gheYellowEye });
@@ -794,53 +823,40 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
     gheInvMatrix,
   };
 
-  return {
+  const waveUp=new THREE.Vector3(),forward=new THREE.Vector3(),right=new THREE.Vector3();
+  const basis=new THREE.Matrix4(),secondary=new THREE.Quaternion(),secondaryEuler=new THREE.Euler();
+  function align(group:THREE.Group,x:number,z:number,time:number,wind:number,yaw:number,level:number,phase:number):void {
+    const slope=getOceanWaveSlopes(x,z,time,wind);
+    waveUp.set(-slope.dSdx,1,-slope.dSdz).normalize();
+    forward.set(Math.sin(yaw),0,Math.cos(yaw));forward.addScaledVector(waveUp,-forward.dot(waveUp)).normalize();
+    right.crossVectors(waveUp,forward).normalize();forward.crossVectors(right,waveUp).normalize();
+    basis.makeBasis(right,waveUp,forward);group.quaternion.setFromRotationMatrix(basis);
+    // Separate, bounded secondary wobble; never offset the design waterline to hide penetration.
+    secondaryEuler.set(Math.sin(time*1.2+phase)*.003*wind,0,Math.cos(time*1.1+phase)*.003*wind);
+    secondary.setFromEuler(secondaryEuler);group.quaternion.multiply(secondary);
+    group.position.set(x,level+getOceanWaveElevation(x,z,time,wind),z);
+    group.updateWorldMatrix(true,true);
+  }
+  const outdoorMaterials=materialsToDispose.filter((m):m is THREE.MeshStandardMaterial=>m instanceof THREE.MeshStandardMaterial)
+    .map(material=>({material,color:material.color.clone(),roughness:material===thungMat ? .66 : material===thungRimMat||material===trimMat ? .55 : .82}));
+  let wet=0;
+  const system:BeachBoatsSystem = {
     group: boatsGroup,
     thungGroup,
     gheGroup,
     getCavities() {
       return cavityState;
     },
-    update(dt: number, elapsed: number, waterLevel: number, windStrength: number, flowSpeed: number) {
-      // 1. Thuyền Thúng: rides exact ocean wave elevation and slope at its world position
-      const thungCfg = BOAT_SPOTS.thung;
-      const thungWave = getOceanWaveElevation(thungCfg.x, thungCfg.z, elapsed, windStrength);
-      const thungSlopes = getOceanWaveSlopes(thungCfg.x, thungCfg.z, elapsed, windStrength);
-
-      // Subtle natural harmonic basket wobble
-      const thungBobHarmonic = Math.sin(elapsed * 2.1 * flowSpeed) * 0.008 * windStrength;
-      const thungPitch = thungSlopes.dSdz * 0.85 + Math.sin(elapsed * 1.9) * 0.02 * windStrength;
-      const thungRoll = -thungSlopes.dSdx * 0.85 + Math.cos(elapsed * 1.7) * 0.02 * windStrength;
-      const thungYaw = 0.4 + Math.sin(elapsed * 0.25) * 0.08;
-
-      // Model origin y = 0 is DWL, so world Y is waterLevel + wave elevation
-      thungGroup.position.set(thungCfg.x, waterLevel + thungWave + thungBobHarmonic, thungCfg.z);
-      thungGroup.rotation.set(thungPitch, thungYaw, thungRoll);
-      thungGroup.updateMatrix();
-      thungGroup.updateMatrixWorld(true);
-      thungInvMatrix.copy(thungGroup.matrixWorld).invert();
-
-      // 2. Ghe Nhỏ: oriented skiff hull riding wave elevation and aligned pitch/roll
-      const gheCfg = BOAT_SPOTS.ghe;
-      const gheWave = getOceanWaveElevation(gheCfg.x, gheCfg.z, elapsed, windStrength);
-      const gheSlopes = getOceanWaveSlopes(gheCfg.x, gheCfg.z, elapsed, windStrength);
-
-      const gheYaw = -0.6 + Math.sin(elapsed * 0.22) * 0.06;
-      // Project wave slopes along boat longitudinal axis (pitch) and transverse axis (roll)
-      const sinYaw = Math.sin(gheYaw);
-      const cosYaw = Math.cos(gheYaw);
-      const waveLongitudinalSlope = gheSlopes.dSdx * sinYaw + gheSlopes.dSdz * cosYaw;
-      const waveTransverseSlope = gheSlopes.dSdx * cosYaw - gheSlopes.dSdz * sinYaw;
-
-      const gheBobHarmonic = Math.sin(elapsed * 1.8 * flowSpeed + 0.4) * 0.008 * windStrength;
-      const ghePitch = -waveLongitudinalSlope * 0.80 + Math.sin(elapsed * 1.5) * 0.015 * windStrength;
-      const gheRoll = waveTransverseSlope * 0.85 + Math.cos(elapsed * 1.6) * 0.02 * windStrength;
-
-      gheGroup.position.set(gheCfg.x, waterLevel + gheWave + gheBobHarmonic, gheCfg.z);
-      gheGroup.rotation.set(ghePitch, gheYaw, gheRoll);
-      gheGroup.updateMatrix();
-      gheGroup.updateMatrixWorld(true);
-      gheInvMatrix.copy(gheGroup.matrixWorld).invert();
+    update(dt:number,elapsed:number,waterLevel:number,windStrength:number,flowSpeed:number,rainIntensity=0) {
+      const wind=THREE.MathUtils.clamp(Number.isFinite(windStrength)?windStrength:0,0,1.2);
+      align(thungGroup,BOAT_SPOTS.thung.x,BOAT_SPOTS.thung.z,elapsed,wind,.4+Math.sin(elapsed*.25)*.08,waterLevel,0);
+      align(gheGroup,BOAT_SPOTS.ghe.x,BOAT_SPOTS.ghe.z,elapsed,wind,-.6+Math.sin(elapsed*.22)*.06,waterLevel,.7);
+      // Inverse cavity matrices consume the final transforms, including secondary motion and parents.
+      thungInvMatrix.copy(thungGroup.matrixWorld).invert();gheInvMatrix.copy(gheGroup.matrixWorld).invert();
+      const rain=THREE.MathUtils.clamp(rainIntensity,0,1);
+      wet+=(rain-wet)*(1-Math.exp(-Math.max(0,dt)*(rain>wet?1.8:.12)));
+      for(const entry of outdoorMaterials){entry.material.color.copy(entry.color).multiplyScalar(1-wet*.12);entry.material.roughness=entry.roughness*(1-wet*.38);}
+      basketWet.value=wet;
     },
     dispose() {
       geometriesToDispose.forEach((g) => g.dispose());
@@ -849,6 +865,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
       parentGroup.remove(boatsGroup);
     },
   };
+  return system;
 }
 
 export const createPhuQuocBoats = createBeachBoats;

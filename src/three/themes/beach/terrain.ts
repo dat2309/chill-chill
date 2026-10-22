@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { getBeachCoverHeight } from './rainExposure';
+import { groundRock } from '../../core/objectGeometry';
 import {
   BEACH_COLORS,
   PHUQUOC_COLORS,
@@ -8,6 +10,7 @@ import {
 } from './constants';
 import {
   getTerrainHeight,
+  BOAT_SPOTS,
   getDistanceToShore,
   isOnSand,
   isWetSand,
@@ -408,6 +411,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     color: PHUQUOC_COLORS.rock.graniteWarm,
   });
   const boulderMesh = new THREE.InstancedMesh(boulderGeo, boulderMat, boulderCount);
+  boulderMesh.name='BeachBoulders';
   boulderMesh.castShadow = true;
   boulderMesh.receiveShadow = true;
 
@@ -439,7 +443,18 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     dummy.position.set(bx, by + scale * 0.15, bz);
     dummy.rotation.set(rng.range(0, 0.4), rng.range(0, Math.PI * 2), rng.range(0, 0.4));
     dummy.scale.set(scale * rng.range(0.8, 1.2), scale * 0.8, scale * rng.range(0.8, 1.2));
-    dummy.updateMatrix();
+    groundRock(boulderGeo,dummy,sampleHeight,.028);
+    const footprintPoint=new THREE.Vector3();
+    for(let attempt=0;attempt<12;attempt++){
+      let clear=true;
+      for(let vertex=0;vertex<bPos.count;vertex++){
+        footprintPoint.fromBufferAttribute(bPos,vertex).applyMatrix4(dummy.matrix);
+        const {x,z}=footprintPoint;
+        if(!isInsideBeachFootprint(x,z,.02)||getBeachCoverHeight(x,z)>-Infinity||Math.hypot(x-BOAT_SPOTS.thung.x,z-BOAT_SPOTS.thung.z)<.65||Math.hypot(x-BOAT_SPOTS.ghe.x,z-BOAT_SPOTS.ghe.z)<1.35){clear=false;break;}
+      }
+      if(clear)break;
+      dummy.scale.multiplyScalar(.85);groundRock(boulderGeo,dummy,sampleHeight,.028);
+    }
     boulderMesh.setMatrixAt(placedBoulders, dummy.matrix);
 
     const bColor = PHUQUOC_COLORS.rock.graniteLight.clone().lerp(

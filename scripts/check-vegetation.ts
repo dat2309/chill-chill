@@ -17,7 +17,7 @@ for (const system of [garden, beach]) {
     check(!!obj.customDepthMaterial && !!obj.customDistanceMaterial, 'Weather must deform shadow passes');
     const shader = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
     (obj.material as THREE.Material).onBeforeCompile(shader as any, {} as any);
-    check(shader.vertexShader.includes('vp.xyz = vegetationDeform(vp.xyz,'), 'Rendered projection must consume deformation');
+    check((shader.vertexShader.includes('vp.xyz = vegetationDeform(vp.xyz,')||shader.vertexShader.includes('vp.xyz = vegetationDeformJoint(')), 'Rendered projection must consume deformation');
     check(Object.values(shader.uniforms).includes(obj.userData.vegetationWeather.uniforms.vegWind), 'Shader must bind live wind uniform');
     check(obj.geometry.boundingSphere!.radius > 0, 'Displacement culling bounds');
   });

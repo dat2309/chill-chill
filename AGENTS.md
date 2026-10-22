@@ -35,9 +35,10 @@
 
 ## Vật thể và camera
 
-- Kiểm tra toàn bộ footprint vật thể, không chỉ tọa độ tâm.
+- Kiểm tra toàn bộ footprint, các góc sàn và điểm đỡ bằng matrix/localToWorld thực tế, không tự chép công thức xoay hoặc chỉ kiểm tra tâm. Đáy cột/chân/đá phải tiếp xúc hoặc chôn hợp lý vào terrain; đỉnh điểm đỡ phải nối đúng mặt dưới sàn, không xuyên lên mặt đi lại.
 - Công trình, cây và đồ vật phải nằm trong vùng hợp lệ, đúng tỷ lệ và tiếp xúc terrain sau mọi thay đổi địa hình.
-- Nước, cá và thuyền phải tuân theo vùng nước và mực nước hiện tại.
+- Nước, cá và thuyền phải tuân theo vùng nước và mực nước hiện tại. Transform vật thể nổi phải căn trục đứng theo pháp tuyến mặt sóng có xét yaw; tách dao động phụ có giới hạn khỏi căn mặt nước, giữ draft/freeboard và cập nhật cavity từ transform cuối cùng. Kiểm tra toàn thân, khoang và biên cavity qua tide/gió/pha sóng, không nâng vật thể hoặc khoét nước ngoài thân để che lỗi.
+- Thân, cành, tán, tàu lá và các bộ phận công trình/thuyền phải có mối nối thật; các điểm nối dùng cùng biến dạng kế thừa trong chuyển động. Mái, tường, sàn, vải và khung có độ dày/cấu tạo phù hợp. Lớp phủ tuyết phải bám các tam giác mặt mái thực tế, kiểm tra khoảng cách và hướng pháp tuyến; không thay bằng khối ép dẹt lơ lửng hoặc xuyên mái.
 - Camera mặc định phải hiển thị trọn cảnh, đế và các điểm chính, có khoảng trống cho UI ở cả desktop và mobile.
 - Cập nhật camera và xử lý dữ liệu camera đã lưu khi thay đổi đáng kể hình dáng hoặc bố cục cảnh.
 
@@ -60,7 +61,7 @@
 ## Kiểm tra và review
 
 - Chạy build và các kiểm tra logic phù hợp với thay đổi. Với thay đổi chỉ ở tài liệu, đọc lại nội dung và chạy git diff --check; không bắt buộc chạy build ứng dụng.
-- Khi sửa hình học, kiểm tra winding, đường bao khép kín không tự cắt, các mối nối mesh, placement, vùng nước và bounds.
+- Khi sửa hình học, kiểm tra winding, đường bao khép kín không tự cắt, các mối nối mesh, placement, vùng nước và bounds. Với lỗi đã tái hiện, thêm test thất bại trước khi sửa; đo hình học world thật, khoảng cách lớp phủ–mặt đỡ và pháp tuyến vật thể nổi bằng đối chứng độc lập, không dùng assert(true) hay chép lại công thức implementation. Kết hợp cận cảnh object với toàn cảnh ở cùng camera và các trạng thái thời tiết/chuyển tiếp.
 - Khi có WebGL, quan sát từng chủ đề bị ảnh hưởng ở góc mặc định, từ trên xuống và các mặt bên; kiểm tra mất mặt, vật thể lơ lửng, khe nước, mép răng cưa và tam giác kéo dài. So sánh render với ảnh tham chiếu nếu có.
 - Báo riêng kết quả build, kiểm tra logic và xác minh hình ảnh. Nếu không render được WebGL, ghi rõ chưa xác minh hình ảnh; không dùng build/test đạt để kết luận cảnh đẹp hoặc giống mẫu.
 - Mỗi lần review phải nêu phát hiện cụ thể, phạm vi đã kiểm tra và kèm prompt xử lý có thể sao chép. Phân biệt lỗi đã tái hiện với nhận xét hoặc rủi ro chưa xác minh.

@@ -107,7 +107,9 @@ export function createVegetation(
   pineTrunkMesh.castShadow = true;
   pineFoliageMesh.castShadow = true;
   pineFoliageMesh.receiveShadow = true;
+  pineTrunkMesh.name='PineTrunks';
   group.add(pineTrunkMesh);
+  pineFoliageMesh.name='PineFoliage';
   group.add(pineFoliageMesh);
 
   interface PineInstance {
@@ -171,6 +173,7 @@ export function createVegetation(
     dummy.rotation.set(vRng.range(-0.06, 0.06), vRng.range(0, Math.PI * 2), vRng.range(-0.06, 0.06));
     dummy.scale.set(1.0, p.h, 1.0);
     dummy.updateMatrix();
+    dummy.rotation.x=0;dummy.rotation.z=0;dummy.updateMatrix();
     pineTrunkMesh.setMatrixAt(i, dummy.matrix);
 
     for (let l = 0; l < maxPineLayers; l++) {
@@ -196,28 +199,36 @@ export function createVegetation(
       pineFoliageMesh.setMatrixAt(pFolIdx++, dummy.matrix);
     }
   }
+  pineTrunkMesh.count=pineInstances.length;pineFoliageMesh.count=pineInstances.length*maxPineLayers;
   pineTrunkMesh.instanceMatrix.needsUpdate = true;
   pineFoliageMesh.instanceMatrix.needsUpdate = true;
   if (pineFoliageMesh.instanceColor) pineFoliageMesh.instanceColor.needsUpdate = true;
 
-  // 2. LARGE DECIDUOUS SHADE TREES WITH SOFT MULTI-TIER CLOUD-LIKE CANOPIES (11 overlapping puffs per tree)
-  const decTrunkGeom = new THREE.CylinderGeometry(0.08, 0.16, 1.0, 7, 6);
+  // 2. Deciduous shade trees with tapered wood and open leaf-bearing twigs.
+  const decTrunkGeom = new THREE.CylinderGeometry(0.025, 0.14, 1.0, 7, 6);
   decTrunkGeom.translate(0, 0.5, 0);
 
   const decBranchGeom = new THREE.CylinderGeometry(0.035, 0.065, 0.55, 6, 4);
   decBranchGeom.translate(0, 0.27, 0);
 
-  // Smooth shaded icosahedron deformed with soft simplex noise for cloud-like foliage puffs
-  const decCanopyGeom = new THREE.IcosahedronGeometry(1.0, 2);
-  const decPosAttr = decCanopyGeom.attributes.position;
-  const decP = new THREE.Vector3();
-  for (let i = 0; i < decPosAttr.count; i++) {
-    decP.fromBufferAttribute(decPosAttr, i);
-    const n = simplexNoise3D(decP.x * 1.8, decP.y * 1.8, decP.z * 1.8) * 0.16;
-    decP.multiplyScalar(1.0 + n);
-    decPosAttr.setXYZ(i, decP.x, decP.y, decP.z);
+  // Individual folded leaf blades on an open, elongated cluster, not a solid cloud sphere.
+  const leafRng=new SeededRandom(2411),leafPositions:number[]=[],leafIndices:number[]=[];
+  for(let leaf=0;leaf<28;leaf++){
+    const center=new THREE.Vector3(leafRng.range(-.65,.65),leafRng.range(-.55,.55),leafRng.range(-.80,.80));
+    const yaw=leafRng.range(0,Math.PI*2),pitch=leafRng.range(-.8,.8);
+    const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,leafRng.range(-.5,.5)));
+    const length=leafRng.range(.25,.43),width=leafRng.range(.09,.16),start=leafPositions.length/3;
+    for(const v of [new THREE.Vector3(0,0,-length/2),new THREE.Vector3(-width/2,0,0),new THREE.Vector3(0,.025,0),new THREE.Vector3(width/2,0,0),new THREE.Vector3(0,0,length/2)]){
+      v.applyQuaternion(q).add(center);leafPositions.push(v.x,v.y,v.z);
+    }
+    leafIndices.push(start,start+1,start+2,start,start+2,start+3,start+1,start+4,start+2,start+2,start+4,start+3);
+    const leafBase=new THREE.Vector3(0,0,-length/2).applyQuaternion(q).add(center);
+    const petiole=new THREE.CylinderGeometry(.006,.007,leafBase.length(),4);
+    petiole.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),leafBase.clone().normalize()));petiole.translate(leafBase.x/2,leafBase.y/2,leafBase.z/2);
+    const pp=petiole.getAttribute('position'),pi=petiole.index!,offset=leafPositions.length/3;
+    leafPositions.push(...pp.array);for(let j=0;j<pi.count;j++)leafIndices.push(offset+pi.getX(j));petiole.dispose();
   }
-  decCanopyGeom.computeVertexNormals();
+  const decCanopyGeom=new THREE.BufferGeometry();decCanopyGeom.setAttribute('position',new THREE.Float32BufferAttribute(leafPositions,3));decCanopyGeom.setIndex(leafIndices);decCanopyGeom.computeVertexNormals();
 
   const decTrunkMat = new THREE.MeshStandardMaterial({
     color: 0x5a4230,
@@ -232,20 +243,26 @@ export function createVegetation(
     roughness: 0.72,
     metalness: 0.02,
     flatShading: false,
+    side: THREE.DoubleSide, // Each leaf blade is a real thin botanical surface.
   });
 
   const decTreeCount = 13;
-  const blobsPerTree = 11; // 11 smaller hierarchical puffs per tree for soft cloud-like volume
+  const blobsPerTree = 11; // Leaf clusters distributed around the woody branch hierarchy.
   const branchesPerTree = 4;
   const decTrunkMesh = new THREE.InstancedMesh(decTrunkGeom, decTrunkMat, decTreeCount);
   const decBranchMesh = new THREE.InstancedMesh(decBranchGeom, decTrunkMat, decTreeCount * branchesPerTree);
+  const twigGeom=new THREE.CylinderGeometry(.009,.018,1,5,3);twigGeom.translate(0,.5,0);
+  const twigMesh=new THREE.InstancedMesh(twigGeom,decTrunkMat,decTreeCount*blobsPerTree);twigMesh.name='DeciduousTwigs';twigMesh.castShadow=true;group.add(twigMesh);
   const decCanopyMesh = new THREE.InstancedMesh(decCanopyGeom, decCanopyMat, decTreeCount * blobsPerTree);
   decTrunkMesh.castShadow = true;
   decBranchMesh.castShadow = true;
   decCanopyMesh.castShadow = true;
   decCanopyMesh.receiveShadow = true;
+  decTrunkMesh.name='DeciduousTrunks';
   group.add(decTrunkMesh);
+  decBranchMesh.name='DeciduousBranches';
   group.add(decBranchMesh);
+  decCanopyMesh.name='DeciduousLeaves';
   group.add(decCanopyMesh);
 
   interface DecTree {
@@ -300,6 +317,8 @@ export function createVegetation(
   });
 
   let canopyIdx = 0;
+  const mainEndpoints:THREE.Vector3[][]=[];
+  const branchAxis=new THREE.Vector3(0,1,0);
   let branchIdx = 0;
   for (let i = 0; i < decTrees.length; i++) {
     const t = decTrees[i];
@@ -307,20 +326,23 @@ export function createVegetation(
     dummy.rotation.set(vRng.range(-0.04, 0.04), vRng.range(0, Math.PI * 2), vRng.range(-0.04, 0.04));
     dummy.scale.set(1.0, t.h, 1.0);
     dummy.updateMatrix();
+    dummy.rotation.x=0;dummy.rotation.z=0;dummy.updateMatrix();
     decTrunkMesh.setMatrixAt(i, dummy.matrix);
 
-    // 4 supporting branches reaching out to leaf puffs
+    mainEndpoints.push([]);
+    // Four supporting limbs, each attached to the trunk.
     const bAngles = [0.35, 1.85, 3.45, 5.05];
     for (let b = 0; b < branchesPerTree; b++) {
       const ang = bAngles[b] + vRng.range(-0.15, 0.15);
-      dummy.position.set(t.x, t.y + t.h * 0.60, t.z);
-      dummy.rotation.set(Math.cos(ang) * 0.45, ang, Math.sin(ang) * 0.45);
-      dummy.scale.set(1.0, t.h * 0.85, 1.0);
-      dummy.updateMatrix();
+      const start=new THREE.Vector3(t.x,t.y+t.h*.60,t.z);
+      const end=new THREE.Vector3(t.x+Math.cos(ang)*t.r*.45,t.y+t.h*.92,t.z+Math.sin(ang)*t.r*.45);
+      mainEndpoints[i].push(end);
+      dummy.position.copy(start);dummy.quaternion.setFromUnitVectors(branchAxis,end.clone().sub(start).normalize());
+      dummy.scale.set(1,start.distanceTo(end)/.55,1);dummy.updateMatrix();
       decBranchMesh.setMatrixAt(branchIdx++, dummy.matrix);
     }
 
-    // 11 overlapping smaller cloud-like foliage puffs forming a soft, varied canopy
+    // Eleven open leaf clusters attached to the nearest main limb.
     const offsets = [
       // Crown top
       { dx: 0, dy: t.h * 1.10, dz: 0, sx: t.r * 0.76, sy: t.r * 0.68, sz: t.r * 0.76, lightBias: 0.08 },
@@ -344,6 +366,9 @@ export function createVegetation(
       dummy.scale.set(off.sx, off.sy, off.sz);
       dummy.updateMatrix();
       decCanopyMesh.setMatrixAt(canopyIdx, dummy.matrix);
+      const endpoint=dummy.position.clone();
+      const fork=mainEndpoints[i].reduce((a,b)=>a.distanceToSquared(endpoint)<b.distanceToSquared(endpoint)?a:b);
+      const twig=new THREE.Object3D();twig.position.copy(fork);twig.quaternion.setFromUnitVectors(branchAxis,endpoint.clone().sub(fork).normalize());twig.scale.set(1,fork.distanceTo(endpoint),1);twig.updateMatrix();twigMesh.setMatrixAt(canopyIdx,twig.matrix);
 
       // Color gradation from sunlit crown to shaded understory
       const puffColor = t.baseTint.clone().offsetHSL(
@@ -355,16 +380,18 @@ export function createVegetation(
       canopyIdx++;
     }
   }
+  decTrunkMesh.count=decTrees.length;decBranchMesh.count=decTrees.length*branchesPerTree;decCanopyMesh.count=decTrees.length*blobsPerTree;twigMesh.count=decTrees.length*blobsPerTree;
   decTrunkMesh.instanceMatrix.needsUpdate = true;
   decBranchMesh.instanceMatrix.needsUpdate = true;
   decCanopyMesh.instanceMatrix.needsUpdate = true;
   if (decCanopyMesh.instanceColor) decCanopyMesh.instanceColor.needsUpdate = true;
 
   // 3. LOW BUSHES (~110 instances along banks, cliff ledges, path edges)
-  const bushGeom = new THREE.IcosahedronGeometry(0.30, 2);
+  const bushGeom = decCanopyGeom.clone();
   bushGeom.computeVertexNormals();
   const bushMat = new THREE.MeshStandardMaterial({
     color: SEASON_PALETTES.spring.canopyPrimary,
+    side: THREE.DoubleSide,
     roughness: 0.76,
     metalness: 0.02,
     flatShading: false,
@@ -396,6 +423,7 @@ export function createVegetation(
     dummy.updateMatrix();
     bushMesh.setMatrixAt(bPlaced++, dummy.matrix);
   }
+  bushMesh.count=bPlaced;
   bushMesh.instanceMatrix.needsUpdate = true;
 
   // 4. CLIFF HANGING VINES & TENDRILS (TIER 2)
@@ -513,28 +541,22 @@ export function createVegetation(
     const angle = (b / 5) * Math.PI * 2;
     const cosA = Math.cos(angle);
     const sinA = Math.sin(angle);
-    const w = 0.035;
-    const hBlade = 0.13;
-    const tipOut = 0.05;
-
-    const vBase = b * 3;
-    gPos.push(-sinA * w, 0, cosA * w);
-    gPos.push(sinA * w, 0, -cosA * w);
-    gPos.push(cosA * tipOut, hBlade, sinA * tipOut);
-
-    gNorm.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
-
-    gCol.push(baseCol.r, baseCol.g, baseCol.b);
-    gCol.push(baseCol.r, baseCol.g, baseCol.b);
-    gCol.push(tipCol.r, tipCol.g, tipCol.b);
-
-    gIdx.push(vBase, vBase + 1, vBase + 2);
+    const hBlade=.12+.025*Math.sin(b*2.1),w=.005;
+    const first=gPos.length/3;
+    for(let segment=0;segment<=3;segment++){
+      const u=segment/3,width=w*(1-u),out=.045*u*u;
+      for(const sign of [-1,1]){
+        gPos.push(cosA*out-sign*sinA*width,hBlade*u,sinA*out+sign*cosA*width);
+        const color=baseCol.clone().lerp(tipCol,u);gCol.push(color.r,color.g,color.b);
+      }
+      if(segment<3){const v=first+segment*2;gIdx.push(v,v+2,v+1);if(segment<2)gIdx.push(v+1,v+2,v+3);}
+    }
   }
 
   grassBladeGeom.setAttribute('position', new THREE.Float32BufferAttribute(gPos, 3));
-  grassBladeGeom.setAttribute('normal', new THREE.Float32BufferAttribute(gNorm, 3));
   grassBladeGeom.setAttribute('color', new THREE.Float32BufferAttribute(gCol, 3));
   grassBladeGeom.setIndex(gIdx);
+  grassBladeGeom.computeVertexNormals();
 
   const grassMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -559,6 +581,7 @@ export function createVegetation(
   const grassCount = 1200;
   const grassMesh = new THREE.InstancedMesh(grassBladeGeom, grassMat, grassCount);
   grassMesh.receiveShadow = true;
+  grassMesh.name='GrassTufts';
   group.add(grassMesh);
 
   let gPlaced = 0;
@@ -568,12 +591,14 @@ export function createVegetation(
     const x = vRng.range(-halfW + 0.5, halfW - 0.5);
     const z = vRng.range(-halfD + 0.5, halfD - 0.5);
 
-    if (!isInsideGardenFootprint(x, z, 0.30) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z) || isNearWalkingTrail(x, z, 0.08)) continue;
+    if (!isInsideGardenFootprint(x, z, 0.30) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z) || isNearWalkingTrail(x, z, 0.20)) continue;
     const h = getHeightAt(x, z);
     if (h < WATER_LEVEL + 0.04) continue;
     const slope = getSlopeAt(x, z);
     if (slope > 0.45) continue;
 
+    const patch=(simplexNoise3D(x*.85,13,z*.85)+1)*.5;
+    if(patch<.47 || (patch<.65&&vRng.next()>.45))continue;
     // Cluster preferentially along moist banks (z >= 0.5), cliff base, and right hills
     const isBankOrCliffBase = z >= 0.3 || (x > 0.5) || (z < -3.0);
     if (!isBankOrCliffBase && vRng.next() > 0.15) continue; // Sparse on high plateau, keeping camp lawns neat
@@ -650,10 +675,14 @@ export function createVegetation(
     return new THREE.Vector3(p?.x ?? 0, p?.y ?? 0, p?.z ?? 0);
   };
   weather.attach(pineTrunkMesh, .009, i => pineRoot(i));
-  weather.attach(pineFoliageMesh, .018, i => pineRoot(i, true));
+  weather.attach(pineFoliageMesh,.018,i=>pineRoot(i,true),false,false,{stem:.009,joint:i=>{
+    const m=new THREE.Matrix4();pineFoliageMesh.getMatrixAt(i,m);return new THREE.Vector3().setFromMatrixPosition(m);
+  }});
   weather.attach(decTrunkMesh, .012, i => treeRoot(i));
-  weather.attach(decBranchMesh, .019, i => treeRoot(i, branchesPerTree));
-  weather.attach(decCanopyMesh, .027, i => treeRoot(i, blobsPerTree), true);
+  const treeJoint=(i:number,parts:number)=>{const p=decTrees[Math.floor(i/parts)];return new THREE.Vector3(p.x,p.y+p.h*.60,p.z);};
+  weather.attach(decBranchMesh,.019,i=>treeRoot(i,branchesPerTree),false,false,{stem:.012,joint:i=>treeJoint(i,branchesPerTree)});
+  weather.attach(twigMesh,.019,i=>treeRoot(i,blobsPerTree),false,false,{stem:.012,joint:i=>treeJoint(i,blobsPerTree)});
+  weather.attach(decCanopyMesh,.019,i=>treeRoot(i,blobsPerTree),true,false,{stem:.012,joint:i=>treeJoint(i,blobsPerTree)});
   weather.attach(bushMesh, .16);
   weather.attach(vineMesh, .18);
   const flowerWeather = createVegetationWeather();
@@ -709,6 +738,7 @@ export function createVegetation(
       decTrunkGeom.dispose();
       decTrunkMat.dispose();
       decBranchGeom.dispose();
+      twigGeom.dispose();
       decCanopyGeom.dispose();
       decCanopyMat.dispose();
       bushGeom.dispose();

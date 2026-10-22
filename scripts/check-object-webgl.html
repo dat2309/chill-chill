@@ -1,0 +1,66 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Object WebGL verification</title><style>body{margin:0;background:#c9d7de;font:14px sans-serif}#grid{display:grid;grid-template-columns:repeat(3,480px)}figure{margin:0}img{width:480px;height:380px}pre{white-space:pre-wrap}</style></head><body><pre id="result">RUNNING</pre><div id="grid"></div><script type="module">
+import * as THREE from '/node_modules/three/build/three.module.js';
+import {GardenTheme} from '/src/three/themes/garden/index.ts';
+import {BeachTheme} from '/src/three/themes/beach/index.ts';
+import {BOAT_SPOTS} from '/src/three/themes/beach/shoreline.ts';
+window.requestAnimationFrame=callback=>setTimeout(()=>callback(performance.now()),0);
+const errors=[],checks=[];const old=console.error;console.error=(...a)=>{errors.push(a.join(' '));old(...a)};
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setSize(1280,1013);renderer.shadowMap.enabled=true;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+const gl=renderer.getContext();function check(ok,name){checks.push({ok,name});if(!ok)throw Error(name)}
+const base={timeOfDay:14,tide:'high',rippleStrength:.5,flowSpeed:.5,windStrength:.45,autoRotate:false,quality:'high'};
+function camera(theme){const p=theme.cameraPreset,h=p.baseFrustumHeight,a=480/380,c=new THREE.OrthographicCamera(-h*a/2,h*a/2,h/2,-h/2,.1,150);c.position.copy(p.position);c.lookAt(p.target);return c}
+function close(target,offset,height){const a=480/380,c=new THREE.OrthographicCamera(-height*a/2,height*a/2,height/2,-height/2,.01,150);c.position.copy(target).add(offset);c.lookAt(target);return c}
+function snap(scene,c,label){renderer.render(scene,c);const f=document.createElement('figure'),t=document.createElement('figcaption'),img=document.createElement('img');t.textContent=label;img.src=renderer.domElement.toDataURL();f.append(t,img);document.querySelector('#grid').append(f)}
+function step(theme,season,seconds,wind=.45){const state={...base,themeId:theme.id,season,windStrength:wind};theme.applyState(state);for(let t=0;t<seconds-.0001;t+=.1)theme.update(Math.min(.1,seconds-t),clock+=.1,state)}let clock=0;
+// Extract the actual patched project_vertex block, execute it on GPU, and read its resulting world point.
+// This also executes density collapse and the frond's inherited trunk motion; no wind formula is copied.
+function probe(mesh,index,point,time,wind,snow,density){
+ const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};mesh.material.onBeforeCompile(shader,renderer);
+ const decl=shader.vertexShader.slice(0,shader.vertexShader.indexOf('#define STANDARD')).replace('attribute vec3','uniform vec3').replace('varying float vegUp;','out float vegUp;');
+ const start=shader.vertexShader.indexOf('vec4 vp ='),end=shader.vertexShader.indexOf('#include <logdepthbuf_vertex>',start);
+ const block=shader.vertexShader.slice(start,end);
+ const vertex=`#version 300 es\nprecision highp float;${decl}\nuniform mat4 modelMatrix,viewMatrix,projectionMatrix;uniform vec3 inputPoint;out vec3 sampled;void main(){vec3 transformed=inputPoint;vec3 normal=vec3(0,1,0);${block}\nsampled=vp.xyz;}`;
+ function compile(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s}
+ const vs=compile(gl.VERTEX_SHADER,vertex),fs=compile(gl.FRAGMENT_SHADER,'#version 300 es\nprecision highp float;out vec4 color;void main(){color=vec4(1);}');const p=gl.createProgram();gl.attachShader(p,vs);gl.attachShader(p,fs);gl.transformFeedbackVaryings(p,['sampled'],gl.INTERLEAVED_ATTRIBS);gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));gl.useProgram(p);
+ for(const [key,value]of Object.entries({vegTime:time,vegWind:wind,vegSnow:snow,vegDensity:density}))gl.uniform1f(gl.getUniformLocation(p,key),value);
+ for(const key of ['vegRoot','vegCenter','vegJoint']){const a=mesh.geometry.getAttribute(key);gl.uniform3f(gl.getUniformLocation(p,key),a.getX(index),a.getY(index),a.getZ(index))}
+ const local=mesh.worldToLocal(point.clone());gl.uniform3f(gl.getUniformLocation(p,'inputPoint'),local.x,local.y,local.z);
+ for(const [key,m]of [['modelMatrix',mesh.matrixWorld],['viewMatrix',new THREE.Matrix4()],['projectionMatrix',new THREE.Matrix4()]])gl.uniformMatrix4fv(gl.getUniformLocation(p,key),false,m.elements);
+ const vao=gl.createVertexArray();gl.bindVertexArray(vao);const tf=gl.createTransformFeedback();gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,tf);const buf=gl.createBuffer();gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER,buf);gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER,12,gl.STREAM_READ);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,buf);gl.enable(gl.RASTERIZER_DISCARD);gl.beginTransformFeedback(gl.POINTS);gl.drawArrays(gl.POINTS,0,1);gl.endTransformFeedback();gl.disable(gl.RASTERIZER_DISCARD);const values=new Float32Array(3);gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER,0,values);gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,null);gl.bindVertexArray(null);gl.deleteTransformFeedback(tf);gl.deleteVertexArray(vao);gl.deleteBuffer(buf);gl.deleteProgram(p);gl.deleteShader(vs);gl.deleteShader(fs);renderer.resetState();if(![...values].every(Number.isFinite))throw Error('Non-finite actual GPU deformation');const output=new THREE.Vector3(...values);const bound=(mesh.boundingBox||mesh.geometry.boundingBox)?.clone().applyMatrix4(mesh.matrixWorld).expandByScalar(.001);if(bound&&!bound.containsPoint(output))throw Error('GPU displacement exceeds actual mesh bounds: '+mesh.name);return output
+}
+try{
+ const garden=new GardenTheme({});await garden.init();const scene=new THREE.Scene();scene.background=new THREE.Color(0xbcd1da);scene.add(garden.group);const gc=camera(garden);
+ step(garden,'summer',8);snap(scene,gc,'Garden summer · default · 14:00 · high tide');
+ const dome=garden.group.getObjectByName('domeTent_0')||garden.group.getObjectByName('domeTent_1');const dp=dome.getWorldPosition(new THREE.Vector3());const dc=close(dp,new THREE.Vector3(3,1.8,4),2.8);snap(scene,dc,'Dome: fabric, frame, deck and supports');
+ step(garden,'winter',9);snap(scene,gc,'Garden complete winter · same camera/time/tide');snap(scene,dc,'Dome snow follows roof · winter');snap(scene,close(new THREE.Vector3(-1,2,-2.5),new THREE.Vector3(3,2,4),3.8),'Cabin roof snow and deck supports');
+ const trunks=garden.group.getObjectByName('DeciduousTrunks'),branches=garden.group.getObjectByName('DeciduousBranches'),twigs=garden.group.getObjectByName('DeciduousTwigs'),leaves=garden.group.getObjectByName('DeciduousLeaves');scene.updateMatrixWorld(true);
+ const tr=new THREE.Vector3().fromBufferAttribute(trunks.geometry.getAttribute('vegRoot'),0).applyMatrix4(trunks.matrixWorld);snap(scene,close(tr.clone().add(new THREE.Vector3(0,1,0)),new THREE.Vector3(3,1,4),3.6),'Winter deciduous branch structure');
+ let gap=0,rootError=0,maxBend=0;
+ for(const time of [0,2,7])for(const snow of [0,1])for(const density of [1,.4,.025]){
+  const bmat=new THREE.Matrix4();branches.getMatrixAt(0,bmat);const joint=new THREE.Vector3().applyMatrix4(bmat).applyMatrix4(branches.matrixWorld);
+  gap=Math.max(gap,probe(trunks,0,joint,time,1.2,snow,density).distanceTo(probe(branches,0,joint,time,1.2,snow,density)));
+  const m=new THREE.Matrix4();twigs.getMatrixAt(0,m);const tip=new THREE.Vector3(0,1,0).applyMatrix4(m).applyMatrix4(twigs.matrixWorld);
+  gap=Math.max(gap,probe(twigs,0,tip,time,1.2,snow,density).distanceTo(probe(leaves,0,tip,time,1.2,snow,density)));
+  rootError=Math.max(rootError,probe(trunks,0,tr,time,1.2,snow,density).distanceTo(tr));maxBend=Math.max(maxBend,probe(twigs,0,tip,time,1.2,snow,density).distanceTo(tip));
+ }
+ check(gap<.00002,`GPU stem/branch/twig/leaf joints stay attached across snow and leaf density: ${gap}`);check(rootError<.00002&&maxBend>.002&&maxBend<.45,`GPU roots fixed and motion bounded: root ${rootError}, bend ${maxBend}`);
+ step(garden,'summer',.8,1.2);snap(scene,gc,'Garden winter→summer mid transition · strong wind');step(garden,'winter',.5,.05);snap(scene,gc,'Garden reversal to winter · wind reduced');
+ snap(scene,close(new THREE.Vector3(0,1,0),new THREE.Vector3(0,32,.01),24),'Garden top');snap(scene,close(new THREE.Vector3(0,1,0),new THREE.Vector3(25,7,17),21),'Garden side');garden.dispose();
+ const beach=new BeachTheme({});await beach.init();const bs=new THREE.Scene();bs.background=new THREE.Color(0xbcd1da);bs.add(beach.group);const bc=camera(beach);
+ step(beach,'dry',4);snap(bs,bc,'Beach dry · default · same time/tide');
+ bs.updateMatrixWorld(true);const palm=beach.group.getObjectByName('PalmTrunk'),palmObject=palm.parent.parent,crown=palmObject.children.find(o=>o!==palm.parent),frond=crown.children.find(o=>o.isMesh);
+ const attachment=crown.getWorldPosition(new THREE.Vector3()),palmRoot=palmObject.getWorldPosition(new THREE.Vector3());let palmGap=0,palmRootError=0,frondMotion=0;
+ const fp=frond.geometry.getAttribute('position'),tipPoint=frond.localToWorld(new THREE.Vector3().fromBufferAttribute(fp,fp.count-2));
+ for(const t of [0,2,7]){
+  palmGap=Math.max(palmGap,probe(palm,0,attachment,t,1.2,0,1).distanceTo(probe(frond,0,attachment,t,1.2,0,1)));
+  palmRootError=Math.max(palmRootError,probe(palm,0,palmRoot,t,1.2,0,1).distanceTo(palmRoot));frondMotion=Math.max(frondMotion,probe(frond,0,tipPoint,t,1.2,0,1).distanceTo(tipPoint));
+ }
+ check(palmGap<.00002&&palmRootError<.00002&&frondMotion>.03&&frondMotion<.5,`Actual GPU palm root/crown attached with flexible frond tip: gap ${palmGap}, root ${palmRootError}, tip ${frondMotion}`);
+ snap(bs,close(attachment,new THREE.Vector3(3,1,4),4),'Palm continuous tapered trunk, crown and flexible fronds');
+
+ const bungalow=beach.group.getObjectByName('Bungalow_0');const bp=bungalow.getWorldPosition(new THREE.Vector3());snap(bs,close(bp.clone().add(new THREE.Vector3(0,.8,0)),new THREE.Vector3(4,1.2,5),4.8),'Bungalow full deck and actual support feet');
+ for(const type of ['thung','ghe']){const p=BOAT_SPOTS[type];const target=new THREE.Vector3(p.x,.5,p.z);snap(bs,close(target,new THREE.Vector3(2,1.6,2),type==='ghe'?3.5:2),'Boat '+type+' · oblique');snap(bs,close(target,new THREE.Vector3(0,5,.001),type==='ghe'?3.5:2),'Boat '+type+' · top');snap(bs,close(target,new THREE.Vector3(3,.5,0),type==='ghe'?3.5:2),'Boat '+type+' · side')}
+ step(beach,'rainy',40,1.2);snap(bs,bc,'Beach sustained rain · strong wind');snap(bs,close(bp.clone().add(new THREE.Vector3(0,1.2,0)),new THREE.Vector3(4,1.4,5),5.5),'Bungalow and palms · wet surfaces');step(beach,'dry',.7,.05);snap(bs,bc,'Beach rainy→dry mid transition · low wind');step(beach,'rainy',.4,.05);snap(bs,bc,'Beach reversal to rain · retained moisture');step(beach,'dry',15,.05);snap(bs,bc,'Beach after rain · same camera/time/tide');snap(bs,close(new THREE.Vector3(),new THREE.Vector3(0,35,.001),24),'Beach top');snap(bs,close(new THREE.Vector3(),new THREE.Vector3(25,8,17),22),'Beach side');
+ beach.dispose();check(errors.length===0,'No WebGL shader/runtime errors');document.querySelector('#result').textContent=JSON.stringify({status:'PASS',checks,errors,renderer:gl.getParameter(gl.RENDERER)});
+}catch(e){document.querySelector('#result').textContent=JSON.stringify({status:'FAIL',message:e.stack,checks,errors})}
+</script></body></html>

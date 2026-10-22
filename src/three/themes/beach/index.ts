@@ -183,7 +183,7 @@ export class BeachTheme implements ThemeInstance<'beach'> {
 
     this.water?.update(dt, elapsed, effectiveWind, state.flowSpeed, rainIntensity);
     this.architecture?.update(dt, elapsed, state.timeOfDay);
-    this.boats?.update(dt, elapsed, waterLevel, effectiveWind, state.flowSpeed);
+    this.boats?.update(dt, elapsed, waterLevel, effectiveWind, state.flowSpeed, rainIntensity);
     if (this.boats && this.water?.updateBoatCavities) {
       this.water.updateBoatCavities(this.boats.getCavities());
     }
