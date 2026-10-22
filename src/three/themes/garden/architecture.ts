@@ -12,6 +12,199 @@ export interface ArchitectureSystem {
   dispose(): void;
 }
 
+export interface SteppingStoneSpot {
+  x: number;
+  z: number;
+  r?: number;
+  rot?: number;
+}
+
+export const GARDEN_STEPPING_STONES: SteppingStoneSpot[] = [
+  // 1. Cabin porch (-1.0, -0.9) to Campfire (-3.2, -0.8)
+  { x: -1.35, z: -0.95, r: 0.22, rot: 0.35 },
+  { x: -1.75, z: -0.92, r: 0.21, rot: 0.82 },
+  { x: -2.15, z: -0.90, r: 0.23, rot: 1.25 },
+  { x: -2.55, z: -0.88, r: 0.20, rot: 0.15 },
+  { x: -2.90, z: -0.85, r: 0.22, rot: 0.65 },
+
+  // 2. Dome 1 (-5.0, -2.0) to Campfire
+  { x: -4.20, z: -1.65, r: 0.22, rot: 0.45 },
+  { x: -3.95, z: -1.40, r: 0.20, rot: 1.10 },
+  { x: -3.70, z: -1.15, r: 0.23, rot: 0.20 },
+  { x: -3.45, z: -0.95, r: 0.21, rot: 0.75 },
+
+  // 3. Dome 1 to Picnic Table (-6.2, -0.5)
+  { x: -4.85, z: -1.75, r: 0.21, rot: 0.90 },
+  { x: -5.20, z: -1.50, r: 0.23, rot: 0.30 },
+  { x: -5.55, z: -1.20, r: 0.20, rot: 1.45 },
+  { x: -5.85, z: -0.90, r: 0.22, rot: 0.60 },
+  { x: -6.10, z: -0.65, r: 0.24, rot: 0.10 },
+
+  // 4. Picnic Table to Dome 3 & Meadow Hub
+  { x: -5.75, z: -0.45, r: 0.20, rot: 0.85 },
+  { x: -5.35, z: -0.40, r: 0.22, rot: 0.40 },
+  { x: -4.95, z: -0.35, r: 0.21, rot: 1.30 },
+  { x: -4.60, z: -0.30, r: 0.23, rot: 0.15 },
+
+  // 5. Dome 3 (-4.2, 0.05) to Campfire
+  { x: -3.90, z: -0.15, r: 0.22, rot: 0.55 },
+  { x: -3.65, z: -0.40, r: 0.20, rot: 1.05 },
+  { x: -3.40, z: -0.65, r: 0.23, rot: 0.25 },
+
+  // 6. Dome 3 to Hillside Trail Junction (-2.60, 0.60)
+  { x: -3.80, z: 0.35,  r: 0.21, rot: 0.70 },
+  { x: -3.45, z: 0.48,  r: 0.23, rot: 0.15 },
+  { x: -3.05, z: 0.55,  r: 0.20, rot: 1.20 },
+  { x: -2.70, z: 0.58,  r: 0.22, rot: 0.50 },
+
+  // 7. Dome 2 (-2.2, -1.2) to Campfire
+  { x: -2.40, z: -1.05, r: 0.21, rot: 0.30 },
+  { x: -2.75, z: -0.95, r: 0.22, rot: 0.95 },
+
+  // 8. Dome 2 Southward towards Hillside Trail Junction
+  { x: -2.25, z: -0.50, r: 0.20, rot: 0.65 },
+  { x: -2.35, z: -0.15, r: 0.22, rot: 1.40 },
+  { x: -2.45, z: 0.20,  r: 0.23, rot: 0.25 },
+  { x: -2.55, z: 0.50,  r: 0.21, rot: 0.80 },
+
+  // 9. Continuous Gentle Hillside Trail (men theo sườn thoải từ thềm xuống bãi sỏi)
+  { x: -2.60, z: 0.80,  r: 0.22, rot: 0.40 },
+  { x: -2.55, z: 1.02,  r: 0.21, rot: 1.15 },
+  { x: -2.48, z: 1.25,  r: 0.23, rot: 0.25 },
+  { x: -2.38, z: 1.48,  r: 0.22, rot: 0.75 },
+  { x: -2.25, z: 1.70,  r: 0.24, rot: 1.35 },
+  { x: -2.12, z: 1.92,  r: 0.21, rot: 0.10 },
+  { x: -1.98, z: 2.15,  r: 0.23, rot: 0.60 },
+  { x: -1.86, z: 2.38,  r: 0.22, rot: 1.05 },
+  { x: -1.75, z: 2.62,  r: 0.24, rot: 0.35 },
+  { x: -1.65, z: 2.88,  r: 0.21, rot: 0.90 },
+  { x: -1.58, z: 3.15,  r: 0.23, rot: 0.15 },
+  { x: -1.52, z: 3.42,  r: 0.22, rot: 0.70 },
+  { x: -1.48, z: 3.70,  r: 0.24, rot: 1.25 },
+
+  // 10. Bãi sỏi ven suối (Left bank dry gravel shoreline)
+  { x: -1.45, z: 4.05,  r: 0.22, rot: 0.50 },
+  { x: -1.40, z: 4.40,  r: 0.23, rot: 1.20 },
+  { x: -1.45, z: 4.75,  r: 0.21, rot: 0.30 },
+  { x: -1.55, z: 5.10,  r: 0.24, rot: 0.85 },
+  { x: -1.70, z: 5.45,  r: 0.22, rot: 0.15 },
+
+  // 11. Right Bank Pebble Trail to SUP landing (safely >0.65m clear from Boulder 2 at 4.60, 3.60)
+  { x: 4.60,  z: 2.10,  r: 0.22, rot: 0.45 },
+  { x: 4.90,  z: 2.45,  r: 0.24, rot: 1.10 },
+  { x: 5.25,  z: 2.80,  r: 0.21, rot: 0.20 },
+  { x: 5.60,  z: 3.18,  r: 0.23, rot: 0.75 },
+  { x: 5.85,  z: 3.55,  r: 0.22, rot: 1.30 },
+];
+
+function createIrregularFlagstoneGeometry(radius: number, seed: number): THREE.BufferGeometry {
+  const segments = 8;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const normals: number[] = [];
+
+  const stoneH = 0.045; // 4.5cm thickness
+  const halfH = stoneH / 2;
+
+  // Natural weathered river/fieldstone color
+  const topColor = new THREE.Color(0x827d75).offsetHSL(
+    Math.sin(seed * 2.7) * 0.02,
+    Math.cos(seed * 1.9) * 0.03,
+    Math.sin(seed * 4.3) * 0.03
+  );
+  const bottomColor = topColor.clone().multiplyScalar(0.70);
+
+  const rTop: number[] = [];
+  const rBot: number[] = [];
+  for (let k = 0; k < segments; k++) {
+    const ang = (k / segments) * Math.PI * 2;
+    const wave = 1.0 + Math.sin(ang * 2.0 + seed * 1.7) * 0.13 + Math.cos(ang * 3.0 + seed * 2.5) * 0.07;
+    const rt = radius * wave;
+    rTop.push(rt);
+    rBot.push(rt * 0.88); // bottom bevel into soil
+  }
+
+  // Top face fan (faces UP)
+  const topCenter = new THREE.Vector3(0, halfH, 0);
+  for (let k = 0; k < segments; k++) {
+    const kNext = (k + 1) % segments;
+    const ang0 = (k / segments) * Math.PI * 2;
+    const ang1 = ((k + 1) / segments) * Math.PI * 2;
+
+    const p0 = new THREE.Vector3(Math.cos(ang0) * rTop[k], halfH, Math.sin(ang0) * rTop[k]);
+    const p1 = new THREE.Vector3(Math.cos(ang1) * rTop[kNext], halfH, Math.sin(ang1) * rTop[kNext]);
+
+    positions.push(
+      topCenter.x, topCenter.y, topCenter.z,
+      p0.x, p0.y, p0.z,
+      p1.x, p1.y, p1.z
+    );
+    for (let c = 0; c < 3; c++) {
+      colors.push(topColor.r, topColor.g, topColor.b);
+      normals.push(0, 1, 0);
+    }
+  }
+
+  // Bottom face fan (faces DOWN)
+  const botCenter = new THREE.Vector3(0, -halfH, 0);
+  for (let k = 0; k < segments; k++) {
+    const kNext = (k + 1) % segments;
+    const ang0 = (k / segments) * Math.PI * 2;
+    const ang1 = ((k + 1) / segments) * Math.PI * 2;
+
+    const b0 = new THREE.Vector3(Math.cos(ang0) * rBot[k], -halfH, Math.sin(ang0) * rBot[k]);
+    const b1 = new THREE.Vector3(Math.cos(ang1) * rBot[kNext], -halfH, Math.sin(ang1) * rBot[kNext]);
+
+    positions.push(
+      botCenter.x, botCenter.y, botCenter.z,
+      b1.x, b1.y, b1.z,
+      b0.x, b0.y, b0.z
+    );
+    for (let c = 0; c < 3; c++) {
+      colors.push(bottomColor.r, bottomColor.g, bottomColor.b);
+      normals.push(0, -1, 0);
+    }
+  }
+
+  // Side quads (facing OUTWARD)
+  for (let k = 0; k < segments; k++) {
+    const kNext = (k + 1) % segments;
+    const ang0 = (k / segments) * Math.PI * 2;
+    const ang1 = ((k + 1) / segments) * Math.PI * 2;
+
+    const t0 = new THREE.Vector3(Math.cos(ang0) * rTop[k], halfH, Math.sin(ang0) * rTop[k]);
+    const t1 = new THREE.Vector3(Math.cos(ang1) * rTop[kNext], halfH, Math.sin(ang1) * rTop[kNext]);
+    const b0 = new THREE.Vector3(Math.cos(ang0) * rBot[k], -halfH, Math.sin(ang0) * rBot[k]);
+    const b1 = new THREE.Vector3(Math.cos(ang1) * rBot[kNext], -halfH, Math.sin(ang1) * rBot[kNext]);
+
+    positions.push(
+      t0.x, t0.y, t0.z,
+      b0.x, b0.y, b0.z,
+      b1.x, b1.y, b1.z,
+
+      t0.x, t0.y, t0.z,
+      b1.x, b1.y, b1.z,
+      t1.x, t1.y, t1.z
+    );
+
+    const edge1 = new THREE.Vector3().subVectors(b0, t0);
+    const edge2 = new THREE.Vector3().subVectors(b1, t0);
+    const sideNorm = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+
+    for (let c = 0; c < 6; c++) {
+      const col = c % 2 === 0 ? topColor : bottomColor;
+      colors.push(col.r, col.g, col.b);
+      normals.push(sideNorm.x, sideNorm.y, sideNorm.z);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  return geo;
+}
+
 function prepareGeometry(
   geo: THREE.BufferGeometry,
   color: THREE.Color | number | ((pos: THREE.Vector3, norm: THREE.Vector3, index: number) => THREE.Color)
@@ -400,64 +593,7 @@ export function createArchitecture(
   fireMesh.position.set(fireX, fireGroundY + 0.05, fireZ);
   rootGroup.add(fireMesh);
 
-  // 4. ARCHERY TARGET ON TRIPOD
-  const targetX = -6.0;
-  const targetZ = -2.5;
-  const targetGroundY = getHeightAt(targetX, targetZ);
-  const targetCenterY = targetGroundY + 0.75;
-  const targetParts: THREE.BufferGeometry[] = [];
-
-  const targetBody = new THREE.CylinderGeometry(0.42, 0.42, 0.08, 20).toNonIndexed();
-  targetBody.rotateX(Math.PI / 2);
-  targetBody.translate(0, 0, -0.04);
-  targetParts.push(prepareGeometry(targetBody, new THREE.Color(0xb89255)));
-
-  const ringDefs = [
-    { rIn: 0.0, rOut: 0.08, color: 0xffd54f }, // Yellow
-    { rIn: 0.08, rOut: 0.16, color: 0xd32f2f }, // Red
-    { rIn: 0.16, rOut: 0.24, color: 0x1976d2 }, // Blue
-    { rIn: 0.24, rOut: 0.32, color: 0x222222 }, // Black
-    { rIn: 0.32, rOut: 0.40, color: 0xf2f2f2 }, // White
-  ];
-
-  ringDefs.forEach(({ rIn, rOut, color }) => {
-    const rGeo = rIn === 0.0
-      ? new THREE.CircleGeometry(rOut, 20).toNonIndexed()
-      : new THREE.RingGeometry(rIn, rOut, 20).toNonIndexed();
-    rGeo.translate(0, 0, 0.002);
-    targetParts.push(prepareGeometry(rGeo, color));
-  });
-
-  // Arrow
-  const arrowShaft = new THREE.CylinderGeometry(0.008, 0.008, 0.42, 6).toNonIndexed();
-  arrowShaft.rotateX(Math.PI / 2 + 0.08);
-  arrowShaft.translate(0.04, 0.03, 0.18);
-  targetParts.push(prepareGeometry(arrowShaft, COLORS.wood.light));
-
-  // Stand legs
-  const leg1 = new THREE.CylinderGeometry(0.025, 0.025, 1.25, 6).toNonIndexed();
-  leg1.rotateZ(0.24);
-  leg1.translate(-0.25, -0.22, -0.15);
-  targetParts.push(prepareGeometry(leg1, COLORS.wood.dark));
-
-  const leg2 = new THREE.CylinderGeometry(0.025, 0.025, 1.25, 6).toNonIndexed();
-  leg2.rotateZ(-0.24);
-  leg2.translate(0.25, -0.22, -0.15);
-  targetParts.push(prepareGeometry(leg2, COLORS.wood.dark));
-
-  const legBack = new THREE.CylinderGeometry(0.025, 0.025, 1.25, 6).toNonIndexed();
-  legBack.rotateX(-0.4);
-  legBack.translate(0, -0.22, -0.38);
-  targetParts.push(prepareGeometry(legBack, COLORS.wood.dark));
-
-  const mergedTarget = BufferGeometryUtils.mergeGeometries(targetParts, false);
-  if (mergedTarget) {
-    mergedTarget.rotateY(0.45);
-    mergedTarget.translate(targetX, targetCenterY, targetZ);
-    propGeometries.push(mergedTarget);
-  }
-
-  // 5. PICNIC TABLE WITH BENCHES
+  // 4. PICNIC TABLE WITH BENCHES
   const tableX = -6.2;
   const tableZ = -0.5;
   const tableGroundY = getHeightAt(tableX, tableZ);
@@ -489,40 +625,22 @@ export function createArchitecture(
   legB.translate(tableX + 0.45, tableGroundY + 0.31, tableZ);
   woodGeometries.push(prepareGeometry(legB, COLORS.wood.dark));
 
-  // 6. Natural Flagstone Stepping Stones connecting campsite living spaces and scenic vantage points
-  const flagstoneSpots = [
-    // Connecting Dome 1 to Campfire
-    { x: -4.4, z: -1.6 },
-    { x: -4.0, z: -1.3 },
-    { x: -3.6, z: -1.1 },
-    // Connecting Dome 2 to Campfire
-    { x: -2.4, z: -1.0 },
-    { x: -2.8, z: -0.9 },
-    // Connecting Dome 3 to Campfire
-    { x: -3.9, z: -0.3 },
-    { x: -3.6, z: -0.6 },
-    // Connecting Cabin porch to Campfire
-    { x: -1.5, z: -2.1 },
-    { x: -2.0, z: -1.7 },
-    { x: -2.6, z: -1.3 },
-    // Path from Campfire towards Plateau Meadow Overlook
-    { x: -3.3, z: -0.5 },
-    { x: -3.4, z: -0.1 },
-    { x: -3.5, z: 0.35 },
-    // Path from Dome 1 towards Picnic Table
-    { x: -5.2, z: -1.5 },
-    { x: -5.6, z: -1.1 },
-    { x: -5.9, z: -0.8 },
-    // Right bank path connecting overlook terrace to beach
-    { x: 4.2, z: 2.2 },
-    { x: 4.5, z: 2.7 },
-    { x: 4.8, z: 3.3 },
-  ];
-  flagstoneSpots.forEach((fp) => {
-    const fY = getHeightAt(fp.x, fp.z);
-    const fGeo = new THREE.CylinderGeometry(0.22, 0.26, 0.05, 7).toNonIndexed();
-    fGeo.translate(fp.x, fY + 0.025, fp.z);
-    stoneGeometries.push(prepareGeometry(fGeo, COLORS.terrain.rockDark));
+  // 5. NATURAL STEPPING STONE TRAIL (LỐI ĐI LÓT ĐÁ TỰ NHIÊN MEN THEO ĐỊA HÌNH)
+  // Winding gently between tents, cabin, picnic table, and down the gentle slope to the waterside pebble shore.
+  // Flat, irregular stones partially buried into soil/turf, aligned with terrain slope.
+  GARDEN_STEPPING_STONES.forEach((fp, idx) => {
+    const groundY = getHeightAt(fp.x, fp.z);
+    const eps = 0.20;
+    const slopeX = (getHeightAt(fp.x + eps, fp.z) - getHeightAt(fp.x - eps, fp.z)) / (2 * eps);
+    const slopeZ = (getHeightAt(fp.x, fp.z + eps) - getHeightAt(fp.x, fp.z - eps)) / (2 * eps);
+
+    const stoneY = groundY + 0.005; // Base buried ~1.8cm, top raised ~2.7cm
+    const stoneGeo = createIrregularFlagstoneGeometry(fp.r ?? 0.22, idx);
+    stoneGeo.rotateY(fp.rot ?? (idx * 0.77));
+    stoneGeo.rotateZ(-Math.atan(slopeX));
+    stoneGeo.rotateX(Math.atan(slopeZ));
+    stoneGeo.translate(fp.x, stoneY, fp.z);
+    stoneGeometries.push(stoneGeo);
   });
 
   // 7. SUP BOARD AND ACCESSORIES ON PEBBLE BANK

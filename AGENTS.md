@@ -16,7 +16,7 @@
 - Đường bờ, sườn núi, thềm đất và dòng suối phải có cấu trúc tự nhiên, phù hợp nội dung; bo góc đế không thay thế việc thiết kế địa hình.
 - Mỗi chủ đề có bố cục riêng. Không dùng chung một công thức bán kính hoặc một silhouette cho tất cả chủ đề.
 - Thiết kế các khối lớn và khoảng trống trước khi thêm chi tiết. Chuyển tiếp đường bao mềm, lồi/lõm có chủ đích; không tạo gai bằng nhiễu tần số cao.
-- Garden: giữ chiều sâu núi → thềm glamping → sườn dốc tự nhiên → bờ suối và hồ nông tiền cảnh. Không bắt buộc cầu thang; ưu tiên sườn dốc tự nhiên nối các cao độ; cây không che kín dome, cabin hoặc dòng suối.
+- Garden: giữ chiều sâu núi → thềm glamping → sườn dốc tự nhiên → bờ suối và hồ nông tiền cảnh. Dùng lối đi lót đá men theo địa hình, không có bia bắn cung và hai tuyến cầu thang ngoài trời; cây không che kín dome, cabin hoặc dòng suối.
 - Phú Quốc: giữ bản sắc bãi cát cong, mũi đá, cụm dừa và biển nông chuyển sâu. Phân biệt bờ đảo với biên trưng bày của vùng biển; không ép cả vùng biển thành chiếc đĩa tròn.
 - Chủ đề mới phải xác định điểm nhấn, tiền cảnh, trung cảnh, hậu cảnh và hình dáng đế phù hợp trước khi dựng chi tiết.
 - Cây mọc thành cụm có tầng cao thấp; chừa đường nhìn và khoảng trống quanh điểm nhấn. Đế có tỷ lệ gọn và bóng tiếp xúc phù hợp.

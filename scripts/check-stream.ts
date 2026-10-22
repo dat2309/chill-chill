@@ -363,7 +363,7 @@ assert(mat.side === THREE.FrontSide, 'Terrain material uses FrontSide rendering 
 
 // 7. Raycast Water Interaction & Obstacle Verification Tests
 import { intersectGardenWater } from '../src/three/themes/garden/streamProfile.js';
-import { createArchitecture } from '../src/three/themes/garden/architecture.js';
+import { createArchitecture, GARDEN_STEPPING_STONES } from '../src/three/themes/garden/architecture.js';
 
 // A. Oblique camera raycast tests across stream height profile at both High and Low tides
 const cameraPos = new THREE.Vector3(16.0, 15.2, 27.5);
@@ -566,20 +566,20 @@ deckPoints.forEach(dp => {
 });
 assert(decksGrounded, 'All glamping decks and cabin rest securely on stable plateau meadow terrain', deckFailMsg);
 
-// 8.3 Architecture Verification: Complete absence of outdoor stone staircases & stray snow caps
+// 8.3 Architecture Verification: Complete absence of archery targets, outdoor stone staircases & stray snow caps
 const archSys = createArchitecture(gardenScene, (x, z) => terrainSys.getHeightAt(x, z));
-let hasStairMeshes = false;
-let stairMeshName = '';
+let hasForbiddenMeshes = false;
+let forbiddenMeshName = '';
 
 archSys.group.traverse((obj) => {
-  if (obj.name && /stair/i.test(obj.name)) {
-    hasStairMeshes = true;
-    stairMeshName = obj.name;
+  if (obj.name && /stair|archery|target|flight|landing/i.test(obj.name)) {
+    hasForbiddenMeshes = true;
+    forbiddenMeshName = obj.name;
   }
 });
-assert(!hasStairMeshes, 'Architecture system has zero outdoor stone staircase meshes or helper objects', stairMeshName);
+assert(!hasForbiddenMeshes, 'Architecture system has zero archery targets or outdoor staircase meshes', forbiddenMeshName);
 
-// 8.4 Winter Season: Verify no floating or orphaned snow caps where stairs used to be
+// 8.4 Winter Season: Verify no floating or orphaned snow caps across slopes or former feature sites
 archSys.updateSeason('winter', 1.0);
 const snowMeshes: THREE.Mesh[] = [];
 archSys.group.traverse((obj) => {
@@ -593,9 +593,10 @@ archSys.group.traverse((obj) => {
 
 let orphanSnowFound = false;
 let orphanSnowMsg = '';
-const oldStairZones = [
+const formerFeatureZones = [
   { minX: -6.7, maxX: -5.2, minZ: 0.10, maxZ: 4.20, name: 'West former stair corridor' },
   { minX: -2.3, maxX: -0.8, minZ: 0.35, maxZ: 4.50, name: 'East former stair corridor' },
+  { minX: -6.8, maxX: -5.2, minZ: -3.1, maxZ: -1.9, name: 'Former archery area' },
 ];
 
 snowMeshes.forEach((mesh) => {
@@ -605,7 +606,7 @@ snowMeshes.forEach((mesh) => {
   for (let i = 0; i < posAttr.count; i++) {
     v.fromBufferAttribute(posAttr, i);
     mesh.localToWorld(v);
-    oldStairZones.forEach(zone => {
+    formerFeatureZones.forEach(zone => {
       if (v.x >= zone.minX && v.x <= zone.maxX && v.z >= zone.minZ && v.z <= zone.maxZ) {
         orphanSnowFound = true;
         orphanSnowMsg = `Orphaned snow vertex found at (${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}) inside ${zone.name}`;
@@ -613,35 +614,81 @@ snowMeshes.forEach((mesh) => {
     });
   }
 });
-assert(!orphanSnowFound, 'Winter season has zero floating or orphaned snow caps across the hillside slopes', orphanSnowMsg);
+assert(!orphanSnowFound, 'Winter season has zero floating or orphaned snow caps across slopes or former feature zones', orphanSnowMsg);
 
-// 8.5 Flagstone walking paths grounded on solid terrain
-const testFlagstones = [
-  { x: -4.4, z: -1.6, name: 'Dome 1 to Campfire' },
-  { x: -2.4, z: -1.0, name: 'Dome 2 to Campfire' },
-  { x: -3.9, z: -0.3, name: 'Dome 3 to Campfire' },
-  { x: -1.5, z: -2.1, name: 'Cabin to Campfire' },
-  { x: -3.5, z: 0.35, name: 'Meadow Overlook' },
-  { x: -5.6, z: -1.1, name: 'Dome 1 to Picnic' },
-  { x: 4.5,  z: 2.7,  name: 'Right Bank Beach Path' },
-];
-let allFlagstonesGrounded = true;
-let flagstoneFailMsg = '';
-testFlagstones.forEach(pt => {
-  const meshY = getMeshElevationAt(pt.x, pt.z);
-  if (!Number.isFinite(meshY) || meshY < 0.20 || meshY > 2.0) {
-    allFlagstonesGrounded = false;
-    flagstoneFailMsg = `${pt.name} at (${pt.x}, ${pt.z}) has invalid elevation ${meshY}`;
+// 8.5 Natural Stepping Stone Trail: Grounding, Slope Compliance & Water Clearance
+let allStonesInside = true;
+let stoneInsideFail = '';
+let allStonesDry = true;
+let stoneDryFail = '';
+let allStonesGrounded = true;
+let stoneGroundFail = '';
+
+GARDEN_STEPPING_STONES.forEach((st, idx) => {
+  // Check diorama boundary
+  if (!isInsideGardenFootprint(st.x, st.z, 0.15)) {
+    allStonesInside = false;
+    stoneInsideFail = `Stone #${idx} at (${st.x}, ${st.z}) is outside garden footprint`;
+  }
+  // Check dry ground (never in water at high tide)
+  if (isInWater(st.x, st.z, 0.07)) {
+    allStonesDry = false;
+    stoneDryFail = `Stone #${idx} at (${st.x}, ${st.z}) is submerged under water at high tide`;
+  }
+  // Check terrain grounding
+  const meshY = getMeshElevationAt(st.x, st.z);
+  if (!Number.isFinite(meshY) || meshY < 0.35 || meshY > 1.65) {
+    allStonesGrounded = false;
+    stoneGroundFail = `Stone #${idx} at (${st.x}, ${st.z}) has invalid terrain elevation ${meshY}`;
   }
 });
-assert(allFlagstonesGrounded, 'All remaining flagstone path stones rest cleanly on solid terrain', flagstoneFailMsg);
 
-// 8.6 Natural slope accent boulders stability
-const slopeBoulderY = getMeshElevationAt(-2.60, 2.40);
+assert(allStonesInside, 'All natural stepping stones reside safely within the diorama display footprint', stoneInsideFail);
+assert(allStonesDry, 'All natural stepping stones remain strictly on dry land above high tide water level', stoneDryFail);
+assert(allStonesGrounded, 'All natural stepping stones contact solid bedrock/topsoil with valid elevations', stoneGroundFail);
+
+// 8.6 Natural slope descent continuity along the hillside trail segment
+// Stones from z=0.80 to z=3.70
+const hillsideStones = GARDEN_STEPPING_STONES.filter(s => s.x < -1.4 && s.x > -2.7 && s.z >= 0.75 && s.z <= 3.80);
+let hillsideContinuous = true;
+let hillsideFailMsg = '';
+for (let i = 1; i < hillsideStones.length; i++) {
+  const prevY = getMeshElevationAt(hillsideStones[i - 1].x, hillsideStones[i - 1].z);
+  const currY = getMeshElevationAt(hillsideStones[i].x, hillsideStones[i].z);
+  const drop = prevY - currY;
+  // Should descend comfortably without vertical cliffs or upward reversals
+  if (drop < -0.05 || drop > 0.25) {
+    hillsideContinuous = false;
+    hillsideFailMsg = `Step ${i - 1}->${i}: drop ${drop.toFixed(3)}m is outside natural trail descent range [-0.05, 0.25]`;
+    break;
+  }
+}
 assert(
-  slopeBoulderY >= 0.40 && slopeBoulderY <= 1.0,
-  `Natural slope accent boulder at (-2.60, 2.40) rests securely on slope bedrock (elevation: ${slopeBoulderY.toFixed(3)}m)`
+  hillsideContinuous && hillsideStones.length >= 7,
+  'Hillside stepping stone trail descends gently and continuously without cliffs or stairs',
+  hillsideFailMsg
 );
+
+// 8.7 Landscape boulder clearance from all stepping stones (>0.60m)
+const boulderSpotsToCheck = [
+  { x: -0.25, z: 3.30, name: 'Boulder 1' },
+  { x: 4.60,  z: 3.60, name: 'Boulder 2' },
+  { x: -2.60, z: 2.40, name: 'Boulder 3' },
+  { x: 2.80,  z: -2.60, name: 'Boulder 4' },
+  { x: 5.20,  z: 5.80, name: 'Boulder 5' },
+];
+let boulderConflict = false;
+let boulderConflictMsg = '';
+boulderSpotsToCheck.forEach(b => {
+  GARDEN_STEPPING_STONES.forEach((st, idx) => {
+    const dist = Math.hypot(b.x - st.x, b.z - st.z);
+    if (dist < 0.60) {
+      boulderConflict = true;
+      boulderConflictMsg = `${b.name} at (${b.x}, ${b.z}) obstructs stepping stone #${idx} (${st.x}, ${st.z}) at distance ${dist.toFixed(3)}m < 0.60m`;
+    }
+  });
+});
+assert(!boulderConflict, 'All landscape boulders maintain generous clearance (>0.60m) from all walking path stones', boulderConflictMsg);
 
 archSys.dispose();
 terrainSys.dispose();

@@ -9,6 +9,7 @@ import {
 } from './constants';
 import { SeededRandom, simplexNoise3D } from './noise';
 import { isInsideGardenFootprint } from './footprint';
+import { GARDEN_STEPPING_STONES } from './architecture';
 
 export interface VegetationSystem {
   group: THREE.Group;
@@ -32,7 +33,6 @@ const EXCLUSION_BOXES: ExclusionBox[] = [
   { minX: -2.0, maxX: 0.1,  minZ: -3.6, maxZ: -1.2 }, // Cabin & deck
   { minX: -3.8, maxX: -2.6, minZ: -1.4, maxZ: -0.2 }, // Campfire
   { minX: -7.0, maxX: -5.4, minZ: -1.2, maxZ: 0.2 },  // Picnic table
-  { minX: -6.8, maxX: -5.2, minZ: -3.1, maxZ: -1.9 }, // Archery
   { minX: 4.4,  maxX: 6.4,  minZ: 3.4,  maxZ: 5.5 },  // SUP board & beach props on bank
 ];
 
@@ -40,6 +40,19 @@ function isInsideBuildingExclusion(x: number, z: number, pad: number = 0.2): boo
   for (let i = 0; i < EXCLUSION_BOXES.length; i++) {
     const b = EXCLUSION_BOXES[i];
     if (x >= b.minX - pad && x <= b.maxX + pad && z >= b.minZ - pad && z <= b.maxZ + pad) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isNearWalkingTrail(x: number, z: number, clearance = 0.35): boolean {
+  for (let i = 0; i < GARDEN_STEPPING_STONES.length; i++) {
+    const st = GARDEN_STEPPING_STONES[i];
+    const r = (st.r ?? 0.22) + clearance;
+    const dx = x - st.x;
+    const dz = z - st.z;
+    if (dx * dx + dz * dz < r * r) {
       return true;
     }
   }
@@ -369,7 +382,7 @@ export function createVegetation(
     const x = vRng.range(-halfW + 0.8, halfW - 0.8);
     const z = vRng.range(-halfD + 0.8, halfD - 0.8);
 
-    if (!isInsideGardenFootprint(x, z, 0.40) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.25) || isNearCampActivity(x, z)) continue;
+    if (!isInsideGardenFootprint(x, z, 0.40) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.25) || isNearCampActivity(x, z) || isNearWalkingTrail(x, z, 0.35)) continue;
     const h = getHeightAt(x, z);
     if (h < WATER_LEVEL + 0.05) continue;
     const slope = getSlopeAt(x, z);
@@ -438,13 +451,13 @@ export function createVegetation(
 
   // 10 distinct asymmetrical botanical clusters across meadow, slopes and banks
   const flowerBeds = [
-    { cx: -4.3, cz: -1.0, colIdx: 0, radius: 0.50 },  // Pink Cosmos bed near dome 3 rear flank
-    { cx: -1.6, cz: -0.7, colIdx: 1, radius: 0.55 },  // White Chamomile bed near dome 2 flank
-    { cx: -5.3, cz: -1.5, colIdx: 2, radius: 0.60 },  // Golden Buttercup bed near dome 1
-    { cx: -3.6, cz: 0.45, colIdx: 0, radius: 0.50 },  // Pink cluster along meadow edge
+    { cx: -4.3, cz: -1.0, colIdx: 0, radius: 0.45 },  // Pink Cosmos bed near dome 3 rear flank
+    { cx: -1.6, cz: -0.5, colIdx: 1, radius: 0.45 },  // White Chamomile bed near dome 2 flank
+    { cx: -4.8, cz: -2.8, colIdx: 2, radius: 0.50 },  // Golden Buttercup bed behind dome 1
+    { cx: -3.4, cz: 0.95, colIdx: 0, radius: 0.45 },  // Pink cluster along meadow edge
     { cx: -5.8, cz: 1.80, colIdx: 2, radius: 0.55 },  // Golden Buttercup on west natural slope
     { cx: -2.7, cz: 2.30, colIdx: 1, radius: 0.45 },  // White Chamomile cluster on natural slope
-    { cx: -1.7, cz: 2.20, colIdx: 0, radius: 0.50 },  // Pink Cosmos on east natural slope
+    { cx: -1.1, cz: 2.10, colIdx: 0, radius: 0.45 },  // Pink Cosmos on east natural slope flank
     { cx: 3.8,  cz: 2.10, colIdx: 2, radius: 0.70 },  // Golden bed on right bank
     { cx: 4.6,  cz: 3.00, colIdx: 0, radius: 0.65 },  // Pink bed on right bank
     { cx: 5.3,  cz: 3.60, colIdx: 1, radius: 0.55 },  // White bed above pebble beach
@@ -461,7 +474,7 @@ export function createVegetation(
     const fx = bed.cx + Math.cos(ang) * rDist;
     const fz = bed.cz + Math.sin(ang) * rDist;
 
-    if (!isInsideGardenFootprint(fx, fz, 0.30) || isInStream(fx, fz) || isInsideBuildingExclusion(fx, fz, 0.08)) continue;
+    if (!isInsideGardenFootprint(fx, fz, 0.30) || isInStream(fx, fz) || isInsideBuildingExclusion(fx, fz, 0.08) || isNearWalkingTrail(fx, fz, 0.18)) continue;
     const fh = getHeightAt(fx, fz);
     if (fh < WATER_LEVEL + 0.05) continue;
     if (getSlopeAt(fx, fz) > 0.40) continue;
@@ -554,7 +567,7 @@ export function createVegetation(
     const x = vRng.range(-halfW + 0.5, halfW - 0.5);
     const z = vRng.range(-halfD + 0.5, halfD - 0.5);
 
-    if (!isInsideGardenFootprint(x, z, 0.30) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z)) continue;
+    if (!isInsideGardenFootprint(x, z, 0.30) || isInStream(x, z) || isInsideBuildingExclusion(x, z, 0.15) || isNearCampActivity(x, z) || isNearWalkingTrail(x, z, 0.08)) continue;
     const h = getHeightAt(x, z);
     if (h < WATER_LEVEL + 0.04) continue;
     const slope = getSlopeAt(x, z);
