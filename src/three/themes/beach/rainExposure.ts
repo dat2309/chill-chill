@@ -12,9 +12,28 @@ export function getBungalowFloorHeight(spot: {x:number;z:number;rotationY:number
   return Math.max(height(spot.x,spot.z)+.45,highest+.14);
 }
 
+/** Compact veranda access; only its lower landing follows terrain, the house remains unchanged. */
+export function getBungalowAccess(spot:{x:number;z:number;rotationY:number;accessOffsetX?:number},height=getTerrainHeight){
+  const floorTop=getBungalowFloorHeight(spot,height)+.04,run=.22,centerX=spot.accessOffsetX??0;
+  const transform=new THREE.Matrix4().makeRotationY(spot.rotationY).setPosition(spot.x,0,spot.z);
+  const point=new THREE.Vector3();let count=5,landing=0;
+  for(let pass=0;pass<8;pass++){
+    let highest=-Infinity;
+    for(let ix=0;ix<=8;ix++)for(let iz=0;iz<=4;iz++){
+      point.set(centerX-.4+ix*.1,0,1.05+(count-1)*run+iz*run/4).applyMatrix4(transform);
+      highest=Math.max(highest,height(point.x,point.z));
+    }
+    landing=highest+.14;
+    const next=Math.max(3,Math.min(7,Math.ceil((floorTop-landing)/.20)));
+    if(next===count)break;count=next;
+  }
+  const rise=(floorTop-landing)/count;
+  return {floorTop,run,count,rise,centerX,treads:Array.from({length:count},(_,i)=>({z:1.05+(i+.5)*run,top:floorTop-(i+1)*rise}))};
+}
+
 const covers = BUNGALOW_SPOTS.map(spot => ({ ...spot,
   cos: Math.cos(spot.rotationY), sin: Math.sin(spot.rotationY),
-  floor: getBungalowFloorHeight(spot),
+  floor: getBungalowFloorHeight(spot), access:getBungalowAccess(spot),
 }));
 const umbrellaTop = getTerrainHeight(-3.3,.3)+1.47;
 const umbrellaNormals = Array.from({length:8},(_,i)=>{
@@ -33,7 +52,7 @@ export function getBeachCoverHeight(x: number, z: number): number {
     const floor = spot.floor;
     if (edge <= 1) height = Math.max(height, floor + 2.33 - 1.2 * edge);
     if (Math.abs(lx) <= 1.05 && Math.abs(lz) <= 1.05) height = Math.max(height, floor + .04);
-    if (Math.abs(lx) <= .4 && Math.abs(lz - 1.25) <= .2) height = Math.max(height, floor - .14);
+    for(const tread of spot.access.treads)if(Math.abs(lx-spot.access.centerX)<=.40001&&Math.abs(lz-tread.z)<=spot.access.run/2+.00001)height=Math.max(height,tread.top);
   }
   if (Math.abs(x - PIER_CONFIG.startX) <= PIER_CONFIG.width / 2 && z >= PIER_CONFIG.startZ && z <= PIER_CONFIG.endZ) {
     height = Math.max(height, PIER_CONFIG.deckElevation + .04);
@@ -51,7 +70,7 @@ export const BEACH_COVER_GLSL = `
 float beachCoverHeight(vec2 p) {
   float height = -1000.0;
   ${BUNGALOW_SPOTS.map(spot => {
-    const floor = getBungalowFloorHeight(spot);
+    const floor = getBungalowFloorHeight(spot), access=getBungalowAccess(spot);
     const c = Math.cos(spot.rotationY), s = Math.sin(spot.rotationY);
     return `{
       vec2 d = p - vec2(${spot.x.toFixed(8)},${spot.z.toFixed(8)});
@@ -59,7 +78,7 @@ float beachCoverHeight(vec2 p) {
       float edge = max(abs(local.x)/${(1.65/Math.SQRT2*1.15).toFixed(9)},abs(local.y+.15)/${(1.65/Math.SQRT2*1.05).toFixed(9)});
       if(edge <= 1.0) height=max(height,${(floor+2.33).toFixed(8)}-1.2*edge);
       if(abs(local.x)<=1.05 && abs(local.y)<=1.05) height=max(height,${(floor+.04).toFixed(8)});
-      if(abs(local.x)<=.4 && abs(local.y-1.25)<=.2) height=max(height,${(floor-.14).toFixed(8)});
+      ${access.treads.map(t=>`if(abs(local.x-(${access.centerX.toFixed(8)}))<=.40001 && abs(local.y-(${t.z.toFixed(8)}))<=.11001) height=max(height,${t.top.toFixed(8)});`).join('\n')}
     }`;
   }).join('\n')}
   if(abs(p.x-(${PIER_CONFIG.startX.toFixed(8)}))<=${(PIER_CONFIG.width/2).toFixed(8)} && p.y>=${PIER_CONFIG.startZ.toFixed(8)} && p.y<=${PIER_CONFIG.endZ.toFixed(8)}) height=max(height,${(PIER_CONFIG.deckElevation+.04).toFixed(8)});

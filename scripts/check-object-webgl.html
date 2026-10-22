@@ -59,6 +59,14 @@ try{
  snap(bs,close(attachment,new THREE.Vector3(3,1,4),4),'Palm continuous tapered trunk, crown and flexible fronds');
 
  const bungalow=beach.group.getObjectByName('Bungalow_0');const bp=bungalow.getWorldPosition(new THREE.Vector3());snap(bs,close(bp.clone().add(new THREE.Vector3(0,.8,0)),new THREE.Vector3(4,1.2,5),4.8),'Bungalow full deck and actual support feet');
+ for(let i=0;i<3;i++){
+ const house=beach.group.getObjectByName(`Bungalow_${i}`),access=house.getObjectByName('VerandaAccess');check(!!access,`Bungalow ${i} has grounded structural access`);
+ const target=new THREE.Box3().setFromObject(access).getCenter(new THREE.Vector3()),q=house.getWorldQuaternion(new THREE.Quaternion());
+ snap(bs,close(target,new THREE.Vector3(2,1.4,3).applyQuaternion(q),3.5),`Bungalow ${i}: short access, deck joint and feet`);
+ snap(bs,close(target,new THREE.Vector3(4,.65,.1).applyQuaternion(q),3.1),`Bungalow ${i}: side, tread levels and terrain contact`);
+ const vegetation=beach.group.getObjectByName('BeachVegetation'),rocks=beach.group.getObjectByName('BeachBoulders'),others=[0,1,2].filter(j=>j!==i).map(j=>beach.group.getObjectByName(`Bungalow_${j}`));vegetation.visible=false;rocks.visible=false;others.forEach(o=>o.visible=false);
+ snap(bs,close(target,new THREE.Vector3(-3,.9,2).applyQuaternion(q),3.1),`Bungalow ${i}: isolated structural joints (other houses/vegetation/rocks hidden for inspection)`);vegetation.visible=true;rocks.visible=true;others.forEach(o=>o.visible=true);
+ }
  for(const type of ['thung','ghe']){const p=BOAT_SPOTS[type];const target=new THREE.Vector3(p.x,.5,p.z);snap(bs,close(target,new THREE.Vector3(2,1.6,2),type==='ghe'?3.5:2),'Boat '+type+' · oblique');snap(bs,close(target,new THREE.Vector3(0,5,.001),type==='ghe'?3.5:2),'Boat '+type+' · top');snap(bs,close(target,new THREE.Vector3(3,.5,0),type==='ghe'?3.5:2),'Boat '+type+' · side')}
  step(beach,'rainy',40,1.2);snap(bs,bc,'Beach sustained rain · strong wind');snap(bs,close(bp.clone().add(new THREE.Vector3(0,1.2,0)),new THREE.Vector3(4,1.4,5),5.5),'Bungalow and palms · wet surfaces');step(beach,'dry',.7,.05);snap(bs,bc,'Beach rainy→dry mid transition · low wind');step(beach,'rainy',.4,.05);snap(bs,bc,'Beach reversal to rain · retained moisture');step(beach,'dry',15,.05);snap(bs,bc,'Beach after rain · same camera/time/tide');snap(bs,close(new THREE.Vector3(),new THREE.Vector3(0,35,.001),24),'Beach top');snap(bs,close(new THREE.Vector3(),new THREE.Vector3(25,8,17),22),'Beach side');
  beach.dispose();check(errors.length===0,'No WebGL shader/runtime errors');document.querySelector('#result').textContent=JSON.stringify({status:'PASS',checks,errors,renderer:gl.getParameter(gl.RENDERER)});

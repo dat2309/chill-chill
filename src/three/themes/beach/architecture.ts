@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getBeachCoverHeight, getBungalowFloorHeight } from './rainExposure';
+import { getBeachCoverHeight, getBungalowFloorHeight, getBungalowAccess } from './rainExposure';
 import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason } from './constants';
 import { BUNGALOW_SPOTS, PIER_CONFIG } from './shoreline';
 
@@ -97,12 +97,31 @@ export function createBeachArchitecture(
     deckMesh.receiveShadow = true;
     bGroup.add(deckMesh);
 
-    // Front veranda step
-    const stepGeo = new THREE.BoxGeometry(0.8, 0.12, 0.4);
-    geometriesToDispose.push(stepGeo);
-    const stepMesh = new THREE.Mesh(stepGeo, deckMat);
-    stepMesh.position.set(0, floorH - 0.2, 1.25);
-    bGroup.add(stepMesh);
+    // Short structural access: treads seat on notched side beams, anchored beneath the deck.
+    const access=new THREE.Group();access.name='VerandaAccess';bGroup.add(access);
+    const plan=getBungalowAccess(spot,getHeightAt);access.position.x=plan.centerX;
+    const addAccess=(geometry:THREE.BufferGeometry,name:string,material=deckMat)=>{
+      geometriesToDispose.push(geometry);const mesh=new THREE.Mesh(geometry,material);mesh.name=name;mesh.castShadow=true;mesh.receiveShadow=true;access.add(mesh);return mesh;
+    };
+    for(const [i,tread]of plan.treads.entries()){
+      const geometry=new THREE.BoxGeometry(.8,.06,plan.run);
+      geometry.translate(0,tread.top-.03,tread.z);addAccess(geometry,`AccessTread_${i}`);
+    }
+    const last=plan.treads[plan.count-1],front=1.05+plan.count*plan.run;
+    const outline=new THREE.Shape();outline.moveTo(.91,plan.floorTop-.074);outline.lineTo(1.05,plan.floorTop-.074);
+    for(const tread of plan.treads){outline.lineTo(tread.z-plan.run/2,tread.top-.054);outline.lineTo(tread.z+plan.run/2,tread.top-.054);}
+    outline.lineTo(front,last.top-.174);outline.lineTo(.91,plan.floorTop-.23);outline.closePath();
+    for(const side of [-1,1]){
+      const beam=new THREE.ExtrudeGeometry(outline,{depth:.07,bevelEnabled:false});beam.rotateY(-Math.PI/2);beam.translate(side*.31+.035,0,0);
+      addAccess(beam,`AccessStringer_${side}`,postMat);
+      const top=last.top-.07,z=front-.065,x=side*.31;
+      const corners=[[-.045,-.045],[.045,-.045],[.045,.045],[-.045,.045]];
+      const ground=(px:number,pz:number)=>{const p=bGroup.localToWorld(new THREE.Vector3(px+plan.centerX,0,pz));p.y=getHeightAt(p.x,p.z)-.015;return bGroup.worldToLocal(p).y;};
+      const base=Math.min(...corners.map(([dx,dz])=>ground(x+dx,z+dz)));
+      const geometry=new THREE.BoxGeometry(.09,top-base,.09);geometry.translate(x,(top+base)/2,z);
+      const positions=geometry.getAttribute('position');for(let i=0;i<positions.count;i++)if(positions.getY(i)<base+.001)positions.setY(i,ground(positions.getX(i),positions.getZ(i)));
+      geometry.computeVertexNormals();addAccess(geometry,`AccessFoot_${side}`,postMat);
+    }
 
     // C. Woven Bamboo Walls
     const wallParts = [

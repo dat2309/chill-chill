@@ -7,6 +7,7 @@ import {getTerrainHeight,BOAT_SPOTS} from '../src/three/themes/beach/shoreline';
 import {createVegetation} from '../src/three/themes/garden/vegetation';
 import {GARDEN_STEPPING_STONES} from '../src/three/themes/garden/architecture';
 import {createTerrain} from '../src/three/themes/garden/terrain';
+import {createBeachVegetation} from '../src/three/themes/beach/vegetation';
 import {createBeachTerrain} from '../src/three/themes/beach/terrain';
 import {isInsideBeachFootprint} from '../src/three/themes/beach/footprint';
 import {getBeachCoverHeight} from '../src/three/themes/beach/rainExposure';
@@ -25,6 +26,48 @@ architecture.group.traverse(obj=>{
  maxSupportGap=Math.max(maxSupportGap,Math.abs(top.y-under.y));
 });
 check(posts===12&&maxFootGap<.012&&minFootGap>-.12&&maxSupportGap<.015,'Bungalow post footprints contact terrain and support the deck underside',JSON.stringify({posts,maxFootGap,minFootGap,maxSupportGap}));
+// Regression: veranda access must form a grounded, connected structural graph.
+let accessValid=true,accessFeet=0,accessPieces=0;const accessDetails:unknown[]=[];
+function worldTriangles(mesh:THREE.Mesh):THREE.Triangle[]{
+ const g=mesh.geometry,p=g.getAttribute('position'),idx=g.index,out:THREE.Triangle[]=[];
+ for(let i=0;i<(idx?.count??p.count);i+=3)out.push(new THREE.Triangle(...[0,1,2].map(j=>mesh.localToWorld(new THREE.Vector3().fromBufferAttribute(p,idx?idx.getX(i+j):i+j))) as [THREE.Vector3,THREE.Vector3,THREE.Vector3]));return out;
+}
+function contact(a:THREE.Mesh,b:THREE.Mesh):boolean{
+ const aa=worldTriangles(a),bb=worldTriangles(b),near=new THREE.Vector3(),hit=new THREE.Vector3();
+ for(const t of aa)for(const u of bb){
+  for(const [v,w]of [[t,u],[u,t]])for(const [p,q]of [[v.a,v.b],[v.b,v.c],[v.c,v.a]]){
+   if(p.distanceTo(w.closestPointToPoint(p,near))<.008)return true;
+   const length=p.distanceTo(q),ray=new THREE.Ray(p,q.clone().sub(p).normalize());
+   if(ray.intersectTriangle(w.a,w.b,w.c,false,hit)&&p.distanceTo(hit)<=length+.0001)return true;
+  }
+ }return false;
+}
+for(const bungalow of architecture.group.children.filter(o=>o.name.startsWith('Bungalow_'))){
+ const deck=bungalow.children.find(o=>o instanceof THREE.Mesh&&o.geometry.type==='BoxGeometry'&&(o.geometry as THREE.BoxGeometry).parameters.width===2.1) as THREE.Mesh;
+ const access=bungalow.getObjectByName('VerandaAccess');const pieces:THREE.Mesh[]=[];
+ if(access)access.traverse(o=>{if(o instanceof THREE.Mesh)pieces.push(o)});
+ else pieces.push(...bungalow.children.filter(o=>o instanceof THREE.Mesh&&o.geometry.type==='BoxGeometry'&&(o.geometry as THREE.BoxGeometry).parameters.width===.8) as THREE.Mesh[]);
+ const connected=new Set<THREE.Mesh>([deck]);let changed=true;
+ while(changed){changed=false;for(const p of pieces)if(!connected.has(p)&&[...connected].some(q=>contact(p,q))){connected.add(p);changed=true}}
+ let feet=0,footGap=0;for(const post of pieces.filter(o=>o.name.startsWith('AccessFoot'))){
+  feet++;const p=post.geometry.getAttribute('position'),n=post.geometry.getAttribute('normal');
+  for(let i=0;i<p.count;i++)if(n.getY(i)<-.1){const v=post.localToWorld(new THREE.Vector3().fromBufferAttribute(p,i));const gap=v.y-getTerrainHeight(v.x,v.z);footGap=Math.max(footGap,gap,-gap-.05);}
+ }
+ const treads=pieces.filter(o=>o.name.startsWith('AccessTread')||!access).sort((a,b)=>new THREE.Box3().setFromObject(b).max.y-new THREE.Box3().setFromObject(a).max.y);
+ let minTreadClearance=Infinity,maxLandingRise=0;const deckTop=new THREE.Box3().setFromObject(deck).max.y;let previous=deckTop,risesValid=treads.length>=3&&treads.length<=7,clear=true;
+ for(const tread of treads){const box=new THREE.Box3().setFromObject(tread);const rise=previous-box.max.y;if(rise<.10||rise>.22)risesValid=false;previous=box.max.y;
+  for(const tri of worldTriangles(tread))for(const v of [tri.a,tri.b,tri.c,tri.getMidpoint(new THREE.Vector3())]){const gap=v.y-getTerrainHeight(v.x,v.z);minTreadClearance=Math.min(minTreadClearance,gap);if(gap<.015||v.y>deckTop-.02)clear=false;}
+ }
+ if(treads.length){const low=treads[treads.length-1];const p=low.geometry.getAttribute('position');for(let i=0;i<p.count;i++){const v=low.localToWorld(new THREE.Vector3().fromBufferAttribute(p,i));if(Math.abs(v.y-previous)<.001){const gap=v.y-getTerrainHeight(v.x,v.z);maxLandingRise=Math.max(maxLandingRise,gap);if(gap>.30)clear=false;}}}
+ deck.geometry.computeBoundingBox();const deckBounds=deck.geometry.boundingBox!;
+ for(const part of pieces)for(const tri of worldTriangles(part))for(const p of [tri.a,tri.b,tri.c]){
+  const local=deck.worldToLocal(p.clone());
+  if(local.x>=deckBounds.min.x&&local.x<=deckBounds.max.x&&local.z>=deckBounds.min.z&&local.z<=deckBounds.max.z&&local.y>deckBounds.min.y+.015)clear=false;
+ }
+ const ok=pieces.length>3&&connected.size===pieces.length+1&&feet>=2&&footGap<.008&&risesValid&&clear;accessValid&&=ok;accessFeet+=feet;accessPieces+=pieces.length;
+ accessDetails.push({bungalow:bungalow.name,ok,parts:pieces.length,connected:connected.size-1,feet,footGap,risesValid,clear,minTreadClearance,maxLandingRise});
+}
+check(accessValid&&accessFeet>=6,'All bungalow access parts connect to decks, have grounded full support feet and usable clear treads',JSON.stringify({accessPieces,accessFeet,accessDetails}));
 const garden=createArchitecture(new THREE.Scene(),(x,z)=>computeRawTerrainHeight(x,z).height);garden.group.updateMatrixWorld(true);
 const snow=garden.group.children.find(o=>o instanceof THREE.Mesh&&(o.material as THREE.MeshStandardMaterial).transparent&&(o.material as THREE.MeshStandardMaterial).opacity===0) as THREE.Mesh;
 let maxSnowDistance=0,minSigned=Infinity,snowSamples=0;
@@ -143,6 +186,31 @@ for(let i=0;i<grass.count;i++){
 }
 check(grass.count>100&&grassClear,'Clustered grass blade footprints preserve walking-stone clearance including a wind margin');
 const beachTerrain=createBeachTerrain(new THREE.Group());let rocksSeated=true,rockCount=0;
+const coastalVegetation=createBeachVegetation(new THREE.Group(),getTerrainHeight,()=>0);coastalVegetation.group.updateMatrixWorld(true);
+const obstacles:THREE.Mesh[]=[];
+for(const root of [coastalVegetation.group,beachTerrain.group,architecture.group])root.traverse(o=>{
+ if(!(o instanceof THREE.Mesh))return;
+ let inBungalow=false;for(let parent=o.parent;parent;parent=parent.parent)if(parent.name.startsWith('Bungalow_'))inBungalow=true;
+ if(o===beachTerrain.group.getObjectByName('BeachBoulders')||root===coastalVegetation.group||(root===architecture.group&&!inBungalow)){
+  if(o instanceof THREE.InstancedMesh){for(let i=0;i<o.count;i++){const im=new THREE.Matrix4();o.getMatrixAt(i,im);const copy=new THREE.Mesh(o.geometry,o.material);copy.matrixAutoUpdate=false;copy.matrix.copy(o.matrixWorld).multiply(im);copy.updateMatrixWorld(true);obstacles.push(copy);}}
+  else obstacles.push(o);
+ }
+});
+let accessObstacleClear=true,accessRainCovered=true,obstaclePairs=0;
+for(const bungalow of architecture.group.children.filter(o=>o.name.startsWith('Bungalow_'))){
+ const access=bungalow.getObjectByName('VerandaAccess');if(!access){accessObstacleClear=false;continue;}
+ access.traverse(o=>{if(!(o instanceof THREE.Mesh))return;
+  const box=new THREE.Box3().setFromObject(o);
+  for(const obstacle of obstacles){if(!box.clone().expandByScalar(.06).intersectsBox(new THREE.Box3().setFromObject(obstacle)))continue;obstaclePairs++;if(contact(o,obstacle))accessObstacleClear=false;}
+  if(o.name.startsWith('AccessTread')){
+   const box=new THREE.Box3().setFromObject(o);
+   for(const tri of worldTriangles(o))for(const p of [tri.a,tri.b,tri.c])if(Math.abs(p.y-box.max.y)<.001&&getBeachCoverHeight(p.x,p.z)<p.y-.0001)accessRainCovered=false;
+  }
+ });
+}
+check(accessObstacleClear,'Complete access geometry clears actual trees, rocks and existing outdoor props',`nearbyPairs=${obstaclePairs}`);
+check(accessRainCovered,'Rain collision covers actual world tread corners at their real elevations');
+coastalVegetation.dispose();
 for(const [system,name,height] of [[terrain,'GardenBoulders',terrain.getHeightAt],[beachTerrain,'BeachBoulders',beachTerrain.getHeightAt]] as const){
  const rock=system.group.getObjectByName(name) as THREE.InstancedMesh,p=rock.geometry.getAttribute('position');
  for(let i=0;i<rock.count;i++){

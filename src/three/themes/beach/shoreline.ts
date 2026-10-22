@@ -219,7 +219,7 @@ export const PIER_CONFIG = {
  * Low thatched bungalows nestled in the upper terrace, with clear sand pathways.
  */
 export const BUNGALOW_SPOTS = [
-  { x: -5.0, z: -1.6, rotationY: 0.18 }, // West Cove Bungalow
+  { x: -5.0, z: -1.6, rotationY: 0.18, accessOffsetX: -.26 }, // West Cove Bungalow
   { x: 2.2,  z: -1.8, rotationY: -0.22 }, // East Cove Bungalow
   { x: 5.5,  z: -2.8, rotationY: -0.38 }, // East Garden Bungalow
 ];
