@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PHUQUOC_COLORS } from './constants';
+import { BEACH_COLORS, PHUQUOC_COLORS } from './constants';
 import { BOAT_SPOTS } from './shoreline';
 
 export interface BoatCavityState {
@@ -7,7 +7,7 @@ export interface BoatCavityState {
   gheInvMatrix: THREE.Matrix4;
 }
 
-export interface PhuQuocBoatsSystem {
+export interface BeachBoatsSystem {
   group: THREE.Group;
   thungGroup: THREE.Group;
   gheGroup: THREE.Group;
@@ -15,6 +15,7 @@ export interface PhuQuocBoatsSystem {
   update(dt: number, elapsed: number, waterLevel: number, windStrength: number, flowSpeed: number): void;
   dispose(): void;
 }
+export type PhuQuocBoatsSystem = BeachBoatsSystem;
 
 /**
  * Standardized Boat Design Specifications (local coordinates):
@@ -380,7 +381,7 @@ export function isInsideThungCavity(local: THREE.Vector3): boolean {
  * Evaluates whether a world-space point falls inside either boat's open cockpit cavity,
  * taking into account the boat's full 3D position, wave heave, yaw, pitch, and roll.
  */
-export function isPointInBoatCavity(worldPos: THREE.Vector3, boats: PhuQuocBoatsSystem): boolean {
+export function isPointInBoatCavity(worldPos: THREE.Vector3, boats: BeachBoatsSystem): boolean {
   const cavities = boats.getCavities();
   const thungLoc = worldPos.clone().applyMatrix4(cavities.thungInvMatrix);
   if (isInsideThungCavity(thungLoc)) return true;
@@ -391,9 +392,9 @@ export function isPointInBoatCavity(worldPos: THREE.Vector3, boats: PhuQuocBoats
   return false;
 }
 
-export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem {
+export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   const boatsGroup = new THREE.Group();
-  boatsGroup.name = 'PhuQuocBoats';
+  boatsGroup.name = 'BeachBoats';
   parentGroup.add(boatsGroup);
 
   const geometriesToDispose: THREE.BufferGeometry[] = [];
@@ -849,3 +850,5 @@ export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem
     },
   };
 }
+
+export const createPhuQuocBoats = createBeachBoats;

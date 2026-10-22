@@ -17,7 +17,7 @@
 - Mỗi chủ đề có bố cục riêng. Không dùng chung một công thức bán kính hoặc một silhouette cho tất cả chủ đề.
 - Thiết kế các khối lớn và khoảng trống trước khi thêm chi tiết. Chuyển tiếp đường bao mềm, lồi/lõm có chủ đích; không tạo gai bằng nhiễu tần số cao.
 - Garden: giữ chiều sâu núi → thềm glamping → sườn dốc tự nhiên → bờ suối và hồ nông tiền cảnh. Dùng lối đi lót đá men theo địa hình, không có bia bắn cung và hai tuyến cầu thang ngoài trời; cây không che kín dome, cabin hoặc dòng suối.
-- Phú Quốc: giữ bản sắc bãi cát cong, mũi đá, cụm dừa và biển nông chuyển sâu. Phân biệt bờ đảo với biên trưng bày của vùng biển; không ép cả vùng biển thành chiếc đĩa tròn.
+- Sunset Beach (beach): giữ bản sắc bãi cát cong, mũi đá, cụm dừa và biển nông chuyển sâu. Phân biệt bờ đảo với biên trưng bày của vùng biển; không ép cả vùng biển thành chiếc đĩa tròn.
 - Chủ đề mới phải xác định điểm nhấn, tiền cảnh, trung cảnh, hậu cảnh và hình dáng đế phù hợp trước khi dựng chi tiết.
 - Cây mọc thành cụm có tầng cao thấp; chừa đường nhìn và khoảng trống quanh điểm nhấn. Đế có tỷ lệ gọn và bóng tiếp xúc phù hợp.
 
@@ -47,7 +47,7 @@
 - Shader và logic đối tượng (thuyền thúng, ghe nhỏ, cá, cây cối...) phải đồng bộ công thức sóng, chuyển động và phản ứng môi trường. Độ cao sóng và độ dốc sóng trên CPU và GPU phải đồng nhất tuyệt đối để vật thể nổi ăn khớp hoàn hảo với waterline, không bị chìm, bay lơ lửng hay hở nước vào khoang.
 - Đóng băng và tan băng phải chuyển tiếp mượt mà theo thời gian qua dt (frame-rate independent), có phân vùng tự nhiên theo độ sâu và dòng chảy: mép nông và vùng nước tĩnh đóng băng trước, có thể giữ dòng chảy lỏng ở lòng suối sâu trung tâm.
 - Mưa biển tác động đồng thời và hài hòa lên độ cao sóng swell, bọt sóng vỡ tự nhiên (không dùng dải contour song song cứng), độ đục (turbidity), độ nhám tán xạ bề mặt và độ chao đảo của phương tiện nổi. Gió hiệu dụng tăng vừa phải theo mưa, không biến cảnh thành bão quá mức.
-- Giữ vững bản sắc và khí hậu từng chủ đề: Chillax Garden là thung lũng suối ôn đới có chu kỳ 4 mùa với băng tuyết mùa đông; Phú Quốc là biển đảo nhiệt đới chỉ có mùa khô và mùa mưa, không áp đặt tuyết hoặc đóng băng vào vùng biển nhiệt đới.
+- Giữ vững bản sắc và khí hậu từng chủ đề: Chillax Garden là thung lũng suối ôn đới có chu kỳ 4 mùa với băng tuyết mùa đông; Sunset Beach (beach) là biển đảo nhiệt đới chỉ có mùa khô và mùa mưa, không áp đặt tuyết hoặc đóng băng vào vùng biển nhiệt đới.
 - Thao tác tương tác của người dùng (slider điều khiển, click tạo sóng) phải tương thích với trạng thái vật lý thực tế: trên mặt băng đóng kín không tạo sóng nước lỏng; ở vùng nước hở vẫn tương tác bình thường; slider gió kết hợp mượt mà với preset thời tiết theo biên độ rõ ràng.
 
 ## Kiểm tra và review

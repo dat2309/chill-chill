@@ -1,23 +1,24 @@
 import * as THREE from 'three';
-import { DIORAMA_WIDTH, DIORAMA_DEPTH, PhuQuocSeason } from './constants';
+import { DIORAMA_WIDTH, DIORAMA_DEPTH, BeachSeason, PhuQuocSeason } from './constants';
 import { Quality } from '../../core/types';
 
-export interface PhuQuocWeatherSystem {
+export interface BeachWeatherSystem {
   group: THREE.Group;
   update(dt: number, elapsed: number, windStrength: number, waterLevel?: number): void;
-  setSeason(targetSeason: PhuQuocSeason): void;
+  setSeason(targetSeason: BeachSeason): void;
   setQuality(quality: Quality): void;
   getRainIntensity(): number;
   dispose(): void;
 }
+export type PhuQuocWeatherSystem = BeachWeatherSystem;
 
-export function createPhuQuocWeather(
+export function createBeachWeather(
   parentGroup: THREE.Group,
-  onSeasonProgress: (season: PhuQuocSeason, progress: number) => void,
+  onSeasonProgress: (season: BeachSeason, progress: number) => void,
   onRainSplash?: (x: number, z: number, strength: number) => void
-): PhuQuocWeatherSystem {
+): BeachWeatherSystem {
   const weatherGroup = new THREE.Group();
-  weatherGroup.name = 'PhuQuocWeather';
+  weatherGroup.name = 'BeachWeather';
   parentGroup.add(weatherGroup);
 
   const MAX_RAINDROPS = 900;
@@ -63,8 +64,8 @@ export function createPhuQuocWeather(
   weatherGroup.add(rainLines);
 
   // Transition state: snapshot-based smooth blend
-  let currentSeason: PhuQuocSeason = 'dry';
-  let targetSeason: PhuQuocSeason = 'dry';
+  let currentSeason: BeachSeason = 'dry';
+  let targetSeason: BeachSeason = 'dry';
   let transitionProgress = 1.0;
   let startOpacity = 0.0;
   let targetOpacity = 0.0;
@@ -152,7 +153,7 @@ export function createPhuQuocWeather(
         rainGeo.attributes.position.needsUpdate = true;
       }
     },
-    setSeason(newSeason: PhuQuocSeason) {
+    setSeason(newSeason: BeachSeason) {
       if (newSeason === targetSeason) return;
       targetSeason = newSeason;
       startOpacity = rainMat.opacity;
@@ -205,3 +206,5 @@ export function createPhuQuocWeather(
     },
   };
 }
+
+export const createPhuQuocWeather = createBeachWeather;

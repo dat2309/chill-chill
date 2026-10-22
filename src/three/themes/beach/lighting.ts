@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { PhuQuocSeason, PhuQuocState } from './constants';
+import { BeachSeason, PhuQuocSeason, BeachState, PhuQuocState } from './constants';
 
-export interface PhuQuocSunPosition {
+export interface BeachSunPosition {
   x: number;
   y: number;
   z: number;
@@ -9,11 +9,12 @@ export interface PhuQuocSunPosition {
   isDay: boolean;
   isSunset: boolean;
 }
+export type PhuQuocSunPosition = BeachSunPosition;
 
 /**
- * Pure calculation for Phu Quoc solar trajectory across sky and sea.
+ * Pure calculation for Beach solar trajectory across sky and sea.
  */
-export function calculatePhuQuocSunPosition(timeOfDay: number): PhuQuocSunPosition {
+export function calculateBeachSunPosition(timeOfDay: number): BeachSunPosition {
   const tod = Math.max(0, Math.min(24, timeOfDay));
   const isDay = tod >= 5.5 && tod <= 18.5;
   const isSunset = tod > 16.5 && tod <= 19.0;
@@ -38,6 +39,7 @@ export function calculatePhuQuocSunPosition(timeOfDay: number): PhuQuocSunPositi
     return { x, y, z, sunProgress: 0, isDay: false, isSunset: false };
   }
 }
+export const calculatePhuQuocSunPosition = calculateBeachSunPosition;
 
 // Reusable Color palettes (allocated once, never in update)
 const cSkyDayTop = new THREE.Color(0x82b2db);
@@ -74,11 +76,11 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 /**
- * Pure evaluation of the 3-stop Phu Quoc sky gradient across 24h.
+ * Pure evaluation of the 3-stop Beach sky gradient across 24h.
  */
-export function getPhuQuocSkyGradient(
+export function getBeachSkyGradient(
   timeOfDay: number,
-  season: PhuQuocSeason,
+  season: BeachSeason,
   outTop: THREE.Color,
   outMid: THREE.Color,
   outBot: THREE.Color
@@ -155,8 +157,9 @@ export function getPhuQuocSkyGradient(
 
   return { top: outTop, mid: outMid, bot: outBot };
 }
+export const getPhuQuocSkyGradient = getBeachSkyGradient;
 
-export interface PhuQuocLightingSystem {
+export interface BeachLightingSystem {
   group: THREE.Group;
   dirLight: THREE.DirectionalLight;
   hemiLight: THREE.HemisphereLight;
@@ -164,16 +167,17 @@ export interface PhuQuocLightingSystem {
   sunDirection: THREE.Vector3;
   sunColor: THREE.Color;
   skyColor: THREE.Color;
-  update(state: PhuQuocState, scene?: THREE.Scene): void;
+  update(state: BeachState, scene?: THREE.Scene): void;
   dispose(): void;
 }
+export type PhuQuocLightingSystem = BeachLightingSystem;
 
-export function createPhuQuocLighting(
+export function createBeachLighting(
   parentGroup: THREE.Group,
   initialScene?: THREE.Scene
-): PhuQuocLightingSystem {
+): BeachLightingSystem {
   const lightGroup = new THREE.Group();
-  lightGroup.name = 'PhuQuocLighting';
+  lightGroup.name = 'BeachLighting';
   parentGroup.add(lightGroup);
 
   let boundScene: THREE.Scene | undefined = initialScene;
@@ -230,7 +234,7 @@ export function createPhuQuocLighting(
     sunDirection: sunDir,
     sunColor: sunCol,
     skyColor: skyCol,
-    update(state: PhuQuocState, activeScene?: THREE.Scene) {
+    update(state: BeachState, activeScene?: THREE.Scene) {
       if (activeScene) {
         boundScene = activeScene;
       }
@@ -240,7 +244,7 @@ export function createPhuQuocLighting(
 
       const tod = state.timeOfDay;
 
-      const sunPos = calculatePhuQuocSunPosition(tod);
+      const sunPos = calculateBeachSunPosition(tod);
       dirLight.position.set(sunPos.x, Math.max(-1.5, sunPos.y), sunPos.z);
       sunDir.copy(dirLight.position).normalize();
 
@@ -316,7 +320,7 @@ export function createPhuQuocLighting(
         dirLight.intensity *= (1.0 - 0.35 * daylightFactor);
       }
 
-      getPhuQuocSkyGradient(tod, state.season, tmpTop, tmpMid, tmpBot);
+      getBeachSkyGradient(tod, state.season, tmpTop, tmpMid, tmpBot);
 
       skyCol.copy(tmpMid).lerp(tmpBot, 0.45);
 
@@ -326,8 +330,8 @@ export function createPhuQuocLighting(
           cachedContainer = document.querySelector('.canvas-container') as HTMLElement | null;
         }
         if (cachedContainer) {
-          if (!cachedContainer.classList.contains('theme-phuquoc')) {
-            cachedContainer.classList.add('theme-phuquoc');
+          if (!cachedContainer.classList.contains('theme-beach')) {
+            cachedContainer.classList.add('theme-beach');
           }
           const topHex = '#' + tmpTop.getHexString();
           const midHex = '#' + tmpMid.getHexString();
@@ -344,6 +348,7 @@ export function createPhuQuocLighting(
     dispose() {
       if (cachedContainer) {
         cachedContainer.style.background = '';
+        cachedContainer.classList.remove('theme-beach');
         cachedContainer.classList.remove('theme-phuquoc');
         cachedContainer = null;
       }
@@ -353,3 +358,5 @@ export function createPhuQuocLighting(
     },
   };
 }
+
+export const createPhuQuocLighting = createBeachLighting;

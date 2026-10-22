@@ -1,15 +1,16 @@
 import * as THREE from 'three';
-import { PHUQUOC_COLORS, PhuQuocSeason, SEED } from './constants';
+import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason, SEED } from './constants';
 import { getDistanceToShore, isInWater, BUNGALOW_SPOTS } from './shoreline';
-import { isInsidePhuQuocFootprint } from './footprint';
+import { isInsideBeachFootprint, isInsidePhuQuocFootprint } from './footprint';
 import { SeededRandom } from '../../core/noise';
 
-export interface PhuQuocVegetationSystem {
+export interface BeachVegetationSystem {
   group: THREE.Group;
   update(dt: number, elapsed: number, windStrength: number): void;
-  updateSeason(season: PhuQuocSeason, t: number): void;
+  updateSeason(season: BeachSeason, t: number): void;
   dispose(): void;
 }
+export type PhuQuocVegetationSystem = BeachVegetationSystem;
 
 
 // Exact world bounding boxes of thatched bungalow roofs (from 3D cone meshes)
@@ -19,13 +20,13 @@ export const BUNGALOW_ROOF_BOUNDS = [
   { minX: 3.86,  maxX: 7.26,  minZ: -4.57, maxZ: -1.30 }, // East Garden Thatched Roof
 ];
 
-export function createPhuQuocVegetation(
+export function createBeachVegetation(
   parentGroup: THREE.Group,
   getHeightAt: (x: number, z: number) => number,
   getSlopeAt: (x: number, z: number) => number
-): PhuQuocVegetationSystem {
+): BeachVegetationSystem {
   const vegGroup = new THREE.Group();
-  vegGroup.name = 'PhuQuocVegetation';
+  vegGroup.name = 'BeachVegetation';
   parentGroup.add(vegGroup);
 
   const geometriesToDispose: THREE.BufferGeometry[] = [];
@@ -235,7 +236,7 @@ export function createPhuQuocVegetation(
     const px = rng.range(-8.5, 8.5);
     const pz = rng.range(-7.5, -2.5);
 
-    if (isInsidePhuQuocFootprint(px, pz, 0.45) && getDistanceToShore(px, pz) > 1.8 && !isInWater(px, pz)) {
+    if (isInsideBeachFootprint(px, pz, 0.45) && getDistanceToShore(px, pz) > 1.8 && !isInWater(px, pz)) {
       const py = getHeightAt(px, pz);
       const scale = rng.range(0.75, 1.25);
 
@@ -261,7 +262,7 @@ export function createPhuQuocVegetation(
 
   // Cached seasonal target colors
   const lushGreen = new THREE.Color(0x235f26);
-  const dryGreen = PHUQUOC_COLORS.vegetation.palmFrond;
+  const dryGreen = BEACH_COLORS.vegetation.palmFrond;
 
   return {
     group: vegGroup,
@@ -274,7 +275,7 @@ export function createPhuQuocVegetation(
         item.mesh.rotation.x = item.baseRotation.x + Math.cos(timeOffset * 0.8) * item.swayScale * 0.5 * windStrength;
       });
     },
-    updateSeason(season: PhuQuocSeason, t: number) {
+    updateSeason(season: BeachSeason, t: number) {
       palmFrondMat.color.lerpColors(dryGreen, lushGreen, season === 'rainy' ? t : 1 - t);
     },
     dispose() {
@@ -285,3 +286,5 @@ export function createPhuQuocVegetation(
     },
   };
 }
+
+export const createPhuQuocVegetation = createBeachVegetation;

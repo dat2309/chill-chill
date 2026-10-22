@@ -1,6 +1,7 @@
 import {
   ThemeId,
   GardenSeason,
+  BeachSeason,
   PhuQuocSeason,
   ThemeState,
   SharedOptions,
@@ -22,8 +23,8 @@ export const DEFAULT_GARDEN_STATE: ThemeState<'garden'> = {
   autoRotate: false,
 };
 
-export const DEFAULT_PHUQUOC_STATE: ThemeState<'phuquoc'> = {
-  themeId: 'phuquoc',
+export const DEFAULT_BEACH_STATE: ThemeState<'beach'> = {
+  themeId: 'beach',
   timeOfDay: 17.75, // 17:45 Sunset
   season: 'dry',
   tide: 'high',
@@ -32,6 +33,7 @@ export const DEFAULT_PHUQUOC_STATE: ThemeState<'phuquoc'> = {
   windStrength: 0.35,
   autoRotate: false,
 };
+export const DEFAULT_PHUQUOC_STATE = DEFAULT_BEACH_STATE;
 
 export const DEFAULT_SHARED_OPTIONS: SharedOptions = {
   quality: 'high',
@@ -39,7 +41,7 @@ export const DEFAULT_SHARED_OPTIONS: SharedOptions = {
 };
 
 const VALID_GARDEN_SEASONS: GardenSeason[] = ['spring', 'summer', 'autumn', 'winter'];
-const VALID_PHUQUOC_SEASONS: PhuQuocSeason[] = ['dry', 'rainy'];
+const VALID_BEACH_SEASONS: BeachSeason[] = ['dry', 'rainy'];
 
 export function sanitizeCameraState(raw: any): CameraState | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -110,26 +112,26 @@ export function sanitizeGardenState(raw: any): ThemeState<'garden'> {
   };
 }
 
-export function sanitizePhuQuocState(raw: any): ThemeState<'phuquoc'> {
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_PHUQUOC_STATE };
-  const season = VALID_PHUQUOC_SEASONS.includes(raw.season) ? raw.season : DEFAULT_PHUQUOC_STATE.season;
+export function sanitizeBeachState(raw: any): ThemeState<'beach'> {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_BEACH_STATE };
+  const season = VALID_BEACH_SEASONS.includes(raw.season) ? raw.season : DEFAULT_BEACH_STATE.season;
   const timeOfDay = typeof raw.timeOfDay === 'number' && Number.isFinite(raw.timeOfDay)
     ? Math.max(0, Math.min(24, raw.timeOfDay))
-    : DEFAULT_PHUQUOC_STATE.timeOfDay;
-  const tide = raw.tide === 'low' || raw.tide === 'high' ? raw.tide : DEFAULT_PHUQUOC_STATE.tide;
+    : DEFAULT_BEACH_STATE.timeOfDay;
+  const tide = raw.tide === 'low' || raw.tide === 'high' ? raw.tide : DEFAULT_BEACH_STATE.tide;
   const rippleStrength = typeof raw.rippleStrength === 'number' && Number.isFinite(raw.rippleStrength)
     ? Math.max(0, Math.min(1, raw.rippleStrength))
-    : DEFAULT_PHUQUOC_STATE.rippleStrength;
+    : DEFAULT_BEACH_STATE.rippleStrength;
   const flowSpeed = typeof raw.flowSpeed === 'number' && Number.isFinite(raw.flowSpeed)
     ? Math.max(0, Math.min(1, raw.flowSpeed))
-    : DEFAULT_PHUQUOC_STATE.flowSpeed;
+    : DEFAULT_BEACH_STATE.flowSpeed;
   const windStrength = typeof raw.windStrength === 'number' && Number.isFinite(raw.windStrength)
     ? Math.max(0, Math.min(1, raw.windStrength))
-    : DEFAULT_PHUQUOC_STATE.windStrength;
+    : DEFAULT_BEACH_STATE.windStrength;
   const autoRotate = Boolean(raw.autoRotate);
 
   return {
-    themeId: 'phuquoc',
+    themeId: 'beach',
     timeOfDay,
     season,
     tide,
@@ -141,13 +143,14 @@ export function sanitizePhuQuocState(raw: any): ThemeState<'phuquoc'> {
     debugTerrain: Boolean(raw.debugTerrain),
   };
 }
+export const sanitizePhuQuocState = sanitizeBeachState;
 
 export function loadPersistedAppState(): PersistedAppState {
   const fallback: PersistedAppState = {
     version: CURRENT_STORAGE_VERSION,
     activeThemeId: 'garden',
     gardenState: { ...DEFAULT_GARDEN_STATE },
-    phuquocState: { ...DEFAULT_PHUQUOC_STATE },
+    beachState: { ...DEFAULT_BEACH_STATE },
     shared: { ...DEFAULT_SHARED_OPTIONS },
   };
 
@@ -162,9 +165,9 @@ export function loadPersistedAppState(): PersistedAppState {
     const data = JSON.parse(rawStr);
     if (!data || typeof data !== 'object') return fallback;
 
-    const activeThemeId: ThemeId = data.activeThemeId === 'phuquoc' ? 'phuquoc' : 'garden';
+    const activeThemeId: ThemeId = (data.activeThemeId === 'beach' || data.activeThemeId === 'phuquoc') ? 'beach' : 'garden';
     const gardenState = sanitizeGardenState(data.gardenState);
-    const phuquocState = sanitizePhuQuocState(data.phuquocState);
+    const beachState = sanitizeBeachState(data.beachState ?? data.phuquocState);
     const shared: SharedOptions = {
       quality: ['low', 'medium', 'high'].includes(data.shared?.quality) ? data.shared.quality : 'high',
       debugTerrain: Boolean(data.shared?.debugTerrain),
@@ -172,19 +175,19 @@ export function loadPersistedAppState(): PersistedAppState {
 
     if (data.version !== CURRENT_STORAGE_VERSION) {
       gardenState.cameraState = undefined;
-      phuquocState.cameraState = undefined;
+      beachState.cameraState = undefined;
     }
     const camera: Partial<Record<ThemeId, CameraState>> = {};
     const gardenCam = sanitizeCameraState(data.camera?.garden ?? data.gardenState?.cameraState);
     if (data.version === CURRENT_STORAGE_VERSION && gardenCam) camera.garden = gardenCam;
-    const phuquocCam = sanitizeCameraState(data.camera?.phuquoc ?? data.phuquocState?.cameraState);
-    if (data.version === CURRENT_STORAGE_VERSION && phuquocCam) camera.phuquoc = phuquocCam;
+    const beachCam = sanitizeCameraState(data.camera?.beach ?? data.camera?.phuquoc ?? data.beachState?.cameraState ?? data.phuquocState?.cameraState);
+    if (data.version === CURRENT_STORAGE_VERSION && beachCam) camera.beach = beachCam;
 
     return {
       version: CURRENT_STORAGE_VERSION,
       activeThemeId,
       gardenState,
-      phuquocState,
+      beachState,
       shared,
       camera,
     };
@@ -201,7 +204,7 @@ export function savePersistedAppState(state: PersistedAppState): void {
       version: CURRENT_STORAGE_VERSION,
       activeThemeId: state.activeThemeId,
       gardenState: state.gardenState,
-      phuquocState: state.phuquocState,
+      beachState: state.beachState,
       shared: state.shared,
       camera: state.camera,
     });
@@ -211,6 +214,6 @@ export function savePersistedAppState(state: PersistedAppState): void {
   }
 }
 
-export function getThemeDefaultState(themeId: ThemeId): ThemeState<'garden'> | ThemeState<'phuquoc'> {
-  return themeId === 'garden' ? { ...DEFAULT_GARDEN_STATE } : { ...DEFAULT_PHUQUOC_STATE };
+export function getThemeDefaultState(themeId: ThemeId): ThemeState<'garden'> | ThemeState<'beach'> {
+  return themeId === 'garden' ? { ...DEFAULT_GARDEN_STATE } : { ...DEFAULT_BEACH_STATE };
 }

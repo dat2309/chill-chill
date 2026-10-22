@@ -1,17 +1,18 @@
 import * as THREE from 'three';
 
-export type ThemeId = 'garden' | 'phuquoc';
+export type ThemeId = 'garden' | 'beach';
 
 export type GardenSeason = 'spring' | 'summer' | 'autumn' | 'winter';
-export type PhuQuocSeason = 'dry' | 'rainy';
+export type BeachSeason = 'dry' | 'rainy';
+export type PhuQuocSeason = BeachSeason;
 
 export interface ThemeSeasonMap {
   garden: GardenSeason;
-  phuquoc: PhuQuocSeason;
+  beach: BeachSeason;
 }
 
 export type ThemeSeason<T extends ThemeId> = ThemeSeasonMap[T];
-export type Season = GardenSeason | PhuQuocSeason;
+export type Season = GardenSeason | BeachSeason;
 
 export type TideLevel = 'low' | 'high';
 export type Quality = 'low' | 'medium' | 'high';
@@ -43,7 +44,7 @@ export interface ThemeState<T extends ThemeId = ThemeId> {
   debugTerrain?: boolean;
 }
 
-export type AnyThemeState = ThemeState<'garden'> | ThemeState<'phuquoc'>;
+export type AnyThemeState = ThemeState<'garden'> | ThemeState<'beach'>;
 
 export interface SharedOptions {
   quality: Quality;
@@ -54,7 +55,8 @@ export interface PersistedAppState {
   version: number;
   activeThemeId: ThemeId;
   gardenState: ThemeState<'garden'>;
-  phuquocState: ThemeState<'phuquoc'>;
+  beachState: ThemeState<'beach'>;
+  phuquocState?: ThemeState<'beach'>; // legacy migration alias
   shared: SharedOptions;
   camera?: Partial<Record<ThemeId, SavedCameraState>>;
 }

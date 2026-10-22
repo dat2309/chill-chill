@@ -1,48 +1,48 @@
 import * as THREE from 'three';
-import { ThemeInstance, ThemeState, PhuQuocSeason, Quality } from '../../core/types';
-import { PHUQUOC_METADATA, PHUQUOC_CAMERA_PRESET } from './config';
-import { createPhuQuocTerrain, PhuQuocTerrainSystem } from './terrain';
-import { createPhuQuocWater, PhuQuocWaterSystem } from './water';
-import { createPhuQuocArchitecture, PhuQuocArchitectureSystem } from './architecture';
-import { createPhuQuocBoats, PhuQuocBoatsSystem } from './boats';
-import { createPhuQuocVegetation, PhuQuocVegetationSystem } from './vegetation';
-import { createPhuQuocFish, PhuQuocFishSystem } from './fish';
-import { createPhuQuocWeather, PhuQuocWeatherSystem } from './weather';
-import { createPhuQuocLighting, PhuQuocLightingSystem } from './lighting';
-import { isInWater, intersectPhuQuocWater } from './shoreline';
-import { PhuQuocState } from './constants';
+import { ThemeInstance, ThemeState, BeachSeason, Quality } from '../../core/types';
+import { BEACH_METADATA, BEACH_CAMERA_PRESET } from './config';
+import { createBeachTerrain, BeachTerrainSystem } from './terrain';
+import { createBeachWater, BeachWaterSystem } from './water';
+import { createBeachArchitecture, BeachArchitectureSystem } from './architecture';
+import { createBeachBoats, BeachBoatsSystem } from './boats';
+import { createBeachVegetation, BeachVegetationSystem } from './vegetation';
+import { createBeachFish, BeachFishSystem } from './fish';
+import { createBeachWeather, BeachWeatherSystem } from './weather';
+import { createBeachLighting, BeachLightingSystem } from './lighting';
+import { isInWater, intersectBeachWater } from './shoreline';
+import { BeachState } from './constants';
 
-export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
-  readonly id = 'phuquoc' as const;
-  readonly metadata = PHUQUOC_METADATA;
-  readonly cameraPreset = PHUQUOC_CAMERA_PRESET;
+export class BeachTheme implements ThemeInstance<'beach'> {
+  readonly id = 'beach' as const;
+  readonly metadata = BEACH_METADATA;
+  readonly cameraPreset = BEACH_CAMERA_PRESET;
   readonly group = new THREE.Group();
 
   private renderer: THREE.WebGLRenderer;
-  private terrain!: PhuQuocTerrainSystem;
-  private water!: PhuQuocWaterSystem;
-  private architecture!: PhuQuocArchitectureSystem;
-  private boats!: PhuQuocBoatsSystem;
-  private vegetation!: PhuQuocVegetationSystem;
-  private fish!: PhuQuocFishSystem;
-  private weather!: PhuQuocWeatherSystem;
-  private lighting!: PhuQuocLightingSystem;
+  private terrain!: BeachTerrainSystem;
+  private water!: BeachWaterSystem;
+  private architecture!: BeachArchitectureSystem;
+  private boats!: BeachBoatsSystem;
+  private vegetation!: BeachVegetationSystem;
+  private fish!: BeachFishSystem;
+  private weather!: BeachWeatherSystem;
+  private lighting!: BeachLightingSystem;
 
-  private currentSeason: PhuQuocSeason = 'dry';
+  private currentSeason: BeachSeason = 'dry';
   private currentTide: string = 'high';
 
   constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
-    this.group.name = 'PhuQuocThemeRoot';
+    this.group.name = 'BeachThemeRoot';
   }
 
   async init(): Promise<void> {
     // 1. Terrain & Shoreline
-    this.terrain = createPhuQuocTerrain(this.group);
+    this.terrain = createBeachTerrain(this.group);
     await new Promise((r) => requestAnimationFrame(r));
 
     // 2. Tropical Water
-    this.water = createPhuQuocWater(
+    this.water = createBeachWater(
       this.renderer,
       this.group,
       (x, z) => this.terrain.getHeightAt(x, z)
@@ -50,18 +50,18 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     await new Promise((r) => requestAnimationFrame(r));
 
     // 3. Stilt Bungalows & Pier
-    this.architecture = createPhuQuocArchitecture(
+    this.architecture = createBeachArchitecture(
       this.group,
       (x, z) => this.terrain.getHeightAt(x, z)
     );
     await new Promise((r) => requestAnimationFrame(r));
 
     // 4. Vietnamese Boats (Thung & Ghe)
-    this.boats = createPhuQuocBoats(this.group);
+    this.boats = createBeachBoats(this.group);
     await new Promise((r) => requestAnimationFrame(r));
 
     // 5. Tropical Vegetation (Palms, pines)
-    this.vegetation = createPhuQuocVegetation(
+    this.vegetation = createBeachVegetation(
       this.group,
       (x, z) => this.terrain.getHeightAt(x, z),
       (x, z) => this.terrain.getSlopeAt(x, z)
@@ -69,14 +69,14 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     await new Promise((r) => requestAnimationFrame(r));
 
     // 6. Tropical Fish
-    this.fish = createPhuQuocFish(
+    this.fish = createBeachFish(
       this.group,
       (x, z) => this.terrain.getHeightAt(x, z)
     );
     await new Promise((r) => requestAnimationFrame(r));
 
     // 7. Weather & Tropical Rain
-    this.weather = createPhuQuocWeather(
+    this.weather = createBeachWeather(
       this.group,
       (season, progress) => {
         this.terrain.updateSeason(season, progress);
@@ -91,7 +91,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     );
 
     // 8. Sunset Lighting
-    this.lighting = createPhuQuocLighting(this.group);
+    this.lighting = createBeachLighting(this.group);
   }
 
   setQuality(quality: Quality): void {
@@ -108,7 +108,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
   private currentQuality: Quality = 'high';
   private lastWindStrength: number = 0.35;
 
-  applyState(state: ThemeState<'phuquoc'>, _prevSeason?: PhuQuocSeason, _blendFactor: number = 1): void {
+  applyState(state: ThemeState<'beach'>, _prevSeason?: BeachSeason, _blendFactor: number = 1): void {
     if (this.currentTide !== state.tide && this.water) {
       this.currentTide = state.tide;
       this.water.setTide(state.tide, true);
@@ -124,7 +124,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     }
   }
 
-  update(dt: number, elapsed: number, state: ThemeState<'phuquoc'>): void {
+  update(dt: number, elapsed: number, state: ThemeState<'beach'>): void {
     if (state.quality && state.quality !== this.currentQuality) {
       this.setQuality(state.quality);
     }
@@ -144,7 +144,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
       1.2
     );
 
-    const pqState: PhuQuocState = {
+    const beachThemeState: BeachState = {
       timeOfDay: state.timeOfDay,
       season: state.season,
       tide: state.tide,
@@ -157,7 +157,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
 
     // Subsystem updates with synchronized effective weather
     const scene = (this.group.parent as THREE.Scene) || undefined;
-    this.lighting?.update(pqState, scene);
+    this.lighting?.update(beachThemeState, scene);
     if (this.lighting && this.water) {
       this.water.setSunLighting(this.lighting.sunDirection, this.lighting.sunColor, this.lighting.skyColor);
     }
@@ -235,7 +235,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
   intersectWater(ray: THREE.Ray): { point: THREE.Vector3; distance: number } | null {
     const waterLevel = this.water ? this.water.getWaterLevel() : 0.3;
     const tideOffset = this.water && this.water.getTideOffset ? this.water.getTideOffset() : 0;
-    return intersectPhuQuocWater(ray, waterLevel, tideOffset);
+    return intersectBeachWater(ray, waterLevel, tideOffset);
   }
 
   getWaterLevel(): number {
@@ -273,6 +273,10 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
   }
 }
 
-export default function createPhuQuocTheme(renderer: THREE.WebGLRenderer): ThemeInstance<'phuquoc'> {
-  return new PhuQuocTheme(renderer);
+export const PhuQuocTheme = BeachTheme;
+
+export default function createBeachTheme(renderer: THREE.WebGLRenderer): ThemeInstance<'beach'> {
+  return new BeachTheme(renderer);
 }
+
+export const createPhuQuocTheme = createBeachTheme;

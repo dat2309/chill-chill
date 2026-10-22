@@ -1,14 +1,14 @@
 import { createStreamGeometry } from '../src/three/themes/garden/water';
 import * as THREE from 'three';
 import { createTerrain } from '../src/three/themes/garden/terrain';
-import { createPhuQuocTerrain } from '../src/three/themes/phuquoc/terrain';
+import { createPhuQuocTerrain } from '../src/three/themes/beach/terrain';
 import { GARDEN_BOUNDARY_POINTS } from '../src/three/themes/garden/footprint';
-import { PHUQUOC_BOUNDARY_POINTS } from '../src/three/themes/phuquoc/footprint';
+import { PHUQUOC_BOUNDARY_POINTS } from '../src/three/themes/beach/footprint';
 
 // Check actual generated triangles, rather than normals supplied to the shader.
 for (const [name, system] of [
   ['garden', createTerrain(new THREE.Scene())],
-  ['phuquoc', createPhuQuocTerrain(new THREE.Group())],
+  ['beach', createPhuQuocTerrain(new THREE.Group())],
 ] as const) {
   const mesh = system.group.children.find(o => o instanceof THREE.Mesh) as THREE.Mesh;
   const geometry = mesh.geometry;

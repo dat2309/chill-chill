@@ -132,17 +132,17 @@ function GardenCardPreview() {
   );
 }
 
-function PhuQuocCardPreview() {
+function BeachCardPreview() {
   return (
     <svg viewBox="0 0 280 120" width="100%" height="100%" preserveAspectRatio="none">
       <defs>
-        <linearGradient id="phuQuocSunset" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id="beachSunset" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#fca07d" />
           <stop offset="60%" stopColor="#fde0c8" />
           <stop offset="100%" stopColor="#f5e8d5" />
         </linearGradient>
       </defs>
-      <rect width="280" height="120" fill="url(#phuQuocSunset)" />
+      <rect width="280" height="120" fill="url(#beachSunset)" />
       {/* Sunset sun */}
       <circle cx="210" cy="55" r="18" fill="#ff7043" opacity="0.85" />
       {/* Back granite hill */}
@@ -552,7 +552,7 @@ export default function UI({
                     aria-label={`Chọn chủ đề: ${theme.name}`}
                   >
                     <div className="theme-card-preview">
-                      {theme.id === 'garden' ? <GardenCardPreview /> : <PhuQuocCardPreview />}
+                      {theme.id === 'garden' ? <GardenCardPreview /> : <BeachCardPreview />}
                     </div>
                     <div className="theme-card-info">
                       <div className="theme-card-title">{theme.name}</div>

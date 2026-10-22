@@ -1,23 +1,24 @@
 import * as THREE from 'three';
-import { PHUQUOC_COLORS, PhuQuocSeason } from './constants';
+import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason } from './constants';
 import { BUNGALOW_SPOTS, PIER_CONFIG } from './shoreline';
 
-export interface PhuQuocArchitectureSystem {
+export interface BeachArchitectureSystem {
   group: THREE.Group;
   emissiveMeshes: THREE.Mesh[];
   lanternLights: THREE.PointLight[];
   update(dt: number, elapsed: number, timeOfDay: number): void;
-  updateSeason(season: PhuQuocSeason, t: number): void;
+  updateSeason(season: BeachSeason, t: number): void;
   isUnderRoof(x: number, z: number): boolean;
   dispose(): void;
 }
+export type PhuQuocArchitectureSystem = BeachArchitectureSystem;
 
-export function createPhuQuocArchitecture(
+export function createBeachArchitecture(
   parentGroup: THREE.Group,
   getHeightAt: (x: number, z: number) => number
-): PhuQuocArchitectureSystem {
+): BeachArchitectureSystem {
   const archGroup = new THREE.Group();
-  archGroup.name = 'PhuQuocArchitecture';
+  archGroup.name = 'BeachArchitecture';
   parentGroup.add(archGroup);
 
   const emissiveMeshes: THREE.Mesh[] = [];
@@ -339,9 +340,9 @@ export function createPhuQuocArchitecture(
         light.intensity = lanternFactor * 0.9;
       });
     },
-    updateSeason(season: PhuQuocSeason, t: number) {
+    updateSeason(season: BeachSeason, t: number) {
       // In rainy season, thatch roof absorbs moisture and darkens slightly
-      const targetColor = season === 'rainy' ? PHUQUOC_COLORS.wood.thatchWet : PHUQUOC_COLORS.wood.thatch;
+      const targetColor = season === 'rainy' ? BEACH_COLORS.wood.thatchWet : BEACH_COLORS.wood.thatch;
       thatchMatDry.color.lerp(targetColor, t);
     },
     isUnderRoof(x: number, z: number): boolean {
@@ -368,3 +369,5 @@ export function createPhuQuocArchitecture(
     },
   };
 }
+
+export const createPhuQuocArchitecture = createBeachArchitecture;

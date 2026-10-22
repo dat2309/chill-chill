@@ -6,20 +6,26 @@ import {
   SEA_LEVEL_LOW,
   SEA_LEVEL_HIGH,
   WATER_RES,
+  BEACH_COLORS,
   PHUQUOC_COLORS,
   TideLevel,
 } from './constants';
 import { getWaterLevel, isInWater, getShoreZ, getDistanceToShore } from './shoreline';
 import {
+  BEACH_CENTER,
   PHUQUOC_CENTER,
+  BEACH_BOUNDARY_POINTS,
   PHUQUOC_BOUNDARY_POINTS,
+  BEACH_BOUNDARY_SAMPLES,
   PHUQUOC_BOUNDARY_SAMPLES,
+  isInsideBeachFootprint,
   isInsidePhuQuocFootprint,
+  BEACH_FOOTPRINT_BOUNDS,
   PHUQUOC_FOOTPRINT_BOUNDS,
 } from './footprint';
 import { generateGheCavityShaderGlsl } from './boats';
 
-export interface PhuQuocWaterSystem {
+export interface BeachWaterSystem {
   group: THREE.Group;
   mesh: THREE.Mesh;
   update(dt: number, elapsed: number, windStrength: number, flowSpeed: number, rainIntensity?: number): void;
@@ -37,6 +43,7 @@ export interface PhuQuocWaterSystem {
   onContextRestored?(): void;
   dispose(): void;
 }
+export type PhuQuocWaterSystem = BeachWaterSystem;
 
 interface AnalyticalRipple {
   x: number;
@@ -112,14 +119,14 @@ export function checkRenderTargetSupport(
   }
 }
 
-export function createPhuQuocWater(
+export function createBeachWater(
   renderer: THREE.WebGLRenderer,
   parentGroup: THREE.Group,
   getHeightAt: (x: number, z: number) => number,
   debugForceAnalytical: boolean = false
-): PhuQuocWaterSystem {
+): BeachWaterSystem {
   const waterGroup = new THREE.Group();
-  waterGroup.name = 'PhuQuocWater';
+  waterGroup.name = 'BeachWater';
   parentGroup.add(waterGroup);
 
   const halfW = DIORAMA_WIDTH / 2; // 10
@@ -879,3 +886,5 @@ ${generateGheCavityShaderGlsl()}
     },
   };
 }
+
+export const createPhuQuocWater = createBeachWater;

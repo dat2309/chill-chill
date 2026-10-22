@@ -1,16 +1,18 @@
 import * as THREE from 'three';
 import {
   DEFAULT_GARDEN_STATE,
+  DEFAULT_BEACH_STATE,
   DEFAULT_PHUQUOC_STATE,
   DEFAULT_SHARED_OPTIONS,
   sanitizeGardenState,
+  sanitizeBeachState,
   sanitizePhuQuocState,
   sanitizeCameraState,
 } from '../src/three/core/storage';
 import { ThemeId, ThemeState, ThemeInstance } from '../src/three/core/types';
 import { ThemeLifecycleCoordinator } from '../src/three/core/ThemeLifecycleCoordinator';
 import { SceneManager } from '../src/three/core/SceneManager';
-import { checkRenderTargetSupport } from '../src/three/themes/phuquoc/water';
+import { checkRenderTargetSupport } from '../src/three/themes/beach/water';
 import { setCameraProjection } from '../src/three/core/camera';
 import { loadThemeWithRetry } from '../src/three/themes/registry';
 
@@ -37,30 +39,30 @@ console.log('--- RUNNING PRODUCTION THEME LIFECYCLE & STATE ISOLATION SUITE ---'
 // 1. Cross-Theme State Leaking Prevention & Sanitization
 // =========================================================================
 const gardenBase = { ...DEFAULT_GARDEN_STATE };
-const foreignPhuQuocUpdate: any = {
-  themeId: 'phuquoc',
+const foreignBeachUpdate: any = {
+  themeId: 'beach',
   season: 'dry',
   timeOfDay: 17.75,
 };
 
 const sanitizedGardenAttempt = sanitizeGardenState({
   ...gardenBase,
-  season: foreignPhuQuocUpdate.season,
+  season: foreignBeachUpdate.season,
 });
 
 assert(
   sanitizedGardenAttempt.season === DEFAULT_GARDEN_STATE.season && (sanitizedGardenAttempt.season as string) !== 'dry',
-  'Sanitization prevents Phu Quoc season: "dry" from corrupting Garden state'
+  'Sanitization prevents Beach season: "dry" from corrupting Garden state'
 );
 
-const sanitizedPhuQuocAttempt = sanitizePhuQuocState({
-  ...DEFAULT_PHUQUOC_STATE,
+const sanitizedBeachAttempt = sanitizeBeachState({
+  ...DEFAULT_BEACH_STATE,
   season: 'winter' as any,
 });
 
 assert(
-  sanitizedPhuQuocAttempt.season === 'dry',
-  'Sanitization prevents Garden season: "winter" from corrupting Phu Quoc state'
+  sanitizedBeachAttempt.season === 'dry',
+  'Sanitization prevents Garden season: "winter" from corrupting Beach state'
 );
 
 // Sanitization of CameraState with baseFrustumHeight validation and migration
@@ -186,8 +188,8 @@ async function runLifecycleTests() {
       createdThemes.push(t);
       return t;
     },
-    phuquoc: async () => {
-      const t = createFakeThemeInstance('phuquoc');
+    beach: async () => {
+      const t = createFakeThemeInstance('beach');
       createdThemes.push(t);
       return t;
     },
@@ -200,22 +202,22 @@ async function runLifecycleTests() {
   });
 
   // Test 2A: Buffer pending state during loading without mutating active theme
-  const switchPromise = coordinator.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
-  assert(coordinator.getRequestedThemeId() === 'phuquoc', 'Requested theme is tracked as phuquoc');
+  const switchPromise = coordinator.switchTheme('beach', { ...DEFAULT_BEACH_STATE });
+  assert(coordinator.getRequestedThemeId() === 'beach', 'Requested theme is tracked as beach');
   assert(coordinator.getActiveThemeId() === 'garden', 'Active theme remains garden during async load');
 
-  // Send update for phuquoc while it is in-flight loading
-  coordinator.updateState({ themeId: 'phuquoc', timeOfDay: 19.5, windStrength: 0.8 } as any);
+  // Send update for beach while it is in-flight loading
+  coordinator.updateState({ themeId: 'beach', timeOfDay: 19.5, windStrength: 0.8 } as any);
 
   // Garden state must not have changed to 19.5
   assert(
     coordinator.getActiveThemeState() === null || coordinator.getActiveThemeState()?.timeOfDay !== 19.5,
-    'Active garden state was not polluted by inflight phuquoc update'
+    'Active garden state was not polluted by inflight beach update'
   );
 
   const res1 = await switchPromise;
   assert(res1.status === 'success', 'Theme switch completed with success result');
-  assert(coordinator.getActiveThemeId() === 'phuquoc', 'Active theme is now committed to phuquoc');
+  assert(coordinator.getActiveThemeId() === 'beach', 'Active theme is now committed to beach');
   assert(
     coordinator.getActiveThemeState()?.timeOfDay === 19.5 && coordinator.getActiveThemeState()?.windStrength === 0.8,
     'Buffered pending state was accurately merged and applied upon switch completion'
@@ -228,8 +230,8 @@ async function runLifecycleTests() {
       createdThemes.push(t);
       return t;
     },
-    phuquoc: async () => {
-      const t = createFakeThemeInstance('phuquoc');
+    beach: async () => {
+      const t = createFakeThemeInstance('beach');
       createdThemes.push(t);
       return t;
     },
@@ -237,14 +239,14 @@ async function runLifecycleTests() {
 
   const failCoordinator = new ThemeLifecycleCoordinator({
     loaderMap: failLoaderMap,
-    initialThemeId: 'phuquoc',
+    initialThemeId: 'beach',
   });
-  // Commit phuquoc first
-  await failCoordinator.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+  // Commit beach first
+  await failCoordinator.switchTheme('beach', { ...DEFAULT_BEACH_STATE });
 
   const failRes = await failCoordinator.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
   assert(failRes.status === 'failed', 'Theme switch failure returned failed status with error');
-  assert(failCoordinator.getActiveThemeId() === 'phuquoc', 'Active theme remains phuquoc after switch failure');
+  assert(failCoordinator.getActiveThemeId() === 'beach', 'Active theme remains beach after switch failure');
   assert(failCoordinator.getRequestedThemeId() === null, 'Requested theme was reset after failed request');
   const failedGardenInstance = createdThemes.find((t) => t.id === 'garden' && t.disposed);
   assert(Boolean(failedGardenInstance), 'Failed theme instance was safely disposed');
@@ -255,12 +257,12 @@ async function runLifecycleTests() {
     initialThemeId: 'garden',
   });
   const p1 = rapidCoordinator.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
-  const p2 = rapidCoordinator.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+  const p2 = rapidCoordinator.switchTheme('beach', { ...DEFAULT_BEACH_STATE });
   const [out1, out2] = await Promise.all([p1, p2]);
 
   assert(out1.status === 'cancelled', 'Interrupted earlier theme switch returned cancelled');
   assert(out2.status === 'success', 'Latest theme switch returned success');
-  assert(rapidCoordinator.getActiveThemeId() === 'phuquoc', 'Final active theme matches latest request');
+  assert(rapidCoordinator.getActiveThemeId() === 'beach', 'Final active theme matches latest request');
 
   // =========================================================================
   // 3. Critical Race Condition Regression Test:
@@ -273,8 +275,8 @@ async function runLifecycleTests() {
       createdThemes.push(slowRejectTheme);
       return slowRejectTheme;
     },
-    phuquoc: async () => {
-      const t = createFakeThemeInstance('phuquoc', { initDelay: 40 });
+    beach: async () => {
+      const t = createFakeThemeInstance('beach', { initDelay: 40 });
       createdThemes.push(t);
       return t;
     },
@@ -287,22 +289,22 @@ async function runLifecycleTests() {
 
   const reqAPromise = raceCoordinator.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
   await new Promise((r) => setTimeout(r, 15));
-  const reqBPromise = raceCoordinator.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+  const reqBPromise = raceCoordinator.switchTheme('beach', { ...DEFAULT_BEACH_STATE });
 
   assert(
-    raceCoordinator.getRequestedThemeId() === 'phuquoc',
-    'Requested theme is phuquoc before request A rejects'
+    raceCoordinator.getRequestedThemeId() === 'beach',
+    'Requested theme is beach before request A rejects'
   );
 
-  raceCoordinator.updateState({ themeId: 'phuquoc', timeOfDay: 18.0 } as any);
+  raceCoordinator.updateState({ themeId: 'beach', timeOfDay: 18.0 } as any);
 
   const [resA, resB] = await Promise.all([reqAPromise, reqBPromise]);
 
   assert(resA.status === 'cancelled', 'Old failing request A returned cancelled rather than failed');
   assert(resB.status === 'success', 'Newer request B completed successfully');
   assert(
-    raceCoordinator.getActiveThemeId() === 'phuquoc',
-    'Active theme is committed to phuquoc despite older request A failure'
+    raceCoordinator.getActiveThemeId() === 'beach',
+    'Active theme is committed to beach despite older request A failure'
   );
   assert(
     raceCoordinator.getActiveThemeState()?.timeOfDay === 18.0,
@@ -321,7 +323,7 @@ async function runLifecycleTests() {
         instanceInitA = createFakeThemeInstance('garden', { initPromise: deferredInitA.promise });
         return instanceInitA;
       },
-      phuquoc: async () => createFakeThemeInstance('phuquoc'),
+      beach: async () => createFakeThemeInstance('beach'),
     },
     initialThemeId: 'garden',
   });
@@ -366,7 +368,7 @@ async function runLifecycleTests() {
           return instanceReloadB;
         }
       },
-      phuquoc: async () => createFakeThemeInstance('phuquoc'),
+      beach: async () => createFakeThemeInstance('beach'),
     },
     initialThemeId: 'garden',
   });
@@ -410,7 +412,7 @@ async function runLifecycleTests() {
 
   for (const point of failurePoints) {
     let oldGarden: any = null;
-    let newPhuQuoc: any = null;
+    let newBeach: any = null;
 
     const rollbackCoordinator = new ThemeLifecycleCoordinator({
       loaderMap: {
@@ -418,31 +420,31 @@ async function runLifecycleTests() {
           oldGarden = createFakeThemeInstance('garden');
           return oldGarden;
         },
-        phuquoc: async () => {
-          newPhuQuoc = createFakeThemeInstance('phuquoc', {
+        beach: async () => {
+          newBeach = createFakeThemeInstance('beach', {
             failApplyState: point === 'applyState',
           });
-          return newPhuQuoc;
+          return newBeach;
         },
       },
       onMountTheme: (theme) => {
-        if (point === 'onMountTheme' && theme.id === 'phuquoc') {
-          throw new Error('Simulated mount failure on phuquoc');
+        if (point === 'onMountTheme' && theme.id === 'beach') {
+          throw new Error('Simulated mount failure on beach');
         }
       },
       onRestoreCamera: (_themeId, theme) => {
-        if (point === 'onRestoreCamera' && theme.id === 'phuquoc') {
-          throw new Error('Simulated restoreCamera failure on phuquoc');
+        if (point === 'onRestoreCamera' && theme.id === 'beach') {
+          throw new Error('Simulated restoreCamera failure on beach');
         }
       },
       onApplyQuality: () => {
-        if (point === 'onApplyQuality' && newPhuQuoc && !newPhuQuoc.disposed) {
-          throw new Error('Simulated applyQuality failure on phuquoc');
+        if (point === 'onApplyQuality' && newBeach && !newBeach.disposed) {
+          throw new Error('Simulated applyQuality failure on beach');
         }
       },
       onCommitTheme: (_themeId, theme) => {
-        if (point === 'onCommitTheme' && theme.id === 'phuquoc') {
-          throw new Error('Simulated commitTheme failure on phuquoc');
+        if (point === 'onCommitTheme' && theme.id === 'beach') {
+          throw new Error('Simulated commitTheme failure on beach');
         }
       },
     });
@@ -451,12 +453,12 @@ async function runLifecycleTests() {
     const initRes = await rollbackCoordinator.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
     assert(initRes.status === 'success', `Rollback (${point}): Garden established`);
 
-    // Attempt switch to Phu Quoc which will fail at `point`
-    const failSwitchRes = await rollbackCoordinator.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+    // Attempt switch to Beach which will fail at `point`
+    const failSwitchRes = await rollbackCoordinator.switchTheme('beach', { ...DEFAULT_BEACH_STATE });
 
     assert(
       failSwitchRes.status === 'failed',
-      `Rollback (${point}): Switch to Phu Quoc failed as expected`
+      `Rollback (${point}): Switch to Beach failed as expected`
     );
     assert(
       rollbackCoordinator.getActiveTheme() === oldGarden,
@@ -467,8 +469,8 @@ async function runLifecycleTests() {
       `Rollback (${point}): Old Garden was NOT disposed during rollback`
     );
     assert(
-      newPhuQuoc.disposed === true,
-      `Rollback (${point}): Failed new Phu Quoc instance was safely disposed`
+      newBeach.disposed === true,
+      `Rollback (${point}): Failed new Beach instance was safely disposed`
     );
     assert(
       rollbackCoordinator.getRequestedThemeId() === null,
@@ -477,17 +479,17 @@ async function runLifecycleTests() {
 
     // Verify next retry (without error) succeeds
     // Remove failure triggers
-    (newPhuQuoc as any).failApplyState = false;
+    (newBeach as any).failApplyState = false;
     const retryCoordinatorPoint = new ThemeLifecycleCoordinator({
       loaderMap: {
         garden: async () => oldGarden,
-        phuquoc: async () => createFakeThemeInstance('phuquoc'),
+        beach: async () => createFakeThemeInstance('beach'),
       },
       initialThemeId: 'garden',
     });
     // Set active
     await retryCoordinatorPoint.switchTheme('garden', { ...DEFAULT_GARDEN_STATE });
-    const retryRes = await retryCoordinatorPoint.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+    const retryRes = await retryCoordinatorPoint.switchTheme('beach', { ...DEFAULT_BEACH_STATE });
     assert(
       retryRes.status === 'success',
       `Rollback (${point}): Next retry succeeded cleanly after error`
@@ -497,9 +499,9 @@ async function runLifecycleTests() {
   // =========================================================================
   // 6.b. Rollback Regression: In-flight Active Theme Update & Single Dispose Count
   // =========================================================================
-  const phuQuocDeferred = createDeferred();
+  const beachDeferred = createDeferred();
   let testGardenTheme: any = null;
-  let testPhuQuocTheme: any = null;
+  let testBeachTheme: any = null;
 
   const inFlightUpdateCoordinator = new ThemeLifecycleCoordinator({
     loaderMap: {
@@ -507,16 +509,16 @@ async function runLifecycleTests() {
         testGardenTheme = createFakeThemeInstance('garden');
         return testGardenTheme;
       },
-      phuquoc: async () => {
-        testPhuQuocTheme = createFakeThemeInstance('phuquoc', {
-          initPromise: phuQuocDeferred.promise,
+      beach: async () => {
+        testBeachTheme = createFakeThemeInstance('beach', {
+          initPromise: beachDeferred.promise,
         });
-        return testPhuQuocTheme;
+        return testBeachTheme;
       },
     },
     onRestoreCamera: (_themeId, theme) => {
-      if (theme.id === 'phuquoc') {
-        throw new Error('Simulated onRestoreCamera failure on phuquoc');
+      if (theme.id === 'beach') {
+        throw new Error('Simulated onRestoreCamera failure on beach');
       }
     },
   });
@@ -532,28 +534,28 @@ async function runLifecycleTests() {
     'Garden initial timeOfDay is 16'
   );
 
-  // 2. Start loading Phu Quoc (in-flight)
-  const phuQuocSwitchPromise = inFlightUpdateCoordinator.switchTheme('phuquoc', {
-    ...DEFAULT_PHUQUOC_STATE,
+  // 2. Start loading Beach (in-flight)
+  const beachSwitchPromise = inFlightUpdateCoordinator.switchTheme('beach', {
+    ...DEFAULT_BEACH_STATE,
   });
 
-  // 3. While waiting for Phu Quoc, update Garden timeOfDay to 21
+  // 3. While waiting for Beach, update Garden timeOfDay to 21
   inFlightUpdateCoordinator.updateState('garden', { timeOfDay: 21 });
   assert(
     testGardenTheme.appliedState?.timeOfDay === 21,
-    'Garden appliedState updated to 21 while Phu Quoc is loading'
+    'Garden appliedState updated to 21 while Beach is loading'
   );
   assert(
     inFlightUpdateCoordinator.getActiveThemeState()?.timeOfDay === 21,
-    'Coordinator activeThemeState updated to 21 while Phu Quoc is loading'
+    'Coordinator activeThemeState updated to 21 while Beach is loading'
   );
 
-  // 4. Complete Phu Quoc init -> enters handover -> onRestoreCamera throws
-  phuQuocDeferred.resolve();
-  const failedSwitchResult = await phuQuocSwitchPromise;
+  // 4. Complete Beach init -> enters handover -> onRestoreCamera throws
+  beachDeferred.resolve();
+  const failedSwitchResult = await beachSwitchPromise;
 
-  // 5. Verify rollback results: Garden keeps 21, and Phu Quoc disposeCount === 1
-  assert(failedSwitchResult.status === 'failed', 'Switch to Phu Quoc failed as expected on restore camera');
+  // 5. Verify rollback results: Garden keeps 21, and Beach disposeCount === 1
+  assert(failedSwitchResult.status === 'failed', 'Switch to Beach failed as expected on restore camera');
   assert(inFlightUpdateCoordinator.getActiveThemeId() === 'garden', 'Active theme rolled back to garden');
   assert(
     inFlightUpdateCoordinator.getActiveThemeState()?.timeOfDay === 21,
@@ -564,12 +566,12 @@ async function runLifecycleTests() {
     'Garden instance retained timeOfDay = 21 after rollback'
   );
   assert(
-    testPhuQuocTheme.disposed === true,
-    'Phu Quoc instance was disposed'
+    testBeachTheme.disposed === true,
+    'Beach instance was disposed'
   );
   assert(
-    testPhuQuocTheme.disposeCount === 1,
-    `Phu Quoc instance was disposed exactly once (disposeCount = ${testPhuQuocTheme.disposeCount})`
+    testBeachTheme.disposeCount === 1,
+    `Beach instance was disposed exactly once (disposeCount = ${testBeachTheme.disposeCount})`
   );
 
   // =========================================================================
@@ -623,7 +625,7 @@ async function runLifecycleTests() {
       const shouldFail = attemptNumber === 1;
       return createFakeThemeInstance('garden', { failInit: shouldFail });
     },
-    phuquoc: async () => createFakeThemeInstance('phuquoc'),
+    beach: async () => createFakeThemeInstance('beach'),
   };
 
   const sceneManager = new SceneManager(mockContainer, {
@@ -670,17 +672,17 @@ async function runLifecycleTests() {
   assert(startCount === 2, 'Integration: Calling start again was attempted');
   // SceneManager.updateLoopState is idempotent, animFrameId is not duplicated
 
-  // Switch to phuquoc while running
-  const switchNext = await sceneManager.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+  // Switch to beach while running
+  const switchNext = await sceneManager.switchTheme('beach', { ...DEFAULT_BEACH_STATE });
   assert(switchNext.status === 'success', 'Integration: Subsequent theme switch succeeded');
   assert(readyCount === 1, 'Integration: onReady was not emitted again on theme switch');
-  assert(sceneManager.getActiveThemeId() === 'phuquoc', 'Integration: Active theme is phuquoc');
+  assert(sceneManager.getActiveThemeId() === 'beach', 'Integration: Active theme is beach');
 
   // Step 4: Unmount before in-flight switch completes
   const deferredUnmount = createDeferred();
   const unmountLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
     garden: async () => createFakeThemeInstance('garden'),
-    phuquoc: async () => createFakeThemeInstance('phuquoc', { initPromise: deferredUnmount.promise }),
+    beach: async () => createFakeThemeInstance('beach', { initPromise: deferredUnmount.promise }),
   };
 
   let unmountReadyCount = 0;
@@ -696,7 +698,7 @@ async function runLifecycleTests() {
     unmountStartCount++;
   };
 
-  const inFlightPromise = unmountManager.switchTheme('phuquoc', { ...DEFAULT_PHUQUOC_STATE });
+  const inFlightPromise = unmountManager.switchTheme('beach', { ...DEFAULT_BEACH_STATE });
 
   // Component unmounts
   unmountManager.dispose();
@@ -764,15 +766,15 @@ async function runLifecycleTests() {
   assert(Math.abs(gardenHeight - 25.5) < 0.001, 'Theme A projection has height 25.5');
 
   setCameraProjection(testCam, 24.5, aspect);
-  const phuquocHeight = testCam.top - testCam.bottom;
-  const phuquocWidth = testCam.right - testCam.left;
-  assert(Math.abs(phuquocHeight - 24.5) < 0.001, 'Theme B projection recalibrated to height 24.5');
+  const beachHeight = testCam.top - testCam.bottom;
+  const beachWidth = testCam.right - testCam.left;
+  assert(Math.abs(beachHeight - 24.5) < 0.001, 'Theme B projection recalibrated to height 24.5');
   assert(
-    Math.abs(phuquocWidth - (24.5 * aspect)) < 0.001,
+    Math.abs(beachWidth - (24.5 * aspect)) < 0.001,
     'Theme B projection horizontal width scales correctly with aspect ratio'
   );
   assert(
-    phuquocHeight !== gardenHeight,
+    beachHeight !== gardenHeight,
     'Restoring camera to Theme B does not retain Theme A leftover frustum height'
   );
 
@@ -784,8 +786,8 @@ async function runLifecycleTests() {
     'DEFAULT_GARDEN_STATE does not store redundant quality'
   );
   assert(
-    (DEFAULT_PHUQUOC_STATE as any).quality === undefined,
-    'DEFAULT_PHUQUOC_STATE does not store redundant quality'
+    (DEFAULT_BEACH_STATE as any).quality === undefined,
+    'DEFAULT_BEACH_STATE does not store redundant quality'
   );
   assert(
     DEFAULT_SHARED_OPTIONS.quality === 'high',
@@ -865,7 +867,7 @@ async function runLifecycleTests() {
 
   const raycastLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
     garden: async () => testRaycastTheme,
-    phuquoc: async () => testRaycastTheme,
+    beach: async () => testRaycastTheme,
   };
 
   const raycastSceneManager = new SceneManager(mockContainer, {

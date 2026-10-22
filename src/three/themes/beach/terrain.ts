@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import {
+  BEACH_COLORS,
   PHUQUOC_COLORS,
+  BeachSeason,
   PhuQuocSeason,
   SEED,
 } from './constants';
@@ -11,27 +13,34 @@ import {
   isWetSand,
 } from './shoreline';
 import {
+  BEACH_CENTER,
   PHUQUOC_CENTER,
+  BEACH_BOUNDARY_POINTS,
   PHUQUOC_BOUNDARY_POINTS,
+  BEACH_BOUNDARY_SAMPLES,
   PHUQUOC_BOUNDARY_SAMPLES,
+  isInsideBeachFootprint,
   isInsidePhuQuocFootprint,
+  getBeachBoundaryPoint,
   getPhuQuocBoundaryPoint,
+  BEACH_FOOTPRINT_BOUNDS,
   PHUQUOC_FOOTPRINT_BOUNDS,
 } from './footprint';
 import { SeededRandom, SimplexNoise2D } from '../../core/noise';
 
-export interface PhuQuocTerrainSystem {
+export interface BeachTerrainSystem {
   group: THREE.Group;
   getHeightAt(x: number, z: number): number;
   getNormalAt(x: number, z: number): THREE.Vector3;
   getSlopeAt(x: number, z: number): number;
-  updateSeason(season: PhuQuocSeason, t: number): void;
+  updateSeason(season: BeachSeason, t: number): void;
   dispose(): void;
 }
+export type PhuQuocTerrainSystem = BeachTerrainSystem;
 
-export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSystem {
+export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem {
   const terrainGroup = new THREE.Group();
-  terrainGroup.name = 'PhuQuocTerrain';
+  terrainGroup.name = 'BeachTerrain';
   parentGroup.add(terrainGroup);
 
   const wallCutoffY = -1.25;
@@ -466,7 +475,7 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
     getHeightAt: sampleHeight,
     getNormalAt: sampleNormal,
     getSlopeAt: sampleSlope,
-    updateSeason(season: PhuQuocSeason, t: number) {
+    updateSeason(season: BeachSeason, t: number) {
       const colorAttr = topGeo.attributes.color as THREE.BufferAttribute;
       const targetColors = season === 'rainy' ? rainyColors : dryColors;
       const fromColors = season === 'rainy' ? dryColors : rainyColors;
@@ -488,3 +497,5 @@ export function createPhuQuocTerrain(parentGroup: THREE.Group): PhuQuocTerrainSy
     },
   };
 }
+
+export const createPhuQuocTerrain = createBeachTerrain;

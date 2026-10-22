@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { ThemeMetadata, ThemeCameraPreset } from '../../core/types';
 
-export const PHUQUOC_METADATA: ThemeMetadata<'phuquoc'> = {
-  id: 'phuquoc',
+export const BEACH_METADATA: ThemeMetadata<'beach'> = {
+  id: 'beach',
   name: 'Sunset Beach',
   tagline: 'A fictional coastal retreat inspired by Ông Lang.',
   eyebrow: 'A FICTIONAL COASTAL RETREAT INSPIRED BY ÔNG LANG',
@@ -53,14 +53,16 @@ export const PHUQUOC_METADATA: ThemeMetadata<'phuquoc'> = {
     },
   ],
 };
+export const PHUQUOC_METADATA = BEACH_METADATA;
 
 // Coordinate convention:
 // +X = East (inland low hills), -X = West (sea & sunset)
 // +Z = North, -Z = South, +Y = Up
-export const PHUQUOC_CAMERA_PRESET: ThemeCameraPreset = {
+export const BEACH_CAMERA_PRESET: ThemeCameraPreset = {
   position: new THREE.Vector3(25.0, 21.0, 27.0),
   target: new THREE.Vector3(-0.5, 0.45, 0.4),
   baseFrustumHeight: 25.0,
   minPolarAngle: Math.PI * 0.16,
   maxPolarAngle: Math.PI * 0.44,
 };
+export const PHUQUOC_CAMERA_PRESET = BEACH_CAMERA_PRESET;

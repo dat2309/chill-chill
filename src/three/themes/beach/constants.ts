@@ -16,11 +16,12 @@ export const SEA_LEVEL_BASE = 0.30;
 export const SEA_LEVEL_LOW = 0.16;
 export const SEA_LEVEL_HIGH = 0.44;
 
-export type PhuQuocSeason = 'dry' | 'rainy';
+export type BeachSeason = 'dry' | 'rainy';
+export type PhuQuocSeason = BeachSeason;
 
-export interface PhuQuocState {
+export interface BeachState {
   timeOfDay: number; // 0-24, default 17:45 (17.75)
-  season: PhuQuocSeason;
+  season: BeachSeason;
   tide: TideLevel;
   rippleStrength: number;
   flowSpeed: number; // swell / wave speed
@@ -28,8 +29,9 @@ export interface PhuQuocState {
   autoRotate: boolean;
   quality: Quality;
 }
+export type PhuQuocState = BeachState;
 
-export const DEFAULT_PHUQUOC_STATE: PhuQuocState = {
+export const DEFAULT_BEACH_STATE: BeachState = {
   timeOfDay: 17.75, // 17:45 sunset
   season: 'dry',
   tide: 'high',
@@ -39,9 +41,10 @@ export const DEFAULT_PHUQUOC_STATE: PhuQuocState = {
   autoRotate: false,
   quality: 'high',
 };
+export const DEFAULT_PHUQUOC_STATE = DEFAULT_BEACH_STATE;
 
 // Tropical Bay Color Palette
-export const PHUQUOC_COLORS = {
+export const BEACH_COLORS = {
   sand: {
     dry: new THREE.Color(0xf2e3c6), // Pale golden dry sand
     wet: new THREE.Color(0xc7ab80), // Darker damp sand near waterline
@@ -88,3 +91,4 @@ export const PHUQUOC_COLORS = {
   },
   base: new THREE.Color(0xf5ede0), // Elegant diorama slab pedestal
 };
+export const PHUQUOC_COLORS = BEACH_COLORS;

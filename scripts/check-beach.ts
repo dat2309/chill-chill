@@ -12,23 +12,36 @@ import {
   PIER_CONFIG,
   BUNGALOW_SPOTS,
   BOAT_SPOTS,
-} from '../src/three/themes/phuquoc/shoreline';
+} from '../src/three/themes/beach/shoreline';
 import {
   SEA_LEVEL_BASE,
   SEA_LEVEL_LOW,
   SEA_LEVEL_HIGH,
+  DEFAULT_BEACH_STATE,
   DEFAULT_PHUQUOC_STATE,
-} from '../src/three/themes/phuquoc/constants';
-import { calculatePhuQuocSunPosition, getPhuQuocSkyGradient } from '../src/three/themes/phuquoc/lighting';
+} from '../src/three/themes/beach/constants';
 import {
+  calculateBeachSunPosition,
+  calculatePhuQuocSunPosition,
+  getBeachSkyGradient,
+  getPhuQuocSkyGradient,
+} from '../src/three/themes/beach/lighting';
+import {
+  BEACH_CENTER,
   PHUQUOC_CENTER,
+  BEACH_BOUNDARY_POINTS,
   PHUQUOC_BOUNDARY_POINTS,
+  BEACH_BOUNDARY_SAMPLES,
   PHUQUOC_BOUNDARY_SAMPLES,
+  isInsideBeachFootprint,
   isInsidePhuQuocFootprint,
+  getBeachFootprintRadius,
   getPhuQuocFootprintRadius,
+  BEACH_FOOTPRINT_BOUNDS,
   PHUQUOC_FOOTPRINT_BOUNDS,
-} from '../src/three/themes/phuquoc/footprint';
+} from '../src/three/themes/beach/footprint';
 import {
+  createBeachBoats,
   createPhuQuocBoats,
   BOAT_SPECS,
   getOceanWaveElevation,
@@ -36,9 +49,10 @@ import {
   isInsideThungCavity,
   isInsideGheCavity,
   isPointInBoatCavity,
-} from '../src/three/themes/phuquoc/boats';
+} from '../src/three/themes/beach/boats';
 import {
   sanitizeGardenState,
+  sanitizeBeachState,
   sanitizePhuQuocState,
   sanitizeCameraState,
   loadPersistedAppState,
@@ -825,18 +839,18 @@ assert(clampedMaxZoom?.zoom === 3.0, 'Camera sanitizer clamps zoom to safe maxim
 
 const mockAppState = {
   version: 2,
-  activeThemeId: 'phuquoc' as const,
+  activeThemeId: 'beach' as const,
   gardenState: { ...DEFAULT_GARDEN_STATE, cameraState: { position: [20, 20, 20] as [number, number, number], target: [0, 0, 0] as [number, number, number], zoom: 1.2 } },
-  phuquocState: { ...DEFAULT_PHUQUOC_STATE, cameraState: { position: [-15, 12, 18] as [number, number, number], target: [0, 0.5, 0] as [number, number, number], zoom: 1.5 } },
+  beachState: { ...DEFAULT_BEACH_STATE, cameraState: { position: [-15, 12, 18] as [number, number, number], target: [0, 0.5, 0] as [number, number, number], zoom: 1.5 } },
   shared: { quality: 'high' as const },
   camera: {
     garden: { position: [20, 20, 20] as [number, number, number], target: [0, 0, 0] as [number, number, number], zoom: 1.2 },
-    phuquoc: { position: [-15, 12, 18] as [number, number, number], target: [0, 0.5, 0] as [number, number, number], zoom: 1.5 },
+    beach: { position: [-15, 12, 18] as [number, number, number], target: [0, 0.5, 0] as [number, number, number], zoom: 1.5 },
   },
 };
 assert(
-  mockAppState.camera.garden.zoom !== mockAppState.camera.phuquoc.zoom &&
-  mockAppState.camera.garden.position[0] !== mockAppState.camera.phuquoc.position[0],
+  mockAppState.camera.garden.zoom !== mockAppState.camera.beach.zoom &&
+  mockAppState.camera.garden.position[0] !== mockAppState.camera.beach.position[0],
   'Camera state across themes is stored and isolated independently'
 );
 
@@ -902,12 +916,12 @@ for (const s of pqStructures) {
 }
 assert(allPqStructuresInside, 'All thatched bungalows, pier, boats, and relaxation spots reside safely within natural footprint', pqStructFail);
 
-// 11. Phu Quoc Terrain Winding & Face Normal Cross Product Verification
-import { createPhuQuocTerrain } from '../src/three/themes/phuquoc/terrain';
-import { createPhuQuocWater } from '../src/three/themes/phuquoc/water';
+// 11. Beach Terrain Winding & Face Normal Cross Product Verification
+import { createBeachTerrain, createPhuQuocTerrain } from '../src/three/themes/beach/terrain';
+import { createBeachWater, createPhuQuocWater } from '../src/three/themes/beach/water';
 
 const pqMockGroup = new THREE.Group();
-const pqTerrainSystem = createPhuQuocTerrain(pqMockGroup);
+const pqTerrainSystem = createBeachTerrain(pqMockGroup);
 const pqTerrainMesh = pqTerrainSystem.group.children.find(c => c instanceof THREE.Mesh && c.receiveShadow) as THREE.Mesh;
 assert(!!pqTerrainMesh, 'Phu Quoc terrain mesh exists in system');
 
@@ -985,9 +999,9 @@ assert(pqSideTrianglesCount > 1000 && pqSideWindingCorrect, `Phu Quoc side walls
 const pqMat = pqTerrainMesh.material as THREE.MeshStandardMaterial;
 assert(pqMat.side === THREE.FrontSide, 'Phu Quoc terrain material uses FrontSide rendering (no DoubleSide used to mask winding errors)');
 
-// 12. Phu Quoc Water Surface & Marine Skirt Exact Connectivity Verification
+// 12. Beach Water Surface & Marine Skirt Exact Connectivity Verification
 const pqWaterParent = new THREE.Group();
-const pqWaterSystem = createPhuQuocWater({} as THREE.WebGLRenderer, pqWaterParent, getTerrainHeight, true);
+const pqWaterSystem = createBeachWater({} as THREE.WebGLRenderer, pqWaterParent, getTerrainHeight, true);
 const pqWaterMesh = pqWaterSystem.mesh;
 assert(!!pqWaterMesh, 'Phu Quoc water mesh exists in system');
 
@@ -1142,15 +1156,15 @@ for (const s of ['dry', 'rainy'] as const) {
 assert(maxStepJump <= maxJumpThreshold, `Continuous sky interpolation: max color step jump between adjacent 0.05h samples is ${(maxStepJump * 255).toFixed(1)}/255 (threshold <= 16/255)`, maxStepDetails);
 
 // 15. Coconut Palm Crown Fronds Box3 vs Thatched Bungalow Roof Footprint Clearance
-import { createPhuQuocArchitecture } from '../src/three/themes/phuquoc/architecture';
-import { createPhuQuocVegetation } from '../src/three/themes/phuquoc/vegetation';
+import { createBeachArchitecture, createPhuQuocArchitecture } from '../src/three/themes/beach/architecture';
+import { createBeachVegetation, createPhuQuocVegetation } from '../src/three/themes/beach/vegetation';
 
 const pqVegScene = new THREE.Scene();
 const pqVegParent = new THREE.Group();
 pqVegScene.add(pqVegParent);
 
-const pqArch = createPhuQuocArchitecture(pqVegParent, getTerrainHeight);
-const pqVeg = createPhuQuocVegetation(pqVegParent, getTerrainHeight, () => 0);
+const pqArch = createBeachArchitecture(pqVegParent, getTerrainHeight);
+const pqVeg = createBeachVegetation(pqVegParent, getTerrainHeight, () => 0);
 
 pqVegParent.updateMatrixWorld(true);
 
@@ -1216,18 +1230,18 @@ try {
   const raw = { ...mockAppState, version: CURRENT_STORAGE_VERSION - 1 };
   (globalThis as any).window = { localStorage: { getItem: () => JSON.stringify(raw) } };
   const migrated = loadPersistedAppState();
-  assert(!migrated.gardenState.cameraState && !migrated.phuquocState.cameraState &&
-    !migrated.camera?.garden && !migrated.camera?.phuquoc,
+  assert(!migrated.gardenState.cameraState && !migrated.beachState.cameraState &&
+    !migrated.camera?.garden && !migrated.camera?.beach,
     'Old layout cameras are removed from nested and shared storage');
   assert(migrated.gardenState.season === raw.gardenState.season &&
-    migrated.phuquocState.timeOfDay === raw.phuquocState.timeOfDay,
+    migrated.beachState.timeOfDay === raw.beachState.timeOfDay,
     'Layout migration retains season and time settings');
 } finally {
   (globalThis as any).window = oldWindow;
 }
 
 // 15. Raycast Water Interaction & Obstacle Verification Tests (Phu Quoc)
-import { intersectPhuQuocWater } from '../src/three/themes/phuquoc/shoreline';
+import { intersectPhuQuocWater } from '../src/three/themes/beach/shoreline';
 
 // A. Oblique camera raycast tests at both HIGH and LOW tides
 const pqCameraPos = new THREE.Vector3(18.0, 16.0, 26.0);

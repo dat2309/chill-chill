@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import { ThemeId, ThemeInstance, ThemeMetadata } from '../core/types';
 import { GARDEN_METADATA } from './garden/config';
-import { PHUQUOC_METADATA } from './phuquoc/config';
+import { BEACH_METADATA } from './beach/config';
 
 export const THEME_METADATA_MAP: Record<ThemeId, ThemeMetadata<any>> = {
   garden: GARDEN_METADATA,
-  phuquoc: PHUQUOC_METADATA,
+  beach: BEACH_METADATA,
 };
 
-export const THEME_LIST: ThemeMetadata<any>[] = [GARDEN_METADATA, PHUQUOC_METADATA];
+export const THEME_LIST: ThemeMetadata<any>[] = [GARDEN_METADATA, BEACH_METADATA];
 
 /**
  * Resilient dynamic import helper with retry and stale-chunk recovery.
@@ -63,8 +63,8 @@ export const THEME_LOADERS: Record<
     const mod = await loadThemeWithRetry(() => import('./garden/index'));
     return new mod.GardenTheme(renderer);
   },
-  phuquoc: async (renderer) => {
-    const mod = await loadThemeWithRetry(() => import('./phuquoc/index'));
-    return new mod.PhuQuocTheme(renderer);
+  beach: async (renderer) => {
+    const mod = await loadThemeWithRetry(() => import('./beach/index'));
+    return new mod.BeachTheme(renderer);
   },
 };

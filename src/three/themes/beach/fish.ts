@@ -3,12 +3,13 @@ import { SEED } from './constants';
 import { getWaterDepth, isInWater, PIER_CONFIG } from './shoreline';
 import { SeededRandom } from '../../core/noise';
 
-export interface PhuQuocFishSystem {
+export interface BeachFishSystem {
   group: THREE.Group;
   update(dt: number, elapsed: number, waterLevel: number): void;
   reactToRipple(x: number, z: number): void;
   dispose(): void;
 }
+export type PhuQuocFishSystem = BeachFishSystem;
 
 interface FishAgent {
   mesh: THREE.Mesh;
@@ -20,12 +21,12 @@ interface FishAgent {
   colorType: 'yellow' | 'blue' | 'clown';
 }
 
-export function createPhuQuocFish(
+export function createBeachFish(
   parentGroup: THREE.Group,
   getHeightAt: (x: number, z: number) => number
-): PhuQuocFishSystem {
+): BeachFishSystem {
   const fishGroup = new THREE.Group();
-  fishGroup.name = 'PhuQuocFish';
+  fishGroup.name = 'BeachFish';
   parentGroup.add(fishGroup);
 
   const geometriesToDispose: THREE.BufferGeometry[] = [];
@@ -184,3 +185,5 @@ export function createPhuQuocFish(
     },
   };
 }
+
+export const createPhuQuocFish = createBeachFish;
