@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createVegetationWeather } from '../../core/vegetationWeather';
 import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason, SEED } from './constants';
 import { getDistanceToShore, isInWater, BUNGALOW_SPOTS } from './shoreline';
 import { isInsideBeachFootprint, isInsidePhuQuocFootprint } from './footprint';
@@ -6,7 +7,7 @@ import { SeededRandom } from '../../core/noise';
 
 export interface BeachVegetationSystem {
   group: THREE.Group;
-  update(dt: number, elapsed: number, windStrength: number): void;
+  update(dt: number, elapsed: number, windStrength: number, rainIntensity?: number): void;
   updateSeason(season: BeachSeason | number, t?: number): void;
   dispose(): void;
 }
@@ -31,17 +32,16 @@ export function createBeachVegetation(
 
   const geometriesToDispose: THREE.BufferGeometry[] = [];
   const materialsToDispose: THREE.Material[] = [];
-  const dynamicMeshes: { mesh: THREE.Object3D; baseRotation: THREE.Euler; swayScale: number }[] = [];
 
   const rng = new SeededRandom(SEED + 999);
 
   // Materials
-  const palmTrunkMat = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.vegetation.palmTrunk });
-  const palmFrondMat = new THREE.MeshLambertMaterial({
+  const palmTrunkMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.vegetation.palmTrunk });
+  const palmFrondMat = new THREE.MeshStandardMaterial({
     color: PHUQUOC_COLORS.vegetation.palmFrond,
     side: THREE.DoubleSide,
   });
-  const casuarinaMat = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.vegetation.casuarina });
+  const casuarinaMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.vegetation.casuarina });
   materialsToDispose.push(palmTrunkMat, palmFrondMat, casuarinaMat);
 
   // --- Box3-based Bungalow Roof Exclusion ---
@@ -50,6 +50,7 @@ export function createBeachVegetation(
   function doesCrownIntersectRoof(crownObj: THREE.Object3D): boolean {
     crownObj.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(crownObj);
+    box.min.x -= .05; box.max.x += .5; box.min.z -= .12; box.max.z += .12;
     for (const r of BUNGALOW_ROOF_BOUNDS) {
       const xOverlap = box.min.x <= r.maxX && box.max.x >= r.minX;
       const zOverlap = box.min.z <= r.maxZ && box.max.z >= r.minZ;
@@ -78,7 +79,7 @@ export function createBeachVegetation(
     { x: -7.6, z: -5.0, leanAngle: 0.18, leanDir: 0.8 },
     { x: -1.0, z: -5.0, leanAngle: 0.16, leanDir: 0.2 },
     { x: 1.2,  z: -5.2, leanAngle: 0.16, leanDir: -0.2 },
-    { x: 7.6,  z: 0.5,  leanAngle: 0.22, leanDir: -0.5 },
+    { x: 7.7,  z: 1.4,  leanAngle: 0.22, leanDir: -0.5 },
     { x: 6.8,  z: 2.8,  leanAngle: 0.35, leanDir: -0.6 },
   ];
 
@@ -103,7 +104,7 @@ export function createBeachVegetation(
       const rBot = 0.14 * (1 - t * 0.45);
       const rTop = 0.14 * (1 - (t + 1 / segments) * 0.45);
 
-      const segGeo = new THREE.CylinderGeometry(rTop, rBot, segHeight, 8);
+      const segGeo = new THREE.CylinderGeometry(rTop, rBot, segHeight, 8, 3);
       geometriesToDispose.push(segGeo);
       const segMesh = new THREE.Mesh(segGeo, palmTrunkMat);
       segMesh.castShadow = true;
@@ -200,12 +201,6 @@ export function createBeachVegetation(
       return;
     }
 
-    dynamicMeshes.push({
-      mesh: crown,
-      baseRotation: crown.rotation.clone(),
-      swayScale: 0.035 + leanAngle * 0.06,
-    });
-
     vegGroup.add(palmObj);
   }
 
@@ -215,7 +210,7 @@ export function createBeachVegetation(
   });
 
   // --- 2. Coastal Pines (Phi Lao Ven Biển) ---
-  const pineTrunkGeo = new THREE.CylinderGeometry(0.06, 0.10, 1.4, 6);
+  const pineTrunkGeo = new THREE.CylinderGeometry(0.06, 0.10, 1.4, 6, 6);
   pineTrunkGeo.translate(0, 0.7, 0);
   geometriesToDispose.push(pineTrunkGeo);
 
@@ -260,33 +255,36 @@ export function createBeachVegetation(
   vegGroup.add(pineTrunkMesh);
   vegGroup.add(pineCanopyMesh);
 
-  // Cached seasonal target colors
-  const lushGreen = new THREE.Color(0x235f26);
-  const dryGreen = BEACH_COLORS.vegetation.palmFrond;
-
+  const weather = createVegetationWeather();
+  vegGroup.updateMatrixWorld(true);
+  vegGroup.traverse(obj => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    if (obj === pineTrunkMesh || obj === pineCanopyMesh) {
+      weather.attach(obj, obj === pineTrunkMesh ? .009 : .024, i => {
+        const m = new THREE.Matrix4(); pineTrunkMesh.getMatrixAt(i, m);
+        return new THREE.Vector3().setFromMatrixPosition(m);
+      });
+    } else {
+      const frond = obj.material === palmFrondMat;
+      // Each frond bends from its attachment; trunk segments share the palm's ground anchor.
+      let root = new THREE.Vector3();
+      {
+        const palm = obj.parent!.parent!;
+        palm.getWorldPosition(root); obj.worldToLocal(root);
+      }
+      weather.attach(obj, frond ? .09 : .009, () => root, false, frond);
+    }
+  });
   return {
     group: vegGroup,
-    update(dt: number, elapsed: number, windStrength: number) {
-      // Wind sway on palm frond crowns
-      dynamicMeshes.forEach((item, idx) => {
-        const timeOffset = elapsed * 2.2 + idx * 0.7;
-        const swayAngle = Math.sin(timeOffset) * item.swayScale * windStrength;
-        item.mesh.rotation.z = item.baseRotation.z + swayAngle;
-        item.mesh.rotation.x = item.baseRotation.x + Math.cos(timeOffset * 0.8) * item.swayScale * 0.5 * windStrength;
-      });
+    update(dt: number, elapsed: number, windStrength: number, rainIntensity = 0) {
+      weather.update(dt, elapsed, windStrength, rainIntensity);
     },
-    updateSeason(seasonOrFactor: BeachSeason | number, t?: number) {
-      let rainFactor: number;
-      if (typeof seasonOrFactor === 'number') {
-        rainFactor = THREE.MathUtils.clamp(seasonOrFactor, 0.0, 1.0);
-      } else if (t !== undefined) {
-        rainFactor = seasonOrFactor === 'rainy' ? t : (1.0 - t);
-      } else {
-        rainFactor = seasonOrFactor === 'rainy' ? 1.0 : 0.0;
-      }
-      palmFrondMat.color.lerpColors(dryGreen, lushGreen, rainFactor);
+    updateSeason(_seasonOrFactor: BeachSeason | number, _t?: number) {
+      // Rain is supplied continuously by the theme; retained wetness dries over time.
     },
     dispose() {
+      weather.dispose();
       geometriesToDispose.forEach((g) => g.dispose());
       materialsToDispose.forEach((m) => m.dispose());
       vegGroup.clear();

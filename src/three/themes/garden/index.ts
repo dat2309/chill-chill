@@ -30,6 +30,9 @@ export class GardenTheme implements ThemeInstance<'garden'> {
   private currentTide: string = 'high';
   private currentSeason: GardenSeason = 'spring';
   private freezeProgress: number = 0.0;
+  private seasonRemaining = 0;
+  private seasonWeights = { spring: 1, summer: 0, autumn: 0, winter: 0 };
+  private effectiveWind = .3;
 
   constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
@@ -89,33 +92,34 @@ export class GardenTheme implements ThemeInstance<'garden'> {
     }
 
     if (state.season && this.terrain && this.vegetation && this.architecture) {
+      if (this.currentSeason !== state.season) this.seasonRemaining = 1;
       this.currentSeason = state.season;
-      this.terrain.updateSeason(state.season, blendFactor);
       this.vegetation.updateSeason(state.season, blendFactor);
-      this.architecture.updateSeason(state.season, blendFactor);
     }
   }
 
   update(dt: number, elapsed: number, state: ThemeState<'garden'>): void {
-    // Smooth frame-rate independent freeze / melt transition for winter season
-    const targetFreeze = state.season === 'winter' ? 1.0 : 0.0;
-    const FREEZE_SPEED = 0.55; // Reaches full winter freeze in ~1.8 seconds
-    if (Math.abs(this.freezeProgress - targetFreeze) > 0.001) {
-      const step = Math.min(0.2, dt) * FREEZE_SPEED;
-      if (this.freezeProgress < targetFreeze) {
-        this.freezeProgress = Math.min(targetFreeze, this.freezeProgress + step);
-      } else {
-        this.freezeProgress = Math.max(targetFreeze, this.freezeProgress - step);
-      }
+    // One continuous seasonal response, shared by vegetation, terrain and water ice.
+    const seasonalAlpha = 1 - Math.exp(-Math.max(0, dt) * 1.5);
+    for (const season of ['spring', 'summer', 'autumn', 'winter'] as const) {
+      this.seasonWeights[season] += ((season === state.season ? 1 : 0) - this.seasonWeights[season]) * seasonalAlpha;
     }
+    this.freezeProgress = this.seasonWeights.winter;
+    if (this.seasonRemaining > .00001) {
+      this.terrain?.updateSeason(state.season, seasonalAlpha);
+      this.architecture?.updateSeason(state.season, seasonalAlpha);
+      this.seasonRemaining *= 1 - seasonalAlpha;
+    }
+    this.effectiveWind += (state.windStrength - this.effectiveWind) * (1 - Math.exp(-Math.max(0, dt) * 3));
+    const effectiveState = { ...state, windStrength: this.effectiveWind };
     this.water?.setFreezeProgress(this.freezeProgress);
 
     // Systems update
-    this.water?.update(dt, elapsed, state as any);
+    this.water?.update(dt, elapsed, effectiveState as any);
     this.architecture?.update(dt, elapsed, state.timeOfDay);
-    this.vegetation?.update(dt, elapsed, state.windStrength);
+    this.vegetation?.update(dt, elapsed, this.effectiveWind, this.freezeProgress, this.seasonWeights);
     this.fish?.update(dt, elapsed, this.water?.getWaterLevel() ?? 0.28, this.freezeProgress);
-    this.lighting?.update(state as any);
+    this.lighting?.update(effectiveState as any);
 
     // Sync water shader sun direction
     if (this.water && this.lighting) {

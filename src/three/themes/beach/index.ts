@@ -111,6 +111,7 @@ export class BeachTheme implements ThemeInstance<'beach'> {
 
   private currentQuality: Quality = 'high';
   private lastWindStrength: number = 0.35;
+  private effectiveWind = .35;
 
   applyState(state: ThemeState<'beach'>, _prevSeason?: BeachSeason, _blendFactor: number = 1): void {
     if (this.currentTide !== state.tide && this.water) {
@@ -142,11 +143,14 @@ export class BeachTheme implements ThemeInstance<'beach'> {
 
     // 2. Compute harmonized effective wind combining user slider and continuous rain preset
     // (creates moderate ocean swell without turning into an exaggerated hurricane)
-    const effectiveWind = THREE.MathUtils.clamp(
+    const targetWind = THREE.MathUtils.clamp(
       state.windStrength * (1.0 + rainIntensity * 0.50) + rainIntensity * 0.15,
       0.1,
       1.2
     );
+
+    this.effectiveWind += (targetWind - this.effectiveWind) * (1 - Math.exp(-Math.max(0, dt) * 3));
+    const effectiveWind = this.effectiveWind;
 
     // 3. Falling raindrops animated using the unified effectiveWind
     this.weather?.updateRaindrops(dt, elapsed, effectiveWind, waterLevel);
@@ -175,7 +179,7 @@ export class BeachTheme implements ThemeInstance<'beach'> {
     if (this.boats && this.water?.updateBoatCavities) {
       this.water.updateBoatCavities(this.boats.getCavities());
     }
-    this.vegetation?.update(dt, elapsed, effectiveWind);
+    this.vegetation?.update(dt, elapsed, effectiveWind, rainIntensity);
     this.fish?.update(dt, elapsed, waterLevel);
   }
 

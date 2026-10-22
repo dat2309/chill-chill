@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createVegetationWeather } from '../../core/vegetationWeather';
 import {
   DIORAMA_WIDTH,
   DIORAMA_DEPTH,
@@ -13,7 +14,7 @@ import { GARDEN_STEPPING_STONES } from './architecture';
 
 export interface VegetationSystem {
   group: THREE.Group;
-  update(dt: number, elapsed: number, windStrength: number): void;
+  update(dt: number, elapsed: number, windStrength: number, snow?: number, seasonWeights?: Record<Season, number>): void;
   updateSeason(season: Season, t: number): void;
   dispose(): void;
 }
@@ -77,7 +78,7 @@ export function createVegetation(
 
   // 1. PINE / CONIFER TREES (~26 well-scaled trees in natural alpine groves, not in a rigid line)
   // Height: 1.4 - 2.3, Radius: 0.36 - 0.58, with varied silhouettes per tree
-  const pineTrunkGeom = new THREE.CylinderGeometry(0.04, 0.08, 1.0, 6);
+  const pineTrunkGeom = new THREE.CylinderGeometry(0.04, 0.08, 1.0, 6, 6);
   pineTrunkGeom.translate(0, 0.5, 0);
 
   // 9-segment cone with smooth vertex normals for rich evergreen light wrap (never black)
@@ -200,10 +201,10 @@ export function createVegetation(
   if (pineFoliageMesh.instanceColor) pineFoliageMesh.instanceColor.needsUpdate = true;
 
   // 2. LARGE DECIDUOUS SHADE TREES WITH SOFT MULTI-TIER CLOUD-LIKE CANOPIES (11 overlapping puffs per tree)
-  const decTrunkGeom = new THREE.CylinderGeometry(0.08, 0.16, 1.0, 7);
+  const decTrunkGeom = new THREE.CylinderGeometry(0.08, 0.16, 1.0, 7, 6);
   decTrunkGeom.translate(0, 0.5, 0);
 
-  const decBranchGeom = new THREE.CylinderGeometry(0.035, 0.065, 0.55, 6);
+  const decBranchGeom = new THREE.CylinderGeometry(0.035, 0.065, 0.55, 6, 4);
   decBranchGeom.translate(0, 0.27, 0);
 
   // Smooth shaded icosahedron deformed with soft simplex noise for cloud-like foliage puffs
@@ -639,48 +640,68 @@ export function createVegetation(
 
   scene.add(group);
 
-  // Wind animation & seasonal transitions
-  function update(dt: number, elapsed: number, windStrength: number): void {
-    // Gentle sway on tree canopies and vines
-    const sway = Math.sin(elapsed * 2.2) * 0.015 * windStrength;
-    decCanopyMesh.position.x = sway;
-    decCanopyMesh.position.z = sway * 0.7;
-    vineMesh.rotation.z = Math.sin(elapsed * 1.8) * 0.02 * windStrength;
-  }
+  const weather = createVegetationWeather();
+  const pineRoot = (i: number, layers = false) => {
+    const p = pineInstances[layers ? Math.floor(i / maxPineLayers) : i];
+    return new THREE.Vector3(p?.x ?? 0, p?.y ?? 0, p?.z ?? 0);
+  };
+  const treeRoot = (i: number, parts = 1) => {
+    const p = decTrees[Math.floor(i / parts)];
+    return new THREE.Vector3(p?.x ?? 0, p?.y ?? 0, p?.z ?? 0);
+  };
+  weather.attach(pineTrunkMesh, .009, i => pineRoot(i));
+  weather.attach(pineFoliageMesh, .018, i => pineRoot(i, true));
+  weather.attach(decTrunkMesh, .012, i => treeRoot(i));
+  weather.attach(decBranchMesh, .019, i => treeRoot(i, branchesPerTree));
+  weather.attach(decCanopyMesh, .027, i => treeRoot(i, blobsPerTree), true);
+  weather.attach(bushMesh, .16);
+  weather.attach(vineMesh, .18);
+  const flowerWeather = createVegetationWeather();
+  flowerWeather.attach(flowerStemMesh, 2.0, undefined, true);
+  flowerWeather.attach(flowerHeadMesh, 2.0, undefined, true);
+  weather.attach(grassMesh, 3.0);
+  weather.attach(fernMesh, 1.7);
 
-  function updateSeason(season: Season, t: number): void {
-    const pal = SEASON_PALETTES[season];
-
-    // Conifers remain deep green in winter, freshen in spring
-    pineFoliageMat.color.lerp(pal.pineFoliage, t);
-
-    // Deciduous foliage shifts with seasons
-    decCanopyMat.color.lerp(pal.canopyPrimary, t);
-    bushMat.color.lerp(pal.canopyPrimary, t);
-    vineMat.color.lerp(season === 'winter' ? pal.pineFoliage : pal.canopyPrimary, t);
-
-    // Flowers dormant/scaled in winter
-    if (season === 'winter') {
-      flowerHeadMesh.visible = false;
-      flowerStemMesh.visible = false;
-    } else {
-      flowerHeadMesh.visible = true;
-      flowerStemMesh.visible = true;
-      const colList = pal.flowerColors;
-      if (colList.length > 0) {
-        for (let i = 0; i < flowerHeadMesh.count; i++) {
-          flowerHeadMesh.setColorAt(i, colList[i % colList.length]);
-        }
-        if (flowerHeadMesh.instanceColor) flowerHeadMesh.instanceColor.needsUpdate = true;
+  let targetSeason: Season = 'spring';
+  let weights = { spring: 1, summer: 0, autumn: 0, winter: 0 };
+  const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+  const color = new THREE.Color();
+  function update(dt: number, elapsed: number, windStrength: number, snow = 0, seasonWeights?: Record<Season, number>): void {
+    const alpha = 1 - Math.exp(-Math.max(0, dt) * 1.5);
+    if (seasonWeights) weights = seasonWeights;
+    else for (const season of seasons) weights[season] += ((season === targetSeason ? 1 : 0) - weights[season]) * alpha;
+    const palette = (key: 'pineFoliage' | 'canopyPrimary') => {
+      color.setRGB(0, 0, 0);
+      // Accumulate palette channels without allocating colors or touching instance buffers.
+      for (const season of seasons) {
+        const c = SEASON_PALETTES[season][key];
+        color.r += c.r * weights[season]; color.g += c.g * weights[season]; color.b += c.b * weights[season];
       }
-    }
+      return color;
+    };
+    // Instanced tints already contain spring green; use ratios to avoid multiplying green twice.
+    const tint = (mat: THREE.Material, key: 'pineFoliage' | 'canopyPrimary') => {
+      const c = palette(key); const base = SEASON_PALETTES.spring[key];
+      (mat as THREE.MeshStandardMaterial).color.setRGB(c.r / Math.max(.01, base.r), c.g / Math.max(.01, base.g), c.b / Math.max(.01, base.b));
+    };
+    tint(pineFoliageMesh.material as THREE.Material, 'pineFoliage');
+    tint(decCanopyMesh.material as THREE.Material, 'canopyPrimary');
+    (grassMesh.material as THREE.MeshStandardMaterial).color.setRGB(1, 1 - weights.autumn * .2 - weights.winter * .25, 1 - weights.autumn * .3);
+    (fernMesh.material as THREE.MeshStandardMaterial).color.setRGB(.18 + weights.autumn * .06, .4 - weights.winter * .15, .12);
+    weather.update(dt, elapsed, windStrength, 0, snow, weights.spring * .85 + weights.summer + weights.autumn * .5 + weights.winter * .025);
+    const bloom = weights.spring + weights.summer * .85 + weights.autumn * .35 + weights.winter * .02;
+    // Independent uniforms allow perennial flowers to go dormant without shrinking evergreen foliage.
+    flowerWeather.update(dt, elapsed, windStrength, 0, snow, bloom);
   }
+  function updateSeason(season: Season, _t: number): void { targetSeason = season; }
 
   return {
     group,
     update,
     updateSeason,
     dispose() {
+      weather.dispose();
+      flowerWeather.dispose();
       pineTrunkGeom.dispose();
       pineTrunkMat.dispose();
       pineConeGeom.dispose();

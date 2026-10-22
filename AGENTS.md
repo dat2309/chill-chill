@@ -52,6 +52,10 @@
 - Đảo chiều chuyển mùa giữa chừng (reversal giữa dry và rainy) phải tiếp tục mượt mà từ giá trị hiện tại theo thời gian thực qua dt, không khởi động lại từ đầu hoặc gây bước nhảy màu/ánh sáng đột ngột; toàn bộ cảnh (mưa, vật liệu, bầu trời, ánh sáng, nước) dùng chung một hệ số tiến độ liên tục.
 - Vùng băng hiển thị trên shader và vùng chặn tương tác trên CPU phải đồng nhất tuyệt đối: dùng cùng mực nước địa phương theo tọa độ z và tide hiện tại, cùng địa hình và quy tắc đánh giá băng; phân biệt rõ băng chuyển tiếp và băng đủ kín để chặn tương tác; không dùng mực nước hồ tiền cảnh cho thượng nguồn hay suối dốc.
 
+- Vegetation của mọi chủ đề phải dùng cùng trạng thái thời tiết hiệu dụng và tiến độ mùa liên tục với nước, mưa và ánh sáng. Phản ứng theo loài: thân, cành, tán, tàu lá, cỏ, hoa và dương xỉ có độ mềm riêng; gốc cố định trên terrain, uốn phân tầng theo một trường gió có pha và độ trễ riêng, không xoay/dịch nguyên cụm quanh tâm.
+- Vật liệu ướt, độ ẩm lưu lại, đổi màu, rụng/phục hồi lá và tuyết bám mặt trên phải chuyển tiếp qua dt, kể cả khi đảo chiều mùa. Cây thường xanh giữ bản sắc; tuyết làm chuyển động nặng hơn. Shader displacement phải có bounds và bóng đổ phù hợp, tránh rebuild geometry/cập nhật màu toàn bộ mỗi frame khi không đổi.
+- Khi có WebGL, kiểm chứng vegetation bằng hình ảnh cùng camera ở gió yếu/mạnh và các mùa của từng chủ đề; xác minh shader/uniform thực sự tác động từng nhóm, gốc đứng yên, biên độ giới hạn, reversal liên tục và không NaN. Nếu không chạy được WebGL, báo rõ chưa xác minh chuyển động/hình ảnh.
+
 ## Kiểm tra và review
 
 - Chạy build và các kiểm tra logic phù hợp với thay đổi. Với thay đổi chỉ ở tài liệu, đọc lại nội dung và chạy git diff --check; không bắt buộc chạy build ứng dụng.

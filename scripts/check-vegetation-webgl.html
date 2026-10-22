@@ -1,0 +1,24 @@
+<html><body><pre id="result">starting</pre><script type="module">
+import * as THREE from '/node_modules/three/build/three.module.js';
+import { createVegetationWeather } from '/src/three/core/vegetationWeather.ts';
+const errors=[]; const old=console.error; console.error=(...a)=>{errors.push(a.join(' '));old(...a)};
+try {
+const renderer=new THREE.WebGLRenderer({preserveDrawingBuffer:true}); renderer.setSize(600,400); document.body.append(renderer.domElement);
+const scene=new THREE.Scene(); scene.background=new THREE.Color('#aaccee');scene.add(new THREE.HemisphereLight(0xffffff,0x445533,3));
+const sun=new THREE.DirectionalLight(0xffffff,3);sun.position.set(4,6,3); sun.castShadow=true;scene.add(sun);renderer.shadowMap.enabled=true;
+const camera=new THREE.PerspectiveCamera(40,1.5,.1,50);camera.position.set(3,2,5);camera.lookAt(0,1,0);
+const weather=createVegetationWeather();const mesh=new THREE.InstancedMesh(new THREE.CylinderGeometry(.05,.15,2,8,10).translate(0,1,0),new THREE.MeshStandardMaterial({color:0x447733}),1);mesh.setMatrixAt(0,new THREE.Matrix4());mesh.castShadow=true;scene.add(mesh);weather.attach(mesh,.04);
+weather.update(1,3,1,1,.5);renderer.render(scene,camera);
+const gl=renderer.getContext();
+// Execute the production deformation function itself through GPU transform feedback.
+const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};mesh.material.onBeforeCompile(shader,renderer);
+const functionCode=shader.vertexShader.slice(shader.vertexShader.indexOf('vec3 vegetationDeform'),shader.vertexShader.indexOf('#define STANDARD'));
+const vs=gl.createShader(gl.VERTEX_SHADER);gl.shaderSource(vs,`#version 300 es\nprecision highp float;uniform float vegTime,vegWind,vegSnow;out vec3 result;${functionCode}\nvoid main(){vec3 p=gl_VertexID==0?vec3(0):vec3(0,2,0);result=vegetationDeform(p,vec3(0));gl_Position=vec4(0);}`);gl.compileShader(vs);if(!gl.getShaderParameter(vs,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(vs));
+const fs=gl.createShader(gl.FRAGMENT_SHADER);gl.shaderSource(fs,'#version 300 es\nprecision highp float;out vec4 color;void main(){color=vec4(1);}');gl.compileShader(fs);
+const program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.transformFeedbackVaryings(program,['result'],gl.INTERLEAVED_ATTRIBS);gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+gl.useProgram(program);const buffer=gl.createBuffer();gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER,buffer);gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER,24,gl.STREAM_READ);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,buffer);
+let max=0;for(let t=0;t<20;t+=.13){gl.uniform1f(gl.getUniformLocation(program,'vegTime'),t);gl.uniform1f(gl.getUniformLocation(program,'vegWind'),1.2);gl.uniform1f(gl.getUniformLocation(program,'vegSnow'),0);gl.enable(gl.RASTERIZER_DISCARD);gl.beginTransformFeedback(gl.POINTS);gl.drawArrays(gl.POINTS,0,2);gl.endTransformFeedback();gl.disable(gl.RASTERIZER_DISCARD);const values=new Float32Array(6);gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER,0,values);if(values[0]!==0||values[1]!==0||values[2]!==0||![...values].every(Number.isFinite)||values[3]>.2)throw Error('invalid root/bounds '+values);max=Math.max(max,values[3]);}
+if(max<.02)throw Error('no visible displacement');
+document.getElementById('result').textContent=JSON.stringify({webgl:gl.getParameter(gl.VERSION),max,errors,status:errors.length?'FAIL':'PASS'});
+}catch(e){document.getElementById('result').textContent='FAIL '+e.stack}
+</script></body></html>

@@ -1,0 +1,50 @@
+import * as THREE from 'three';
+import { createVegetation } from '../src/three/themes/garden/vegetation';
+import { createBeachVegetation } from '../src/three/themes/beach/vegetation';
+import { computeRawTerrainHeight, isInWater } from '../src/three/themes/garden/terrain';
+import { createVegetationWeather } from '../src/three/core/vegetationWeather';
+function check(ok: boolean, message: string) { if (!ok) throw Error(message); }
+const parent = new THREE.Scene();
+const garden = createVegetation(parent, (x,z) => computeRawTerrainHeight(x,z).height, () => .38, isInWater, () => false);
+const beach = createBeachVegetation(new THREE.Group(), () => 1, () => 0);
+for (const system of [garden, beach]) {
+  let meshes = 0;
+  system.group.traverse(obj => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    meshes++;
+    check(!!obj.userData.vegetationWeather, 'Every plant mesh must bind weather');
+    check(!!obj.geometry.getAttribute('vegRoot'), 'Actual root attribute is required');
+    check(!!obj.customDepthMaterial && !!obj.customDistanceMaterial, 'Weather must deform shadow passes');
+    const shader = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+    (obj.material as THREE.Material).onBeforeCompile(shader as any, {} as any);
+    check(shader.vertexShader.includes('vp.xyz = vegetationDeform(vp.xyz,'), 'Rendered projection must consume deformation');
+    check(Object.values(shader.uniforms).includes(obj.userData.vegetationWeather.uniforms.vegWind), 'Shader must bind live wind uniform');
+    check(obj.geometry.boundingSphere!.radius > 0, 'Displacement culling bounds');
+  });
+  check(meshes > 5, 'Exercise multiple plant groups');
+}
+let canopy: THREE.Mesh | undefined;
+garden.group.traverse(obj => { if (obj instanceof THREE.Mesh && obj.userData.vegetationWeather.deciduous) canopy ??= obj; });
+check(!!canopy, 'Deciduous foliage exists');
+const u = canopy!.userData.vegetationWeather.uniforms;
+garden.updateSeason('winter', 1);
+for(let i=0;i<30;i++) garden.update(1/60,i/60,.7,.4);
+const before = u.vegDensity.value;
+garden.updateSeason('summer', 1);
+check(u.vegDensity.value === before, 'Season reversal must not jump on apply');
+garden.update(1/60,1,.7,.4);
+check(u.vegDensity.value > before && u.vegDensity.value - before < .03, 'Reversal continues from displayed foliage');
+check(u.vegWind.value === .7, 'Vegetation consumes effective wind exactly');
+const weather = createVegetationWeather();
+weather.update(1,1,.8,1);
+const wet = weather.uniforms.vegWet.value;
+weather.update(1,2,.8,0);
+check(weather.uniforms.vegWet.value > 0 && weather.uniforms.vegWet.value < wet, 'Retained wetness dries gradually');
+const a=createVegetationWeather(), b=createVegetationWeather();
+for(let i=0;i<60;i++)a.update(1/60,i/60,.5,1);
+for(let i=0;i<30;i++)b.update(1/30,i/30,.5,1);
+check(Math.abs(a.uniforms.vegWet.value-b.uniforms.vegWet.value)<1e-10,'Wetness is frame-rate independent');
+weather.update(.1,NaN,NaN,0);
+check(Object.values(weather.uniforms).every(v=>Number.isFinite(v.value)),'Uniforms remain finite');
+garden.dispose(); beach.dispose(); weather.dispose(); a.dispose();b.dispose();
+console.log('PASS vegetation bindings, real shader injection, reversal, wetness and finite uniforms; GPU root/bounds checks: scripts/check-vegetation-webgl.html');
