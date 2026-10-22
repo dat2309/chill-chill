@@ -7,6 +7,7 @@ export interface PhuQuocWeatherSystem {
   update(dt: number, elapsed: number, windStrength: number, waterLevel?: number): void;
   setSeason(targetSeason: PhuQuocSeason): void;
   setQuality(quality: Quality): void;
+  getRainIntensity(): number;
   dispose(): void;
 }
 
@@ -157,6 +158,9 @@ export function createPhuQuocWeather(
       startOpacity = rainMat.opacity;
       targetOpacity = newSeason === 'rainy' ? 0.48 : 0.0;
       transitionProgress = 0.0;
+    },
+    getRainIntensity(): number {
+      return THREE.MathUtils.clamp(rainMat.opacity / 0.48, 0.0, 1.0);
     },
     setQuality(quality: Quality) {
       const prevCount = activeDropCount;

@@ -41,6 +41,15 @@
 - Camera mặc định phải hiển thị trọn cảnh, đế và các điểm chính, có khoảng trống cho UI ở cả desktop và mobile.
 - Cập nhật camera và xử lý dữ liệu camera đã lưu khi thay đổi đáng kể hình dáng hoặc bố cục cảnh.
 
+## Tính nhất quán của thời tiết và mùa
+
+- Mọi hệ thống trong cảnh (nước, thảm thực vật, tàu thuyền, sinh vật, ánh sáng, hạt mưa/tuyết) phải dùng chung trạng thái thời tiết và mùa hiệu dụng; không để các hệ thống chạy các giá trị gió, mưa hoặc mùa rời rạc.
+- Shader và logic đối tượng (thuyền thúng, ghe nhỏ, cá, cây cối...) phải đồng bộ công thức sóng, chuyển động và phản ứng môi trường. Độ cao sóng và độ dốc sóng trên CPU và GPU phải đồng nhất tuyệt đối để vật thể nổi ăn khớp hoàn hảo với waterline, không bị chìm, bay lơ lửng hay hở nước vào khoang.
+- Đóng băng và tan băng phải chuyển tiếp mượt mà theo thời gian qua dt (frame-rate independent), có phân vùng tự nhiên theo độ sâu và dòng chảy: mép nông và vùng nước tĩnh đóng băng trước, có thể giữ dòng chảy lỏng ở lòng suối sâu trung tâm.
+- Mưa biển tác động đồng thời và hài hòa lên độ cao sóng swell, bọt sóng vỡ tự nhiên (không dùng dải contour song song cứng), độ đục (turbidity), độ nhám tán xạ bề mặt và độ chao đảo của phương tiện nổi. Gió hiệu dụng tăng vừa phải theo mưa, không biến cảnh thành bão quá mức.
+- Giữ vững bản sắc và khí hậu từng chủ đề: Chillax Garden là thung lũng suối ôn đới có chu kỳ 4 mùa với băng tuyết mùa đông; Phú Quốc là biển đảo nhiệt đới chỉ có mùa khô và mùa mưa, không áp đặt tuyết hoặc đóng băng vào vùng biển nhiệt đới.
+- Thao tác tương tác của người dùng (slider điều khiển, click tạo sóng) phải tương thích với trạng thái vật lý thực tế: trên mặt băng đóng kín không tạo sóng nước lỏng; ở vùng nước hở vẫn tương tác bình thường; slider gió kết hợp mượt mà với preset thời tiết theo biên độ rõ ràng.
+
 ## Kiểm tra và review
 
 - Chạy build và các kiểm tra logic phù hợp với thay đổi. Với thay đổi chỉ ở tài liệu, đọc lại nội dung và chạy git diff --check; không bắt buộc chạy build ứng dụng.

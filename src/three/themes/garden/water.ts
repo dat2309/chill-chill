@@ -14,6 +14,8 @@ import {
   getStreamBedHeight,
   isInWater as checkIsInWater,
   getTideOffset,
+  getGardenIcePotential,
+  isGardenWaterFrozen,
 } from './streamProfile';
 import { isInsideGardenFootprint } from './footprint';
 
@@ -26,6 +28,9 @@ export interface WaterSystem {
   getWaterLevel(): number;
   getTideOffset(): number;
   isInWater(x: number, z: number): boolean;
+  setFreezeProgress(progress: number): void;
+  getFreezeProgress(): number;
+  isFrozen(x: number, z: number): boolean;
   dispose(): void;
 }
 
@@ -91,10 +96,12 @@ const dropFragmentShader = `
 const waterVertexShader = `
   attribute float aTerrainHeight;
   attribute float aIsFrontCut;
+  attribute float aIcePotential;
 
   uniform float uTime;
   uniform float uWaterLevel;
   uniform float uTideOffset;
+  uniform float uFreezeProgress;
   uniform sampler2D uRippleMap;
   uniform float uUseGpuRipples;
   uniform vec4 uRippleBounds;
@@ -110,6 +117,8 @@ const waterVertexShader = `
   varying float vDepth;
   varying vec3 vNormal;
   varying float vIsFrontCut;
+  varying float vIcePotential;
+  varying float vLocalIce;
 
   float computeAnalyticalRipples(vec2 worldXZ, float time) {
     float total = 0.0;
@@ -131,6 +140,12 @@ const waterVertexShader = `
   void main() {
     vUv = uv;
     vIsFrontCut = aIsFrontCut;
+    vIcePotential = aIcePotential;
+
+    // Local ice factor based on freezeProgress and vertex ice potential
+    float threshold = 1.0 - 0.75 * uFreezeProgress;
+    float localIce = smoothstep(threshold - 0.08, threshold + 0.08, aIcePotential) * step(0.01, uFreezeProgress);
+    vLocalIce = localIce;
 
     vec3 pos = position;
 
@@ -167,7 +182,9 @@ const waterVertexShader = `
       float w2 = cos(initialWorld.x * 4.4 - initialWorld.z * 2.2 + flowTime * 1.2) * 0.007;
       float gentleWaves = (w1 + w2) * (0.5 + uWindStrength * 0.6);
 
-      pos.y += (ripDisp + gentleWaves) * shoreDamping * sin(3.14159265 * uv.y);
+      // Waves and ripples are frozen / suppressed on ice surface
+      float waveSuppression = 1.0 - localIce * 0.95;
+      pos.y += (ripDisp + gentleWaves) * shoreDamping * sin(3.14159265 * uv.y) * waveSuppression;
     }
 
     vec4 finalWorld = modelMatrix * vec4(pos, 1.0);
@@ -187,6 +204,9 @@ const waterFragmentShader = `
   uniform vec3 uSunColor;
   uniform float uSunIntensity;
   uniform float uWaterLevel;
+  uniform float uFreezeProgress;
+  uniform vec3 uIceColor;
+  uniform vec3 uFrostColor;
   uniform sampler2D uRippleMap;
   uniform float uUseGpuRipples;
   uniform vec4 uRippleBounds;
@@ -207,6 +227,8 @@ const waterFragmentShader = `
   varying float vDepth;
   varying vec3 vNormal;
   varying float vIsFrontCut;
+  varying float vIcePotential;
+  varying float vLocalIce;
 
   float computeAnalyticalRipples(vec2 worldXZ, float time) {
     float total = 0.0;
@@ -263,7 +285,19 @@ const waterFragmentShader = `
 
     norm.x += flowPerturb;
     norm.z += flowPerturb * 0.6;
-    return normalize(norm);
+
+    vec3 normalOut = normalize(norm);
+    if (vLocalIce > 0.01) {
+      // Flatten liquid waves under ice
+      normalOut = normalize(mix(normalOut, vec3(0.0, 1.0, 0.0), vLocalIce * 0.85));
+      // Fine crystalline frost micro-texture
+      float frostNoise = sin(vWorldPosition.x * 24.0 + vWorldPosition.z * 18.0)
+                       * cos(vWorldPosition.x * 14.0 - vWorldPosition.z * 28.0) * 0.06;
+      normalOut.x += frostNoise * vLocalIce;
+      normalOut.z += frostNoise * vLocalIce * 0.7;
+      normalOut = normalize(normalOut);
+    }
+    return normalOut;
   }
 
   void main() {
@@ -288,21 +322,21 @@ const waterFragmentShader = `
     // Water clarity
     vec3 baseCol = mix(waterBodyColor, shallowCol * 0.85, transmission.r * 0.3);
 
-    // Specular Blinn-Phong highlight
+    // Specular Blinn-Phong highlight: broader, softer frost sheen on ice
     vec3 H = normalize(L + V);
     float NdotH = max(0.0, dot(N, H));
-    float shininess = 72.0;
-    float specular = pow(NdotH, shininess) * uSunIntensity;
+    float shininess = mix(72.0, 16.0, vLocalIce);
+    float specular = pow(NdotH, shininess) * uSunIntensity * mix(1.0, 0.60, vLocalIce);
 
     // Fresnel reflection
-    float F0 = 0.03;
+    float F0 = mix(0.03, 0.05, vLocalIce);
     float cosTheta = max(0.0, dot(N, V));
     float fresnel = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 
     // Sky reflection
     vec3 skyReflect = mix(uSkyHorizonColor, uSkyZenithColor, max(0.0, N.y));
 
-    // Foam calculation
+    // Foam calculation: suppressed under ice
     float shoreFoam = smoothstep(0.07, 0.005, vDepth) * 0.65;
 
     // Animated rapids foam in upper cascade zone (z in [-2.5, 0.5])
@@ -314,22 +348,33 @@ const waterFragmentShader = `
       cascadeRapidFoam = smoothstep(0.15, 0.85, rapidNoise) * (1.0 - abs(cascadeZ - 0.5) * 1.6) * 0.55;
     }
 
-    float foamTotal = clamp(shoreFoam + cascadeRapidFoam, 0.0, 1.0);
+    float foamTotal = clamp(shoreFoam + cascadeRapidFoam, 0.0, 1.0) * (1.0 - vLocalIce * 0.95);
 
     // Final color compositing
     vec3 color = mix(baseCol, skyReflect, fresnel * 0.35);
     color += uSunColor * specular * 0.32;
     color = mix(color, uFoamColor, foamTotal);
 
+    // Ice surface color blending and crystalline frost rims
+    if (vLocalIce > 0.005) {
+      float frostRim = smoothstep(0.05, 0.35, vLocalIce) * (1.0 - smoothstep(0.65, 0.98, vLocalIce));
+      vec3 effectiveIceColor = mix(uIceColor, uFrostColor, frostRim * 0.75);
+      color = mix(color, effectiveIceColor, vLocalIce * 0.88);
+    }
+
     // Clean alpha gradient
     float alpha;
     if (vIsFrontCut > 0.5) {
       // Solid cut profile for diorama slab cross section
-      alpha = 0.48;
+      alpha = mix(0.48, 0.76, vLocalIce);
       color = mix(uDeepColor * 0.85, uWaterColor, vUv.y);
+      if (vLocalIce > 0.01) {
+        color = mix(color, uIceColor * 0.9, vLocalIce * 0.7);
+      }
     } else {
       alpha = mix(0.20, 0.46, depthFactor);
       alpha = max(alpha, foamTotal * 0.88);
+      alpha = mix(alpha, 0.82, vLocalIce * 0.9);
     }
 
     gl_FragColor = vec4(color, alpha);
@@ -351,6 +396,7 @@ export function createStreamGeometry(getHeightAt: (x: number, z: number) => numb
   const positions = new Float32Array(totalVerts * 3);
   const uvs = new Float32Array(totalVerts * 2);
   const terrainHeights = new Float32Array(totalVerts);
+  const icePotentials = new Float32Array(totalVerts);
   const isFrontCut = new Float32Array(totalVerts);
   const indices: number[] = [];
 
@@ -391,7 +437,9 @@ export function createStreamGeometry(getHeightAt: (x: number, z: number) => numb
       uvs[idx * 2 + 0] = tX;
       uvs[idx * 2 + 1] = tZ;
 
-      terrainHeights[idx] = getHeightAt(x, z);
+      const tH = getHeightAt(x, z);
+      terrainHeights[idx] = tH;
+      icePotentials[idx] = getGardenIcePotential(x, z, waterSurfaceY, tH);
       isFrontCut[idx] = 0.0;
     }
   }
@@ -444,6 +492,7 @@ export function createStreamGeometry(getHeightAt: (x: number, z: number) => numb
     uvs[topIdx * 2 + 0] = ix / segmentsX;
     uvs[topIdx * 2 + 1] = 1.0;
     terrainHeights[topIdx] = bedH;
+    icePotentials[topIdx] = getGardenIcePotential(x, z, waterSurfaceYEnd, bedH);
     isFrontCut[topIdx] = 1.0;
 
     // Bottom vertex of front skirt (at riverbed, uv.y = 0.0)
@@ -454,6 +503,7 @@ export function createStreamGeometry(getHeightAt: (x: number, z: number) => numb
     uvs[botIdx * 2 + 0] = ix / segmentsX;
     uvs[botIdx * 2 + 1] = 0.0;
     terrainHeights[botIdx] = bedH;
+    icePotentials[botIdx] = icePotentials[topIdx];
     isFrontCut[botIdx] = 1.0;
   }
 
@@ -475,6 +525,7 @@ export function createStreamGeometry(getHeightAt: (x: number, z: number) => numb
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   geo.setAttribute('aTerrainHeight', new THREE.BufferAttribute(terrainHeights, 1));
+  geo.setAttribute('aIcePotential', new THREE.BufferAttribute(icePotentials, 1));
   geo.setAttribute('aIsFrontCut', new THREE.BufferAttribute(isFrontCut, 1));
   geo.setIndex(indices);
   geo.computeVertexNormals();
@@ -598,6 +649,8 @@ export function createWater(
     gpuSimulationSupported = false;
   }
 
+  let currentFreezeProgress = 0.0;
+
   const waterUniforms = {
     uTime: { value: 0 },
     uSunDirection: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
@@ -605,6 +658,9 @@ export function createWater(
     uSunIntensity: { value: 1.0 },
     uWaterLevel: { value: BASE_WATER_LEVEL + currentTideOffset },
     uTideOffset: { value: currentTideOffset },
+    uFreezeProgress: { value: 0.0 },
+    uIceColor: { value: new THREE.Color(0xd6e8f4) },
+    uFrostColor: { value: new THREE.Color(0xf2f7fc) },
     uRippleMap: { value: currentRT.texture },
     uUseGpuRipples: { value: gpuSimulationSupported ? 1.0 : 0.0 },
     uRippleBounds: { value: RIPPLE_BOUNDS.clone() },
@@ -639,7 +695,16 @@ export function createWater(
   let simAccumulator = 0.0;
   const FIXED_TIMESTEP = 1.0 / 60.0;
 
+  function isFrozen(worldX: number, worldZ: number): boolean {
+    return isGardenWaterFrozen(worldX, worldZ, currentFreezeProgress, getWaterLevel(), getHeightAt(worldX, worldZ));
+  }
+
   function addRipple(worldX: number, worldZ: number, strength: number): void {
+    // Suppress liquid ripples on frozen ice surface
+    if (isFrozen(worldX, worldZ)) {
+      return;
+    }
+
     const uvX = (worldX - RIPPLE_BOUNDS.x) / (RIPPLE_BOUNDS.z - RIPPLE_BOUNDS.x);
     const uvY = (worldZ - RIPPLE_BOUNDS.y) / (RIPPLE_BOUNDS.w - RIPPLE_BOUNDS.y);
 
@@ -750,6 +815,15 @@ export function createWater(
     }
   }
 
+  function setFreezeProgress(progress: number): void {
+    currentFreezeProgress = THREE.MathUtils.clamp(progress, 0.0, 1.0);
+    waterUniforms.uFreezeProgress.value = currentFreezeProgress;
+  }
+
+  function getFreezeProgress(): number {
+    return currentFreezeProgress;
+  }
+
   return {
     group,
     mesh,
@@ -759,6 +833,9 @@ export function createWater(
     getWaterLevel,
     getTideOffset: getTideOffsetVal,
     isInWater,
+    setFreezeProgress,
+    getFreezeProgress,
+    isFrozen,
     dispose() {
       geometry.dispose();
       waterMaterial.dispose();

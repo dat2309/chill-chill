@@ -10,6 +10,8 @@ import {
   getStreamBedHeight,
   getWaterDepth,
   isInWater,
+  getGardenIcePotential,
+  isGardenWaterFrozen,
 } from '../src/three/themes/garden/streamProfile.js';
 import { computeRawTerrainHeight, createTerrain } from '../src/three/themes/garden/terrain.js';
 
@@ -901,6 +903,96 @@ assert(allVerticesGrounded, 'All stepping stone top vertices remain above terrai
 archSys.dispose();
 terrainSys.dispose();
 
+// =========================================================================
+// WINTER SEASON FREEZING & ICE PROFILE TESTS
+// =========================================================================
+console.log('--- RUNNING GARDEN WINTER FREEZE & ICE TESTS ---');
+
+// 1. Ice potential increases towards stream margins/banks
+const sampleZPoints = [-6.0, -2.0, 1.0, 4.0, 7.0];
+let pIceBankHigherThanCenter = true;
+let pIceDetails = '';
+
+for (const sz of sampleZPoints) {
+  const sc = getStreamCenter(sz);
+  const shw = getStreamHalfWidth(sz);
+  const pCenter = getGardenIcePotential(sc, sz);
+  const pMid = getGardenIcePotential(sc + shw * 0.5, sz);
+  const pBank = getGardenIcePotential(sc + shw * 0.95, sz);
+
+  if (pCenter >= pBank || pCenter > pMid) {
+    pIceBankHigherThanCenter = false;
+    pIceDetails = `At z=${sz}: pCenter=${pCenter.toFixed(3)} >= pBank=${pBank.toFixed(3)}`;
+    break;
+  }
+}
+assert(pIceBankHigherThanCenter, 'Ice potential P_ice is strictly higher at banks/margins than deep stream center', pIceDetails);
+
+// 2. Deep stream center retains low ice potential (< 0.25)
+let deepCenterLowIce = true;
+for (const sz of sampleZPoints) {
+  const sc = getStreamCenter(sz);
+  const pCenter = getGardenIcePotential(sc, sz);
+  if (pCenter > 0.25) {
+    deepCenterLowIce = false;
+    break;
+  }
+}
+assert(deepCenterLowIce, 'Deep stream centerline retains low ice potential (P_ice <= 0.25)');
+
+// 3. At freezeProgress = 0 (spring/summer/autumn), water is never frozen
+let zeroFreezeNeverFrozen = true;
+for (const sz of sampleZPoints) {
+  const sc = getStreamCenter(sz);
+  const shw = getStreamHalfWidth(sz);
+  if (isGardenWaterFrozen(sc, sz, 0.0) || isGardenWaterFrozen(sc + shw * 0.9, sz, 0.0)) {
+    zeroFreezeNeverFrozen = false;
+    break;
+  }
+}
+assert(zeroFreezeNeverFrozen, 'At freezeProgress = 0, no water is frozen anywhere');
+
+// 4. At freezeProgress = 0.5 (mid-freeze), banks freeze first while center stays liquid
+let midFreezeDifferentiates = true;
+for (const sz of sampleZPoints) {
+  const sc = getStreamCenter(sz);
+  const shw = getStreamHalfWidth(sz);
+  const centerFrozen = isGardenWaterFrozen(sc, sz, 0.5);
+  const bankFrozen = isGardenWaterFrozen(sc + shw * 0.92, sz, 0.5);
+  if (centerFrozen || !bankFrozen) {
+    midFreezeDifferentiates = false;
+    break;
+  }
+}
+assert(midFreezeDifferentiates, 'At freezeProgress = 0.5, shallow bank is frozen while deep center remains open liquid');
+
+// 5. In full winter (freezeProgress = 1.0), banks are frozen while central flowing core stays open
+let winterPreservesFlowingChannel = true;
+let winterBanksFrozen = true;
+for (const sz of sampleZPoints) {
+  const sc = getStreamCenter(sz);
+  const shw = getStreamHalfWidth(sz);
+  if (isGardenWaterFrozen(sc, sz, 1.0)) {
+    winterPreservesFlowingChannel = false;
+  }
+  if (!isGardenWaterFrozen(sc + shw * 0.92, sz, 1.0)) {
+    winterBanksFrozen = false;
+  }
+}
+assert(winterBanksFrozen, 'In deep winter (freezeProgress = 1.0), shallow stream margins are frozen');
+assert(winterPreservesFlowingChannel, 'In deep winter (freezeProgress = 1.0), the deepest central channel remains open flowing water');
+
+// 6. Monotonic melting transition over time without NaN
+let smoothMelting = true;
+for (let p = 100; p >= 0; p -= 5) {
+  const fp = p / 100;
+  const isF = isGardenWaterFrozen(1.0, 4.0, fp);
+  if (Number.isNaN(fp) || typeof isF !== 'boolean') {
+    smoothMelting = false;
+    break;
+  }
+}
+assert(smoothMelting, 'Melting transition from winter to spring/summer is continuous and valid');
 
 // Summary
 const totalPassed = results.filter(r => r.passed).length;

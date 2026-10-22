@@ -29,6 +29,7 @@ export class GardenTheme implements ThemeInstance<'garden'> {
 
   private currentTide: string = 'high';
   private currentSeason: GardenSeason = 'spring';
+  private freezeProgress: number = 0.0;
 
   constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
@@ -93,11 +94,24 @@ export class GardenTheme implements ThemeInstance<'garden'> {
   }
 
   update(dt: number, elapsed: number, state: ThemeState<'garden'>): void {
+    // Smooth frame-rate independent freeze / melt transition for winter season
+    const targetFreeze = state.season === 'winter' ? 1.0 : 0.0;
+    const FREEZE_SPEED = 0.55; // Reaches full winter freeze in ~1.8 seconds
+    if (Math.abs(this.freezeProgress - targetFreeze) > 0.001) {
+      const step = Math.min(0.2, dt) * FREEZE_SPEED;
+      if (this.freezeProgress < targetFreeze) {
+        this.freezeProgress = Math.min(targetFreeze, this.freezeProgress + step);
+      } else {
+        this.freezeProgress = Math.max(targetFreeze, this.freezeProgress - step);
+      }
+    }
+    this.water?.setFreezeProgress(this.freezeProgress);
+
     // Systems update
     this.water?.update(dt, elapsed, state as any);
     this.architecture?.update(dt, elapsed, state.timeOfDay);
     this.vegetation?.update(dt, elapsed, state.windStrength);
-    this.fish?.update(dt, elapsed, this.water?.getWaterLevel() ?? 0.28);
+    this.fish?.update(dt, elapsed, this.water?.getWaterLevel() ?? 0.28, this.freezeProgress);
     this.lighting?.update(state as any);
 
     // Sync water shader sun direction
@@ -138,6 +152,14 @@ export class GardenTheme implements ThemeInstance<'garden'> {
 
   isInWater(worldX: number, worldZ: number): boolean {
     return this.water ? this.water.isInWater(worldX, worldZ) : false;
+  }
+
+  isFrozen(worldX: number, worldZ: number): boolean {
+    return this.water ? this.water.isFrozen(worldX, worldZ) : false;
+  }
+
+  getFreezeProgress(): number {
+    return this.freezeProgress;
   }
 
   addRipple(worldX: number, worldZ: number, strength: number): void {

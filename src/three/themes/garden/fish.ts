@@ -13,7 +13,7 @@ import {
 
 export interface FishSystem {
   group: THREE.Group;
-  update(dt: number, elapsed: number, waterLevel: number): void;
+  update(dt: number, elapsed: number, waterLevel: number, freezeProgress?: number): void;
   reactToRipple(x: number, z: number): void;
   dispose(): void;
 }
@@ -311,10 +311,13 @@ export function createFish(
 
   instancedMesh.instanceMatrix.needsUpdate = true;
 
+  let currentFreezeProgress = 0.0;
+
   return {
     group,
 
-    update(dt: number, elapsed: number, waterLevel: number): void {
+    update(dt: number, elapsed: number, waterLevel: number, freezeProgress: number = 0): void {
+      currentFreezeProgress = THREE.MathUtils.clamp(freezeProgress, 0.0, 1.0);
       // Clamp delta time to avoid large physics steps
       const safeDt = Math.min(dt, 0.06);
       fishUniforms.uTime.value = elapsed;
@@ -436,16 +439,19 @@ export function createFish(
         fish.velocity.z += steer.z * safeDt;
 
         // 5. Speed regulation: normal speed ~0.3-0.6 units/sec, temporary burst up to ~1.1 on ripple
-        const fleeMagnitude = fish.rippleFleeBoost.length();
-        const maxAllowedSpeed = Math.min(1.2, fish.baseSpeed + fleeMagnitude * 0.8);
+        // Fish become more sluggish in cold/winter water
+        const winterSpeedFactor = 1.0 - currentFreezeProgress * 0.55;
+        const fleeMagnitude = fish.rippleFleeBoost.length() * (1.0 - currentFreezeProgress * 0.6);
+        const minAllowedSpeed = 0.28 * winterSpeedFactor;
+        const maxAllowedSpeed = Math.min(1.2 * winterSpeedFactor, (fish.baseSpeed + fleeMagnitude * 0.8) * winterSpeedFactor);
         const currentSpeedXZ = Math.hypot(fish.velocity.x, fish.velocity.z);
 
         if (currentSpeedXZ > 0.0001) {
-          const targetSpeed = THREE.MathUtils.clamp(currentSpeedXZ, 0.28, maxAllowedSpeed);
+          const targetSpeed = THREE.MathUtils.clamp(currentSpeedXZ, minAllowedSpeed, maxAllowedSpeed);
           fish.velocity.x = (fish.velocity.x / currentSpeedXZ) * targetSpeed;
           fish.velocity.z = (fish.velocity.z / currentSpeedXZ) * targetSpeed;
         } else {
-          fish.velocity.set(fish.baseSpeed, 0, 0);
+          fish.velocity.set(fish.baseSpeed * winterSpeedFactor, 0, 0);
         }
 
         // Advance position in horizontal plane
@@ -453,26 +459,30 @@ export function createFish(
         fish.position.z += fish.velocity.z * safeDt;
 
         // 6. Depth management: stay between terrain height and localWaterLevel - 0.03
+        // In winter, fish stay deeper below the ice and never poke through the ice surface
+        const iceMargin = 0.03 + currentFreezeProgress * 0.045;
         const terrainHeight = getHeightAt(fish.position.x, fish.position.z);
         const safeMinY = terrainHeight + 0.03;
-        const safeMaxY = localWaterLevel - 0.03;
+        const safeMaxY = localWaterLevel - iceMargin;
 
         let targetY: number;
         if (safeMaxY > safeMinY) {
-          // Gentle vertical bobbing with phase
-          const bobOffset = Math.sin(elapsed * 2.2 + fish.phase) * 0.012;
+          // Gentle vertical bobbing with phase (calmer in winter)
+          const bobAmplitude = 0.012 * (1.0 - currentFreezeProgress * 0.5);
+          const bobOffset = Math.sin(elapsed * 2.2 + fish.phase) * bobAmplitude;
           targetY = THREE.MathUtils.clamp(
             (safeMinY + safeMaxY) * 0.5 + bobOffset,
             safeMinY,
             safeMaxY
           );
         } else {
-          targetY = (terrainHeight + localWaterLevel) * 0.5;
+          targetY = (terrainHeight + safeMaxY) * 0.5;
         }
 
         fish.velocity.y = (targetY - fish.position.y) * 3.5;
         fish.position.y += fish.velocity.y * safeDt;
-        fish.position.y = THREE.MathUtils.clamp(fish.position.y, terrainHeight + 0.015, localWaterLevel - 0.015);
+        const physicalMaxY = localWaterLevel - (0.015 + currentFreezeProgress * 0.035);
+        fish.position.y = THREE.MathUtils.clamp(fish.position.y, terrainHeight + 0.015, physicalMaxY);
 
         // 7. Update InstancedMesh transform matrix
         const headingDirX = fish.velocity.x;
@@ -500,7 +510,9 @@ export function createFish(
     },
 
     reactToRipple(x: number, z: number): void {
+      if (currentFreezeProgress > 0.95) return; // Fish under solid ice ignore surface disturbance
       const RIPPLE_RADIUS = 2.4;
+      const fleeSuppression = 1.0 - currentFreezeProgress * 0.75;
       for (let i = 0; i < NUM_FISH; i++) {
         const fish = fishes[i];
         const dx = fish.position.x - x;
@@ -508,7 +520,7 @@ export function createFish(
         const dist = Math.hypot(dx, dz);
 
         if (dist < RIPPLE_RADIUS) {
-          const fleeStrength = (1.0 - dist / RIPPLE_RADIUS) * 2.2;
+          const fleeStrength = (1.0 - dist / RIPPLE_RADIUS) * 2.2 * fleeSuppression;
           const safeDist = dist > 0.0001 ? dist : 0.0001;
           const dirX = dx / safeDist;
           const dirZ = dz / safeDist;

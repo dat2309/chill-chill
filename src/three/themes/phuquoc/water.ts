@@ -22,7 +22,7 @@ import { generateGheCavityShaderGlsl } from './boats';
 export interface PhuQuocWaterSystem {
   group: THREE.Group;
   mesh: THREE.Mesh;
-  update(dt: number, elapsed: number, windStrength: number, flowSpeed: number): void;
+  update(dt: number, elapsed: number, windStrength: number, flowSpeed: number, rainIntensity?: number): void;
   addRipple(worldX: number, worldZ: number, strength: number): void;
   setTide(tide: TideLevel, smooth?: boolean): void;
   getWaterLevel(): number;
@@ -446,6 +446,7 @@ export function createPhuQuocWater(
       uSunColor: { value: new THREE.Color(0xff8c42) },
       uFlowSpeed: { value: 0.45 },
       uWindStrength: { value: 0.35 },
+      uRainIntensity: { value: 0.0 },
       uUseGpu: { value: useGpuSimulation ? 1.0 : 0.0 },
       uAnalyticalCount: { value: 0 },
       uAnalyticalRipples: { value: analyticalBuffer },
@@ -460,6 +461,7 @@ export function createPhuQuocWater(
       uniform float uWaterLevel;
       uniform float uTideOffset;
       uniform float uWindStrength;
+      uniform float uRainIntensity;
       uniform sampler2D uRippleMap;
       uniform float uUseGpu;
       uniform int uAnalyticalCount;
@@ -484,9 +486,10 @@ export function createPhuQuocWater(
         if (aSkirtBottom < 0.5) {
           pos.y = uWaterLevel;
 
-          // Gentle ocean swell waves
-          float swell = sin(pos.z * 1.8 - uTime * 1.5) * 0.035 * uWindStrength;
-          swell += cos(pos.x * 1.2 + pos.z * 0.8 - uTime * 2.0) * 0.02 * uWindStrength;
+          // Synchronized ocean swell waves (identical to CPU boat physics)
+          float swell = sin(pos.z * 1.75 - uTime * 1.6) * 0.045 * uWindStrength;
+          swell += cos(pos.x * 1.15 + pos.z * 0.85 - uTime * 2.1) * 0.025 * uWindStrength;
+          swell += sin(pos.x * 2.2 - pos.z * 1.3 + uTime * 3.0) * 0.012 * uWindStrength;
 
           if (uUseGpu > 0.5) {
             vec4 ripple = texture2D(uRippleMap, uv);
@@ -520,6 +523,8 @@ export function createPhuQuocWater(
     fragmentShader: `
       uniform float uTime;
       uniform float uWaterLevel;
+      uniform float uWindStrength;
+      uniform float uRainIntensity;
       uniform vec3 uShallowColor;
       uniform vec3 uDeepColor;
       uniform vec3 uSunsetSkyColor;
@@ -572,12 +577,22 @@ ${generateGheCavityShaderGlsl()}
           discard;
         }
 
-        // 1. Exponential Beer-Lambert Absorption
-        vec3 absorptionCoeff = vec3(1.6, 0.5, 0.2);
-        vec3 absorption = exp(-depth * absorptionCoeff * 2.2);
-        vec3 waterColor = mix(uDeepColor, uShallowColor, absorption);
+        // 1. Turbidity & Exponential Beer-Lambert Absorption
+        // Rain churns near-shore sand and increases turbidity naturally
+        float shoreTurbidity = smoothstep(0.85, 0.04, depth) * 0.42;
+        float turbidity = uRainIntensity * (shoreTurbidity + 0.18);
 
-        // 2. Ripple normal perturbation
+        vec3 clearAbsorption = vec3(1.6, 0.5, 0.2);
+        vec3 turbidAbsorption = vec3(2.4, 1.2, 0.65);
+        vec3 effAbsorption = mix(clearAbsorption, turbidAbsorption, turbidity);
+        vec3 absorption = exp(-depth * effAbsorption * 2.2);
+
+        vec3 clearWaterColor = mix(uDeepColor, uShallowColor, absorption);
+        // Slightly churning coastal turquoise / sediment hue under rain
+        vec3 turbidWaterColor = vec3(0.30, 0.56, 0.52);
+        vec3 waterColor = mix(clearWaterColor, turbidWaterColor, turbidity * 0.62);
+
+        // 2. Ripple and Wave Normal Perturbation
         vec3 N = vec3(0.0, 1.0, 0.0);
         if (uUseGpu > 0.5) {
           vec2 texel = vec2(1.0 / 256.0);
@@ -608,9 +623,22 @@ ${generateGheCavityShaderGlsl()}
           }
         }
 
-        // Add subtle procedural ocean swell normal
-        N.x += sin(vWorldPos.z * 3.0 + uTime * 2.0) * 0.08;
-        N.z += cos(vWorldPos.x * 2.5 - uTime * 1.5) * 0.06;
+        // Exact wave surface slope derivatives matching vertex displacement & boat physics
+        float dSdx = -sin(vWorldPos.x * 1.15 + vWorldPos.z * 0.85 - uTime * 2.1) * 0.02875 * uWindStrength
+                   + cos(vWorldPos.x * 2.2 - vWorldPos.z * 1.3 + uTime * 3.0) * 0.0264 * uWindStrength;
+        float dSdz = cos(vWorldPos.z * 1.75 - uTime * 1.6) * 0.07875 * uWindStrength
+                   - sin(vWorldPos.x * 1.15 + vWorldPos.z * 0.85 - uTime * 2.1) * 0.02125 * uWindStrength
+                   - cos(vWorldPos.x * 2.2 - vWorldPos.z * 1.3 + uTime * 3.0) * 0.0156 * uWindStrength;
+
+        N.x -= dSdx;
+        N.z -= dSdz;
+
+        // Raindrop micro-roughness chop
+        if (uRainIntensity > 0.01) {
+          float rainChop = (sin(vWorldPos.x * 36.0 + uTime * 18.0) + cos(vWorldPos.z * 36.0 - uTime * 15.0)) * 0.022 * uRainIntensity;
+          N.x += rainChop;
+          N.z += rainChop * 0.75;
+        }
         N = normalize(N);
 
         // 3. Sunset Fresnel Reflection
@@ -618,14 +646,29 @@ ${generateGheCavityShaderGlsl()}
         float cosTheta = max(0.0, dot(N, vViewDir));
         float fresnel = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 4.0);
 
-        // Sun specular highlight
+        // Sun specular highlight: slightly broader during rain
         vec3 H = normalize(uSunDirection + vViewDir);
         float NdotH = max(0.0, dot(N, H));
-        float specular = pow(NdotH, 64.0) * 0.8;
+        float shininess = mix(64.0, 24.0, uRainIntensity * 0.7);
+        float specular = pow(NdotH, shininess) * mix(0.8, 0.5, uRainIntensity);
 
-        // 4. Shore Surf Wave Foam
-        float waveBreak = sin(depth * 35.0 - uTime * 3.0) * 0.5 + 0.5;
-        float foamFactor = smoothstep(0.08, 0.01, depth) * step(0.4, waveBreak);
+        // 4. Organic Shore Surf Wave Foam & Breaker Dynamics
+        // Waves break when crest height is high relative to shallow depth
+        float swellLocal = sin(vWorldPos.z * 1.75 - uTime * 1.6) * 0.045 * uWindStrength
+                         + cos(vWorldPos.x * 1.15 + vWorldPos.z * 0.85 - uTime * 2.1) * 0.025 * uWindStrength;
+        float crestRatio = swellLocal / (depth + 0.02);
+        float surfNoise = sin(vWorldPos.x * 4.2 + vWorldPos.z * 2.8 - uTime * 3.2)
+                        * cos(vWorldPos.x * 8.5 - vWorldPos.z * 4.1 + uTime * 1.8);
+        float breakerFoam = smoothstep(0.12, 0.58, crestRatio * 0.65 + surfNoise * 0.25) * smoothstep(0.24, 0.02, depth);
+
+        // Shoreline swash lacing
+        float shoreSwash = smoothstep(0.05, 0.005, depth) * (0.35 + 0.30 * sin(vWorldPos.x * 5.5 + uTime * 1.4));
+
+        // Wind/rain-driven whitecaps in deeper open water
+        float whitecaps = smoothstep(0.038, 0.075, swellLocal) * smoothstep(0.10, 0.70, depth)
+                        * uRainIntensity * (0.32 + 0.45 * uWindStrength);
+
+        float foamFactor = clamp(breakerFoam + shoreSwash + whitecaps, 0.0, 1.0);
         vec3 foamColor = vec3(0.96, 0.99, 1.0);
 
         // Combine: refracted absorption color + sky reflection + specular + surf foam
@@ -633,7 +676,7 @@ ${generateGheCavityShaderGlsl()}
         finalColor += uSunColor * specular;
         finalColor = mix(finalColor, foamColor, foamFactor * 0.75);
 
-        float alpha = clamp(0.18 + depth * 0.32, 0.0, 0.72);
+        float alpha = clamp(0.18 + depth * 0.32 + turbidity * 0.14, 0.0, 0.78);
         gl_FragColor = vec4(finalColor, alpha);
       }
     `,
@@ -650,7 +693,7 @@ ${generateGheCavityShaderGlsl()}
   return {
     group: waterGroup,
     mesh: waterMesh,
-    update(dt: number, elapsed: number, windStrength: number, flowSpeed: number) {
+    update(dt: number, elapsed: number, windStrength: number, flowSpeed: number, rainIntensity: number = 0) {
       currentSimTime = elapsed;
 
       // Smooth tide interpolation
@@ -664,6 +707,7 @@ ${generateGheCavityShaderGlsl()}
       waterMaterial.uniforms.uTime.value = elapsed;
       waterMaterial.uniforms.uWindStrength.value = windStrength;
       waterMaterial.uniforms.uFlowSpeed.value = flowSpeed;
+      waterMaterial.uniforms.uRainIntensity.value = THREE.MathUtils.clamp(rainIntensity, 0.0, 1.0);
 
       // Update analytical ripples
       while (analyticalRipples.length > 0 && elapsed - analyticalRipples[0].startTime > 3.0) {

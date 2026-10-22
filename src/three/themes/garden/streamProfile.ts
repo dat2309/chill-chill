@@ -295,3 +295,48 @@ export function isInWater(x: number, z: number, tideOffset: number = 0): boolean
   const depth = getWaterDepth(x, z, tideOffset);
   return depth > 0.015;
 }
+
+/**
+ * Computes normalized ice potential P_ice in [0, 1] for Garden stream:
+ * - Shallow banks & calm margins freeze first (P_ice closer to 1.0)
+ * - Deep, central flowing channel retains lower freeze tendency (P_ice closer to 0.0)
+ */
+export function getGardenIcePotential(
+  x: number,
+  z: number,
+  waterLevel: number = BASE_WATER_LEVEL,
+  terrainH?: number
+): number {
+  const center = getStreamCenter(z);
+  const halfW = Math.max(0.3, getStreamHalfWidth(z));
+  const distNorm = Math.min(1.0, Math.abs(x - center) / halfW);
+
+  const depth = terrainH !== undefined
+    ? Math.max(0.0, waterLevel - terrainH)
+    : getWaterDepth(x, z);
+
+  const depthNorm = Math.min(1.0, depth / 0.22);
+
+  // Bank proximity contributes 65%, shallowness contributes 35%
+  const p = distNorm * 0.65 + (1.0 - depthNorm) * 0.35;
+  return THREE.MathUtils.clamp(p, 0.0, 1.0);
+}
+
+/**
+ * Checks whether water is frozen at (x, z) given current freezeProgress in [0, 1].
+ * Even at full winter (freezeProgress = 1.0), the deepest central flowing channel
+ * (P_ice < 0.25) can stay open as liquid water.
+ */
+export function isGardenWaterFrozen(
+  x: number,
+  z: number,
+  freezeProgress: number,
+  waterLevel: number = BASE_WATER_LEVEL,
+  terrainH?: number
+): boolean {
+  if (freezeProgress <= 0.001) return false;
+  const pIce = getGardenIcePotential(x, z, waterLevel, terrainH);
+  // Freezing threshold drops as freezeProgress increases
+  const threshold = 1.0 - 0.75 * freezeProgress;
+  return pIce >= threshold;
+}

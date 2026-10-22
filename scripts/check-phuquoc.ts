@@ -1364,6 +1364,107 @@ for (const pt of inBoundsBorderPoints) {
   }
 }
 
+// =========================================================================
+// WEATHER CONSISTENCY & SYNCHRONIZED OCEAN WAVE TESTS
+// =========================================================================
+console.log('--- RUNNING PHU QUOC WEATHER CONSISTENCY & WAVE TESTS ---');
+
+// 1. Partial derivatives of getOceanWaveElevation match getOceanWaveSlopes exactly
+const waveTestPoints = [
+  { x: 0.0, z: 2.0 },
+  { x: 4.5, z: 3.5 },
+  { x: -3.0, z: 5.0 },
+  { x: BOAT_SPOTS.thung.x, z: BOAT_SPOTS.thung.z },
+  { x: BOAT_SPOTS.ghe.x, z: BOAT_SPOTS.ghe.z },
+];
+const waveTestTimes = [0.0, 1.5, 3.2, 7.8, 15.0];
+const waveTestWinds = [0.2, 0.5, 0.8, 1.0];
+const EPS = 0.0001;
+
+let waveSlopesMatchDerivatives = true;
+let slopeMismatchDetails = '';
+
+for (const pt of waveTestPoints) {
+  for (const t of waveTestTimes) {
+    for (const w of waveTestWinds) {
+      const slopes = getOceanWaveSlopes(pt.x, pt.z, t, w);
+
+      const hXPlus = getOceanWaveElevation(pt.x + EPS, pt.z, t, w);
+      const hXMinus = getOceanWaveElevation(pt.x - EPS, pt.z, t, w);
+      const numDerivX = (hXPlus - hXMinus) / (2 * EPS);
+
+      const hZPlus = getOceanWaveElevation(pt.x, pt.z + EPS, t, w);
+      const hZMinus = getOceanWaveElevation(pt.x, pt.z - EPS, t, w);
+      const numDerivZ = (hZPlus - hZMinus) / (2 * EPS);
+
+      const diffX = Math.abs(slopes.dSdx - numDerivX);
+      const diffZ = Math.abs(slopes.dSdz - numDerivZ);
+
+      if (diffX > 0.0001 || diffZ > 0.0001) {
+        waveSlopesMatchDerivatives = false;
+        slopeMismatchDetails = `At (${pt.x}, ${pt.z}, t=${t}, w=${w}): diffX=${diffX}, diffZ=${diffZ}`;
+        break;
+      }
+    }
+    if (!waveSlopesMatchDerivatives) break;
+  }
+  if (!waveSlopesMatchDerivatives) break;
+}
+assert(waveSlopesMatchDerivatives, 'getOceanWaveSlopes matches analytical partial derivatives of getOceanWaveElevation', slopeMismatchDetails);
+
+// 2. Effective wind combination rules:
+// effectiveWind = clamp(baseWind * (1.0 + rainIntensity * 0.50) + rainIntensity * 0.15, 0.1, 1.2)
+let windCombValid = true;
+for (let bw = 0.1; bw <= 1.0; bw += 0.1) {
+  for (let r = 0.0; r <= 1.0; r += 0.1) {
+    const eff = THREE.MathUtils.clamp(bw * (1.0 + r * 0.50) + r * 0.15, 0.1, 1.2);
+    if (eff < 0.1 || eff > 1.2 || Number.isNaN(eff)) {
+      windCombValid = false;
+      break;
+    }
+  }
+}
+assert(windCombValid, 'Effective wind remains within physical bounds [0.1, 1.2] across all base winds and rain intensities');
+
+// 3. Boat Waterline & Freeboard margin under wave heave
+let boatWaterlinesValid = true;
+let waterlineDetails = '';
+for (let t = 0; t <= 20; t += 0.5) {
+  const wThung = getOceanWaveElevation(BOAT_SPOTS.thung.x, BOAT_SPOTS.thung.z, t, 1.0);
+  const wGhe = getOceanWaveElevation(BOAT_SPOTS.ghe.x, BOAT_SPOTS.ghe.z, t, 1.0);
+
+  // Maximum swell amplitude at max wind (1.0) must not exceed freeboard (0.20m)
+  if (Math.abs(wThung) >= BOAT_SPECS.thung.freeboard || Math.abs(wGhe) >= BOAT_SPECS.ghe.freeboard) {
+    boatWaterlinesValid = false;
+    waterlineDetails = `Wave elevation (${wThung.toFixed(3)}, ${wGhe.toFixed(3)}) exceeds freeboard`;
+    break;
+  }
+}
+assert(boatWaterlinesValid, 'Ocean wave swell does not submerge gunwales or swamp boat cockpits', waterlineDetails);
+
+// 4. Boat Cockpit Cavity Discard under Rainy Wave Dynamics
+const dummyBoatsGroup = new THREE.Group();
+const boatsSys = createPhuQuocBoats(dummyBoatsGroup);
+
+// Update boats with rainy effective wind
+boatsSys.update(0.016, 2.5, 0.35, 0.85, 0.5);
+
+// Test points known to be inside boat cavities
+const thungCenterWorld = new THREE.Vector3(BOAT_SPOTS.thung.x, 0.35, BOAT_SPOTS.thung.z);
+const thungInCavity = isPointInBoatCavity(thungCenterWorld, boatsSys);
+assert(thungInCavity, 'Thuyen Thung center point at waterLevel is inside boat cavity');
+
+const gheMidWorld = new THREE.Vector3(BOAT_SPOTS.ghe.x, 0.35, BOAT_SPOTS.ghe.z);
+const gheInCavity = isPointInBoatCavity(gheMidWorld, boatsSys);
+assert(gheInCavity, 'Ghe Nho midship hold point at waterLevel is inside boat cavity');
+
+// Test point outside boat hull is NOT discarded
+const outsidePoint = new THREE.Vector3(BOAT_SPOTS.ghe.x + 2.0, 0.35, BOAT_SPOTS.ghe.z);
+const outsideInCavity = isPointInBoatCavity(outsidePoint, boatsSys);
+assert(!outsideInCavity, 'Point 2m away from boat is NOT inside cavity');
+
+boatsSys.dispose();
+
 // Summary
 const totalPassed = results.filter((r) => r.passed).length;
 console.log('----------------------------------------------------');

@@ -106,6 +106,7 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
   }
 
   private currentQuality: Quality = 'high';
+  private lastWindStrength: number = 0.35;
 
   applyState(state: ThemeState<'phuquoc'>, _prevSeason?: PhuQuocSeason, _blendFactor: number = 1): void {
     if (this.currentTide !== state.tide && this.water) {
@@ -127,6 +128,21 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     if (state.quality && state.quality !== this.currentQuality) {
       this.setQuality(state.quality);
     }
+    this.lastWindStrength = state.windStrength;
+
+    const waterLevel = this.water?.getWaterLevel() ?? 0.3;
+
+    // 1. Weather update first to obtain exact smooth rain intensity over dt
+    this.weather?.update(dt, elapsed, state.windStrength, waterLevel);
+    const rainIntensity = this.weather?.getRainIntensity() ?? 0.0;
+
+    // 2. Compute harmonized effective wind combining user slider and rain preset
+    // (creates moderate ocean swell without turning into an exaggerated hurricane)
+    const effectiveWind = THREE.MathUtils.clamp(
+      state.windStrength * (1.0 + rainIntensity * 0.50) + rainIntensity * 0.15,
+      0.1,
+      1.2
+    );
 
     const pqState: PhuQuocState = {
       timeOfDay: state.timeOfDay,
@@ -134,28 +150,39 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
       tide: state.tide,
       rippleStrength: state.rippleStrength,
       flowSpeed: state.flowSpeed,
-      windStrength: state.windStrength,
+      windStrength: effectiveWind,
       autoRotate: state.autoRotate,
       quality: this.currentQuality,
     };
 
-    // Subsystem updates
+    // Subsystem updates with synchronized effective weather
     const scene = (this.group.parent as THREE.Scene) || undefined;
     this.lighting?.update(pqState, scene);
     if (this.lighting && this.water) {
       this.water.setSunLighting(this.lighting.sunDirection, this.lighting.sunColor, this.lighting.skyColor);
     }
 
-    this.water?.update(dt, elapsed, state.windStrength, state.flowSpeed);
+    this.water?.update(dt, elapsed, effectiveWind, state.flowSpeed, rainIntensity);
     this.architecture?.update(dt, elapsed, state.timeOfDay);
-    const waterLevel = this.water?.getWaterLevel() ?? 0.3;
-    this.boats?.update(dt, elapsed, waterLevel, state.windStrength, state.flowSpeed);
+    this.boats?.update(dt, elapsed, waterLevel, effectiveWind, state.flowSpeed);
     if (this.boats && this.water?.updateBoatCavities) {
       this.water.updateBoatCavities(this.boats.getCavities());
     }
-    this.vegetation?.update(dt, elapsed, state.windStrength);
+    this.vegetation?.update(dt, elapsed, effectiveWind);
     this.fish?.update(dt, elapsed, waterLevel);
-    this.weather?.update(dt, elapsed, state.windStrength, waterLevel);
+  }
+
+  getRainIntensity(): number {
+    return this.weather?.getRainIntensity() ?? 0.0;
+  }
+
+  getEffectiveWind(): number {
+    const rain = this.getRainIntensity();
+    return THREE.MathUtils.clamp(
+      this.lastWindStrength * (1.0 + rain * 0.50) + rain * 0.15,
+      0.1,
+      1.2
+    );
   }
 
   getContentBounds(): THREE.Box3 {

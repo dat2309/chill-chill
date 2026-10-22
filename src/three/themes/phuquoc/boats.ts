@@ -348,15 +348,18 @@ ${branches}
  * S(x, z, t) = sin(1.8*z - 1.5*t) * 0.035 * w + cos(1.2*x + 0.8*z - 2.0*t) * 0.02 * w
  */
 export function getOceanWaveElevation(x: number, z: number, time: number, windStrength: number): number {
-  let swell = Math.sin(z * 1.8 - time * 1.5) * 0.035 * windStrength;
-  swell += Math.cos(x * 1.2 + z * 0.8 - time * 2.0) * 0.02 * windStrength;
+  let swell = Math.sin(z * 1.75 - time * 1.6) * 0.045 * windStrength;
+  swell += Math.cos(x * 1.15 + z * 0.85 - time * 2.1) * 0.025 * windStrength;
+  swell += Math.sin(x * 2.2 - z * 1.3 + time * 3.0) * 0.012 * windStrength;
   return swell;
 }
 
 export function getOceanWaveSlopes(x: number, z: number, time: number, windStrength: number): { dSdx: number; dSdz: number } {
-  const dSdx = -Math.sin(x * 1.2 + z * 0.8 - time * 2.0) * 1.2 * 0.02 * windStrength;
-  const dSdz = Math.cos(z * 1.8 - time * 1.5) * 1.8 * 0.035 * windStrength
-             - Math.sin(x * 1.2 + z * 0.8 - time * 2.0) * 0.8 * 0.02 * windStrength;
+  const dSdx = -Math.sin(x * 1.15 + z * 0.85 - time * 2.1) * 0.02875 * windStrength
+             + Math.cos(x * 2.2 - z * 1.3 + time * 3.0) * 0.0264 * windStrength;
+  const dSdz = Math.cos(z * 1.75 - time * 1.6) * 0.07875 * windStrength
+             - Math.sin(x * 1.15 + z * 0.85 - time * 2.1) * 0.02125 * windStrength
+             - Math.cos(x * 2.2 - z * 1.3 + time * 3.0) * 0.0156 * windStrength;
   return { dSdx, dSdz };
 }
 
