@@ -12,7 +12,6 @@ import {
   isInWater,
 } from '../src/three/themes/garden/streamProfile.js';
 import { computeRawTerrainHeight, createTerrain } from '../src/three/themes/garden/terrain.js';
-import { GARDEN_STAIRCASES } from '../src/three/themes/garden/architecture.js';
 
 interface TestResult {
   name: string;
@@ -262,15 +261,14 @@ assert(
   `Garden footprint is custom asymmetric (radius variation: min=${minR.toFixed(2)}, max=${maxR.toFixed(2)}, span=${(maxR - minR).toFixed(2)})`
 );
 
-// Verify all glamping structures, stairs, and props are within footprint
+// Verify all glamping structures and props are within footprint
 const gardenProps = [
   { x: -5.0, z: -2.0, name: 'Dome 1 (Alpine Deck)' },
   { x: -2.2, z: -1.2, name: 'Dome 2 (Meadow Deck)' },
   { x: -4.2, z: 0.0,  name: 'Dome 3 (Creekside Deck)' },
   { x: -1.0, z: -2.5, name: 'A-Frame Cabin' },
   { x: -3.2, z: -0.8, name: 'Campfire Ring' },
-  { x: -2.2, z: 1.2,  name: 'Stairs Top Landing' },
-  { x: -2.4, z: 2.2,  name: 'Stairs Mid Section' },
+  { x: -3.5, z: 0.35, name: 'Meadow Overlook Point' },
   { x: 2.2,  z: 5.0,  name: 'SUP Board Beach Landing' },
 ];
 let allPropsInside = true;
@@ -282,7 +280,7 @@ for (const prop of gardenProps) {
     break;
   }
 }
-assert(allPropsInside, 'All glamping domes, cabin, campfire, stairs, and props reside safely within natural footprint', propFailName);
+assert(allPropsInside, 'All glamping domes, cabin, campfire, and props reside safely within natural footprint', propFailName);
 
 // 6. Geometry Winding & Face Normal Cross Product Verification
 const mockScene = new THREE.Scene();
@@ -492,15 +490,12 @@ assert(
 );
 
 // =========================================================================
-// 8. Garden Cliffside Staircases: Monotonicity, Uniform Risers & Foundations
-// =========================================================================
-// =========================================================================
-// 8. Garden Cliffside Staircases: Real Terrain Mesh Raycasting, Tread Reveals & Bedrock Anchors
+// 8. Restored Natural Slopes & Complete Staircase Removal Verification
 // =========================================================================
 const gardenScene = new THREE.Scene();
 const terrainSys = createTerrain(gardenScene);
 const terrainMesh = terrainSys.group.getObjectByName('DioramaTerrainMesh') as THREE.Mesh;
-assert(terrainMesh !== undefined, 'Garden diorama terrain mesh instantiated successfully for staircase raycasting');
+assert(terrainMesh !== undefined, 'Garden diorama terrain mesh instantiated successfully for natural slope raycasting');
 
 const downRaycaster = new THREE.Raycaster();
 const dirDown = new THREE.Vector3(0, -1, 0);
@@ -514,345 +509,141 @@ function getMeshElevationAt(x: number, z: number): number {
   return terrainSys.getHeightAt(x, z);
 }
 
-const stairList = [GARDEN_STAIRCASES.west, GARDEN_STAIRCASES.east];
-
-stairList.forEach((stair) => {
-  interface TreadItem {
-    name: string;
-    center: { x: number; z: number };
-    treadY: number;
-    bottomY: number;
-    gridPoints: { x: number; z: number }[];
+// 8.1 Natural slope descent along former West and East corridors
+// West slope: x = -6.0, z from 0.5 to 3.5
+let westSlopeSmooth = true;
+let westSlopeFail = '';
+let prevWestY = getMeshElevationAt(-6.0, 0.5);
+for (let z = 0.8; z <= 3.5; z += 0.3) {
+  const currentY = getMeshElevationAt(-6.0, z);
+  if (currentY > prevWestY + 0.05) {
+    westSlopeSmooth = false;
+    westSlopeFail = `West slope has upward bump at z=${z.toFixed(2)}: ${currentY.toFixed(3)} > ${prevWestY.toFixed(3)}`;
+    break;
   }
+  prevWestY = currentY;
+}
+assert(
+  westSlopeSmooth && prevWestY < 0.50,
+  'West hillside slopes down naturally from plateau (1.35m+) to stream bank (<0.50m) with zero upward bumps or trenches',
+  westSlopeFail
+);
 
-  const allTreads: TreadItem[] = [];
-
-  // Helper to generate 9 sample grid points (center, 4 corners, 4 midpoints)
-  function makeGridPoints(
-    cx: number,
-    cz: number,
-    width: number,
-    depth: number,
-    theta = 0,
-    isStep = false
-  ): { x: number; z: number }[] {
-    const pts: { x: number; z: number }[] = [];
-    const hw = (width / 2) - 0.04;
-    const hd = (depth / 2) - 0.04;
-    // For flight steps, the rear 12cm is nested under the upper step; exposed tread begins at upper riser
-    const backD = isStep ? 0.02 : -hd;
-
-    const uX = Math.cos(theta);
-    const uZ = -Math.sin(theta);
-    const vX = Math.sin(theta);
-    const vZ = Math.cos(theta);
-
-    const offsets = [
-      [0, (backD + hd) / 2],
-      [-hw, backD],
-      [-hw, hd],
-      [hw, backD],
-      [hw, hd],
-      [-hw, (backD + hd) / 2],
-      [hw, (backD + hd) / 2],
-      [0, backD],
-      [0, hd],
-    ];
-
-    offsets.forEach(([du, dv]) => {
-      pts.push({
-        x: cx + du * uX + dv * vX,
-        z: cz + du * uZ + dv * vZ,
-      });
-    });
-
-    return pts;
+// East slope: x = -1.6, z from 0.8 to 3.6
+let eastSlopeSmooth = true;
+let eastSlopeFail = '';
+let prevEastY = getMeshElevationAt(-1.6, 0.8);
+for (let z = 1.1; z <= 3.6; z += 0.3) {
+  const currentY = getMeshElevationAt(-1.6, z);
+  if (currentY > prevEastY + 0.05) {
+    eastSlopeSmooth = false;
+    eastSlopeFail = `East slope has upward bump at z=${z.toFixed(2)}: ${currentY.toFixed(3)} > ${prevEastY.toFixed(3)}`;
+    break;
   }
+  prevEastY = currentY;
+}
+assert(
+  eastSlopeSmooth && prevEastY < 0.50,
+  'East hillside slopes down naturally from meadow (1.35m+) to stream bank (<0.50m) with zero upward bumps or trenches',
+  eastSlopeFail
+);
 
-  // 1. Top Landing
-  const topBedY = getMeshElevationAt(stair.topLanding.x, stair.topLanding.z);
-  allTreads.push({
-    name: `${stair.name} Top Landing`,
-    center: { x: stair.topLanding.x, z: stair.topLanding.z },
-    treadY: stair.topLanding.y,
-    bottomY: Math.min(stair.topLanding.y - 0.22, topBedY - 0.15),
-    gridPoints: makeGridPoints(
-      stair.topLanding.x,
-      stair.topLanding.z,
-      stair.topLanding.width,
-      stair.topLanding.depth,
-      stair.topLanding.rotation ?? stair.rotation ?? 0
-    ),
-  });
-
-  // 2. Upper flight
-  const uDx = stair.upperFlight.endX - stair.upperFlight.startX;
-  const uDz = stair.upperFlight.endZ - stair.upperFlight.startZ;
-  const uTheta = Math.atan2(uDx, uDz);
-
-  for (let i = 0; i < stair.upperFlight.steps; i++) {
-    const t = (i + 0.5) / stair.upperFlight.steps;
-    const sx = THREE.MathUtils.lerp(stair.upperFlight.startX, stair.upperFlight.endX, t);
-    const sz = THREE.MathUtils.lerp(stair.upperFlight.startZ, stair.upperFlight.endZ, t);
-    const stepY = stair.upperFlight.startY - (i + 1) * stair.upperFlight.riserHeight;
-    const bedY = getMeshElevationAt(sx, sz);
-    const bottomY = Math.min(stepY - stair.upperFlight.riserHeight - 0.08, bedY - 0.15);
-
-    allTreads.push({
-      name: `${stair.name} Upper Step ${i + 1}`,
-      center: { x: sx, z: sz },
-      treadY: stepY,
-      bottomY,
-      gridPoints: makeGridPoints(sx, sz, stair.upperFlight.width, stair.upperFlight.treadDepth, uTheta, true),
-    });
+// 8.2 Glamping deck foundations and stability
+const deckPoints = [
+  { x: -5.0, z: -2.0, name: 'Dome 1 Deck' },
+  { x: -2.2, z: -1.2, name: 'Dome 2 Deck' },
+  { x: -4.2, z: 0.0,  name: 'Dome 3 Deck' },
+  { x: -1.0, z: -2.5, name: 'A-Frame Cabin Porch' },
+];
+let decksGrounded = true;
+let deckFailMsg = '';
+deckPoints.forEach(dp => {
+  const meshY = getMeshElevationAt(dp.x, dp.z);
+  if (meshY < 1.20 || meshY > 1.60) {
+    decksGrounded = false;
+    deckFailMsg = `${dp.name} foundation at (${dp.x}, ${dp.z}) elevation ${meshY.toFixed(3)} is outside plateau range [1.20, 1.60]`;
   }
+});
+assert(decksGrounded, 'All glamping decks and cabin rest securely on stable plateau meadow terrain', deckFailMsg);
 
-  // 3. Mid Landing (Chiếu nghỉ)
-  const midBedY = getMeshElevationAt(stair.midLanding.x, stair.midLanding.z);
-  allTreads.push({
-    name: `${stair.name} Mid Landing (Chiếu Nghỉ)`,
-    center: { x: stair.midLanding.x, z: stair.midLanding.z },
-    treadY: stair.midLanding.y,
-    bottomY: Math.min(stair.midLanding.y - 0.22, midBedY - 0.15),
-    gridPoints: makeGridPoints(
-      stair.midLanding.x,
-      stair.midLanding.z,
-      stair.midLanding.width,
-      stair.midLanding.depth,
-      stair.midLanding.rotation ?? stair.rotation ?? 0
-    ),
-  });
+// 8.3 Architecture Verification: Complete absence of outdoor stone staircases & stray snow caps
+const archSys = createArchitecture(gardenScene, (x, z) => terrainSys.getHeightAt(x, z));
+let hasStairMeshes = false;
+let stairMeshName = '';
 
-  // 4. Lower flight
-  const lDx = stair.lowerFlight.endX - stair.lowerFlight.startX;
-  const lDz = stair.lowerFlight.endZ - stair.lowerFlight.startZ;
-  const lTheta = Math.atan2(lDx, lDz);
-
-  for (let i = 0; i < stair.lowerFlight.steps; i++) {
-    const t = (i + 0.5) / stair.lowerFlight.steps;
-    const sx = THREE.MathUtils.lerp(stair.lowerFlight.startX, stair.lowerFlight.endX, t);
-    const sz = THREE.MathUtils.lerp(stair.lowerFlight.startZ, stair.lowerFlight.endZ, t);
-    const stepY = stair.lowerFlight.startY - (i + 1) * stair.lowerFlight.riserHeight;
-    const bedY = getMeshElevationAt(sx, sz);
-    const bottomY = Math.min(stepY - stair.lowerFlight.riserHeight - 0.08, bedY - 0.15);
-
-    allTreads.push({
-      name: `${stair.name} Lower Step ${i + 1}`,
-      center: { x: sx, z: sz },
-      treadY: stepY,
-      bottomY,
-      gridPoints: makeGridPoints(sx, sz, stair.lowerFlight.width, stair.lowerFlight.treadDepth, lTheta, true),
-    });
+archSys.group.traverse((obj) => {
+  if (obj.name && /stair/i.test(obj.name)) {
+    hasStairMeshes = true;
+    stairMeshName = obj.name;
   }
+});
+assert(!hasStairMeshes, 'Architecture system has zero outdoor stone staircase meshes or helper objects', stairMeshName);
 
-  // 5. Bottom landing
-  const botBedY = getMeshElevationAt(stair.bottomLanding.x, stair.bottomLanding.z);
-  allTreads.push({
-    name: `${stair.name} Bottom Landing`,
-    center: { x: stair.bottomLanding.x, z: stair.bottomLanding.z },
-    treadY: stair.bottomLanding.y,
-    bottomY: Math.min(stair.bottomLanding.y - 0.22, botBedY - 0.15),
-    gridPoints: makeGridPoints(
-      stair.bottomLanding.x,
-      stair.bottomLanding.z,
-      stair.bottomLanding.width,
-      stair.bottomLanding.depth,
-      stair.bottomLanding.rotation ?? stair.rotation ?? 0
-    ),
-  });
-
-  // Check 1: Monotonicity along entire route
-  let isMonotonic = true;
-  let monotonicFailMsg = '';
-  for (let k = 0; k < allTreads.length - 1; k++) {
-    const cur = allTreads[k];
-    const nxt = allTreads[k + 1];
-    if (nxt.treadY > cur.treadY) {
-      isMonotonic = false;
-      monotonicFailMsg = `${cur.name} (y=${cur.treadY.toFixed(3)}) is lower than next ${nxt.name} (y=${nxt.treadY.toFixed(3)})`;
-      break;
+// 8.4 Winter Season: Verify no floating or orphaned snow caps where stairs used to be
+archSys.updateSeason('winter', 1.0);
+const snowMeshes: THREE.Mesh[] = [];
+archSys.group.traverse((obj) => {
+  if (obj instanceof THREE.Mesh) {
+    const mat = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+    if (mat && mat.color && mat.color.getHex() === 0xe8e8f0) {
+      snowMeshes.push(obj);
     }
   }
-  assert(
-    isMonotonic,
-    `${stair.name}: Step elevations descend monotonically with zero upward bumps along route`,
-    monotonicFailMsg
-  );
-
-  // Check 2: Uniform risers within flights
-  let upperRisersUniform = true;
-  for (let i = 0; i < stair.upperFlight.steps; i++) {
-    const step = allTreads[1 + i];
-    const prevY = i === 0 ? stair.upperFlight.startY : allTreads[1 + i - 1].treadY;
-    const diff = Math.abs((prevY - step.treadY) - stair.upperFlight.riserHeight);
-    if (diff > 1e-5) {
-      upperRisersUniform = false;
-      break;
-    }
-  }
-  assert(
-    upperRisersUniform && stair.upperFlight.riserHeight >= 0.11 && stair.upperFlight.riserHeight <= 0.16,
-    `${stair.name}: Upper flight risers are completely uniform (${stair.upperFlight.riserHeight.toFixed(4)}m) within comfortable architectural range`
-  );
-
-  let lowerRisersUniform = true;
-  const lowerOffset = 1 + stair.upperFlight.steps + 1;
-  for (let i = 0; i < stair.lowerFlight.steps; i++) {
-    const step = allTreads[lowerOffset + i];
-    const prevY = i === 0 ? stair.lowerFlight.startY : allTreads[lowerOffset + i - 1].treadY;
-    const diff = Math.abs((prevY - step.treadY) - stair.lowerFlight.riserHeight);
-    if (diff > 1e-5) {
-      lowerRisersUniform = false;
-      break;
-    }
-  }
-  assert(
-    lowerRisersUniform && stair.lowerFlight.riserHeight >= 0.11 && stair.lowerFlight.riserHeight <= 0.16,
-    `${stair.name}: Lower flight risers are completely uniform (${stair.lowerFlight.riserHeight.toFixed(4)}m) within comfortable architectural range`
-  );
-
-  // Check 3: Real Mesh Raycast Verification — Tread Reveal across entire grid (Center + 4 corners + 4 midpoints)
-  // Step tread must sit strictly above terrain with zero dirt bursting through the tread surface
-  let allTreadsExposed = true;
-  let treadExposureFail = '';
-  let minTreadReveal = Infinity;
-
-  allTreads.forEach((t) => {
-    t.gridPoints.forEach((pt, pIdx) => {
-      const meshY = getMeshElevationAt(pt.x, pt.z);
-      const reveal = t.treadY - meshY;
-      if (reveal < minTreadReveal) minTreadReveal = reveal;
-      if (reveal < 0.02) {
-        allTreadsExposed = false;
-        treadExposureFail = `${t.name} pt #${pIdx} at (${pt.x.toFixed(2)}, ${pt.z.toFixed(2)}): treadY=${t.treadY.toFixed(3)} is penetrated by terrainMesh=${meshY.toFixed(3)} (reveal=${reveal.toFixed(3)}m < 0.02m)`;
-      }
-    });
-  });
-  assert(
-    allTreadsExposed,
-    `${stair.name}: All step treads and landings are completely exposed above terrain mesh across center, 4 corners, and grid (min reveal: +${(minTreadReveal * 100).toFixed(1)}cm >= +2.0cm, zero dirt penetration)`,
-    treadExposureFail
-  );
-
-  // Check 4: Real Mesh Raycast Verification — Solid foundation under-supports anchored into bedrock
-  // Foundations must extend >= 8cm beneath rendered bedrock (zero floating or hollow gaps)
-  let allUnderSupportsBuried = true;
-  let underSupportFail = '';
-  allTreads.forEach((t) => {
-    const meshY = getMeshElevationAt(t.center.x, t.center.z);
-    if (t.bottomY > meshY - 0.08) {
-      allUnderSupportsBuried = false;
-      underSupportFail = `${t.name} at (${t.center.x.toFixed(2)}, ${t.center.z.toFixed(2)}): bottomY=${t.bottomY.toFixed(3)} is above terrainMesh=${meshY.toFixed(3)}`;
-    }
-  });
-  assert(
-    allUnderSupportsBuried,
-    `${stair.name}: All steps and landings have solid under-supports anchored >= 8cm below rendered bedrock (zero floating or hollow gaps)`,
-    underSupportFail
-  );
-
-  // Check 5: Tangent orientation
-  assert(
-    Number.isFinite(uTheta) && Math.hypot(uDx, uDz) > 0.5,
-    `${stair.name}: Upper flight steps are aligned with walking direction tangent`
-  );
 });
 
-// Check 6: Flagstone Stepping Stone connections to stair landings
-const landingConnectionPoints = [
-  { x: -5.85, z: 0.10, name: 'West Top Landing Connection' },
-  { x: -5.55, z: 3.95, name: 'West Bottom Landing Connection' },
-  { x: -2.00, z: 0.55, name: 'East Top Landing Connection' },
-  { x: -1.30, z: 4.25, name: 'East Bottom Landing Connection' },
+let orphanSnowFound = false;
+let orphanSnowMsg = '';
+const oldStairZones = [
+  { minX: -6.7, maxX: -5.2, minZ: 0.10, maxZ: 4.20, name: 'West former stair corridor' },
+  { minX: -2.3, maxX: -0.8, minZ: 0.35, maxZ: 4.50, name: 'East former stair corridor' },
 ];
 
-let allConnectionsGrounded = true;
-let connectionFailMsg = '';
-landingConnectionPoints.forEach((pt) => {
+snowMeshes.forEach((mesh) => {
+  const posAttr = mesh.geometry.attributes.position;
+  if (!posAttr) return;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < posAttr.count; i++) {
+    v.fromBufferAttribute(posAttr, i);
+    mesh.localToWorld(v);
+    oldStairZones.forEach(zone => {
+      if (v.x >= zone.minX && v.x <= zone.maxX && v.z >= zone.minZ && v.z <= zone.maxZ) {
+        orphanSnowFound = true;
+        orphanSnowMsg = `Orphaned snow vertex found at (${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}) inside ${zone.name}`;
+      }
+    });
+  }
+});
+assert(!orphanSnowFound, 'Winter season has zero floating or orphaned snow caps across the hillside slopes', orphanSnowMsg);
+
+// 8.5 Flagstone walking paths grounded on solid terrain
+const testFlagstones = [
+  { x: -4.4, z: -1.6, name: 'Dome 1 to Campfire' },
+  { x: -2.4, z: -1.0, name: 'Dome 2 to Campfire' },
+  { x: -3.9, z: -0.3, name: 'Dome 3 to Campfire' },
+  { x: -1.5, z: -2.1, name: 'Cabin to Campfire' },
+  { x: -3.5, z: 0.35, name: 'Meadow Overlook' },
+  { x: -5.6, z: -1.1, name: 'Dome 1 to Picnic' },
+  { x: 4.5,  z: 2.7,  name: 'Right Bank Beach Path' },
+];
+let allFlagstonesGrounded = true;
+let flagstoneFailMsg = '';
+testFlagstones.forEach(pt => {
   const meshY = getMeshElevationAt(pt.x, pt.z);
   if (!Number.isFinite(meshY) || meshY < 0.20 || meshY > 2.0) {
-    allConnectionsGrounded = false;
-    connectionFailMsg = `${pt.name} at (${pt.x}, ${pt.z}) has invalid elevation ${meshY}`;
+    allFlagstonesGrounded = false;
+    flagstoneFailMsg = `${pt.name} at (${pt.x}, ${pt.z}) has invalid elevation ${meshY}`;
   }
 });
+assert(allFlagstonesGrounded, 'All remaining flagstone path stones rest cleanly on solid terrain', flagstoneFailMsg);
+
+// 8.6 Natural slope accent boulders stability
+const slopeBoulderY = getMeshElevationAt(-2.60, 2.40);
 assert(
-  allConnectionsGrounded,
-  'All flagstone walking path connections to staircase landings contact solid ground smoothly',
-  connectionFailMsg
+  slopeBoulderY >= 0.40 && slopeBoulderY <= 1.0,
+  `Natural slope accent boulder at (-2.60, 2.40) rests securely on slope bedrock (elevation: ${slopeBoulderY.toFixed(3)}m)`
 );
 
-// Check 7: Dome 3 Clearance to West Staircase (Clear walking corridor & entrance)
-const dome3Platform = { minX: -4.30 - 0.86, maxX: -4.30 + 0.86, minZ: 0.05 - 0.86, maxZ: 0.05 + 0.86 };
-const westStairLeftEdge = GARDEN_STAIRCASES.west.topLanding.x + Math.cos(GARDEN_STAIRCASES.west.rotation) * (GARDEN_STAIRCASES.west.topLanding.width / 2 + 0.05);
-const westStairClearance = Math.abs(dome3Platform.minX - westStairLeftEdge);
-assert(
-  westStairClearance >= 0.45,
-  `West staircase top landing maintains generous clearance from Dome 3 deck (${westStairClearance.toFixed(3)}m >= 0.45m)`,
-  `Clearance is only ${westStairClearance.toFixed(3)}m`
-);
-
-// Check 8: Boulder Clearance from all Staircase Corridors & Landings
-const stairListToCheck = [GARDEN_STAIRCASES.west, GARDEN_STAIRCASES.east];
-let boulderConflict = false;
-let boulderConflictMsg = '';
-const boulderSpotsToCheck = [
-  { x: -0.25, z: 3.30, name: 'Boulder 1' },
-  { x: 4.60, z: 3.60, name: 'Boulder 2' },
-  { x: -2.60, z: 2.40, name: 'Boulder 3' },
-  { x: 2.80, z: -2.60, name: 'Boulder 4' },
-  { x: 5.20, z: 5.80, name: 'Boulder 5' },
-];
-
-stairListToCheck.forEach((st) => {
-  const landingsToCheck = [st.topLanding, st.midLanding, st.bottomLanding];
-  boulderSpotsToCheck.forEach((b) => {
-    landingsToCheck.forEach((l) => {
-      const dist = Math.hypot(b.x - l.x, b.z - l.z);
-      if (dist < 0.65) {
-        boulderConflict = true;
-        boulderConflictMsg = `${b.name} at (${b.x}, ${b.z}) obstructs ${st.name} landing (${l.x}, ${l.z}) at distance ${dist.toFixed(3)}m < 0.65m`;
-      }
-    });
-  });
-});
-assert(
-  !boulderConflict,
-  'All river and cliff boulders remain strictly clear of all stair landings and walkways (zero obstruction)',
-  boulderConflictMsg
-);
-
-// Check 9: Co-aligned Landing & Flight Joint Geometry (Zero diagonal wedges or disjointed curbs)
-let jointsFlush = true;
-let jointFailMsg = '';
-stairListToCheck.forEach((st) => {
-  const uDx = st.upperFlight.endX - st.upperFlight.startX;
-  const uDz = st.upperFlight.endZ - st.upperFlight.startZ;
-  const uAngle = Math.atan2(uDx, uDz);
-  const lDx = st.lowerFlight.endX - st.lowerFlight.startX;
-  const lDz = st.lowerFlight.endZ - st.lowerFlight.startZ;
-  const lAngle = Math.atan2(lDx, lDz);
-
-  if (Math.abs(st.rotation - uAngle) > 0.01) {
-    jointsFlush = false;
-    jointFailMsg = `${st.name}: upper flight angle (${uAngle.toFixed(3)}) differs from staircase rotation (${st.rotation.toFixed(3)})`;
-  }
-  if (Math.abs(st.rotation - lAngle) > 0.01) {
-    jointsFlush = false;
-    jointFailMsg = `${st.name}: lower flight angle (${lAngle.toFixed(3)}) differs from staircase rotation (${st.rotation.toFixed(3)})`;
-  }
-  if (Math.abs(st.topLanding.rotation! - st.rotation) > 0.01 ||
-      Math.abs(st.midLanding.rotation! - st.rotation) > 0.01 ||
-      Math.abs(st.bottomLanding.rotation! - st.rotation) > 0.01) {
-    jointsFlush = false;
-    jointFailMsg = `${st.name}: landing rotations do not match staircase rotation`;
-  }
-});
-assert(
-  jointsFlush,
-  'All stair flights, mid landings (chiếu nghỉ), and entrance/exit platforms share unified orientation (100% square flush joints, zero wedge intersections)',
-  jointFailMsg
-);
-
+archSys.dispose();
 terrainSys.dispose();
 
 

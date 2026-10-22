@@ -33,8 +33,6 @@ const EXCLUSION_BOXES: ExclusionBox[] = [
   { minX: -3.8, maxX: -2.6, minZ: -1.4, maxZ: -0.2 }, // Campfire
   { minX: -7.0, maxX: -5.4, minZ: -1.2, maxZ: 0.2 },  // Picnic table
   { minX: -6.8, maxX: -5.2, minZ: -3.1, maxZ: -1.9 }, // Archery
-  { minX: -6.7, maxX: -5.2, minZ: 0.10, maxZ: 4.20 }, // Left staircase
-  { minX: -2.3, maxX: -0.8, minZ: 0.35, maxZ: 4.50 }, // Right staircase
   { minX: 4.4,  maxX: 6.4,  minZ: 3.4,  maxZ: 5.5 },  // SUP board & beach props on bank
 ];
 
@@ -246,7 +244,7 @@ export function createVegetation(
   }
   const decTrees: DecTree[] = [];
 
-  // Perimeter placement strictly on flanks and rear (leaving 100% open sightline to domes, cabin, and stairs)
+  // Perimeter placement strictly on flanks and rear (leaving 100% open sightline to domes, cabin, and stream)
   const candidateDecSpots = [
     // Far left flank
     { x: -7.8, z: -2.8, r: 0.82, h: 1.85 },
@@ -438,13 +436,15 @@ export function createVegetation(
   group.add(flowerStemMesh);
   group.add(flowerHeadMesh);
 
-  // 8 distinct asymmetrical botanical clusters
+  // 10 distinct asymmetrical botanical clusters across meadow, slopes and banks
   const flowerBeds = [
     { cx: -4.3, cz: -1.0, colIdx: 0, radius: 0.50 },  // Pink Cosmos bed near dome 3 rear flank
     { cx: -1.6, cz: -0.7, colIdx: 1, radius: 0.55 },  // White Chamomile bed near dome 2 flank
     { cx: -5.3, cz: -1.5, colIdx: 2, radius: 0.60 },  // Golden Buttercup bed near dome 1
-    { cx: -3.6, cz: 0.45, colIdx: 0, radius: 0.50 },  // Pink cluster along stairs path
-    { cx: -2.7, cz: 2.30, colIdx: 1, radius: 0.45 },  // White cluster on cliff flank between staircases
+    { cx: -3.6, cz: 0.45, colIdx: 0, radius: 0.50 },  // Pink cluster along meadow edge
+    { cx: -5.8, cz: 1.80, colIdx: 2, radius: 0.55 },  // Golden Buttercup on west natural slope
+    { cx: -2.7, cz: 2.30, colIdx: 1, radius: 0.45 },  // White Chamomile cluster on natural slope
+    { cx: -1.7, cz: 2.20, colIdx: 0, radius: 0.50 },  // Pink Cosmos on east natural slope
     { cx: 3.8,  cz: 2.10, colIdx: 2, radius: 0.70 },  // Golden bed on right bank
     { cx: 4.6,  cz: 3.00, colIdx: 0, radius: 0.65 },  // Pink bed on right bank
     { cx: 5.3,  cz: 3.60, colIdx: 1, radius: 0.55 },  // White bed above pebble beach

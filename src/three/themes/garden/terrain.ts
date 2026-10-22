@@ -79,75 +79,6 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3.0 - 2.0 * t);
 }
 
-function getWestStairProfile(z: number): { x: number; y: number } {
-  const x = -6.15 + (z - 0.18) * 0.120579;
-  let y: number;
-  if (z <= 0.88) {
-    y = 1.48;
-  } else if (z <= 1.71) {
-    const t = (z - 0.88) / (1.71 - 0.88);
-    y = THREE.MathUtils.lerp(1.48, 0.94, t);
-  } else if (z <= 2.44) {
-    y = 0.94;
-  } else if (z <= 3.28) {
-    const t = (z - 2.44) / (3.28 - 2.44);
-    y = THREE.MathUtils.lerp(0.94, 0.40, t);
-  } else {
-    y = 0.40;
-  }
-  return { x, y };
-}
-
-function getEastStairProfile(z: number): { x: number; y: number } {
-  const x = -1.82 + (z - 0.48) * 0.120579;
-  let y: number;
-  if (z <= 1.18) {
-    y = 1.46;
-  } else if (z <= 2.01) {
-    const t = (z - 1.18) / (2.01 - 1.18);
-    y = THREE.MathUtils.lerp(1.46, 0.93, t);
-  } else if (z <= 2.74) {
-    y = 0.93;
-  } else if (z <= 3.58) {
-    const t = (z - 2.74) / (3.58 - 2.74);
-    y = THREE.MathUtils.lerp(0.93, 0.40, t);
-  } else {
-    y = 0.40;
-  }
-  return { x, y };
-}
-
-function applyStaircaseCorridorGrading(x: number, z: number, currentH: number): number {
-  let gradedH = currentH;
-
-  // 1. West Staircase Corridor (z: 0.10 to 4.15)
-  if (x >= -7.5 && x <= -4.6 && z >= 0.10 && z <= 4.15) {
-    const prof = getWestStairProfile(z);
-    const distToPath = Math.abs(x - prof.x);
-    // Target excavated bedrock 8.5cm beneath the tread surface
-    const targetBedH = prof.y - 0.085;
-    // Step half-width is 0.44m, curb outer edge is at 0.54m.
-    // Soft, organic blending over [0.55m, 1.65m] eliminates rigid trench walls
-    const blend = 1.0 - smoothstep(0.55, 1.65, distToPath);
-    if (blend > 0 && targetBedH < gradedH) {
-      gradedH = THREE.MathUtils.lerp(gradedH, targetBedH, blend);
-    }
-  }
-
-  // 2. East Staircase Corridor (z: 0.40 to 4.45)
-  if (x >= -3.2 && x <= -0.4 && z >= 0.40 && z <= 4.45) {
-    const prof = getEastStairProfile(z);
-    const distToPath = Math.abs(x - prof.x);
-    const targetBedH = prof.y - 0.085;
-    const blend = 1.0 - smoothstep(0.55, 1.65, distToPath);
-    if (blend > 0 && targetBedH < gradedH) {
-      gradedH = THREE.MathUtils.lerp(gradedH, targetBedH, blend);
-    }
-  }
-
-  return gradedH;
-}
-
 /**
  * Procedural heightfield creating a natural glamping valley:
  * - High rear mountain ridge (z < -3.5)
@@ -174,7 +105,7 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
 
   const inPlateauBox = x >= leftEdgeX && x <= rightEdgeX && z >= backEdgeZ && z <= frontEdgeZ;
   const distEdgeX = Math.min(x - leftEdgeX, rightEdgeX - x);
-  const distEdgeZ = Math.min(z - backEdgeZ, frontEdgeZ - z);
+  const distEdgeZ = z - backEdgeZ;
   const distEdge = Math.min(distEdgeX, distEdgeZ);
   const plateauCore = smoothstep(-0.35, 0.45, distEdge);
 
@@ -182,9 +113,10 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
 
   // 3. Natural Organic Cliff Face (NO horizontal rice terrace steps!)
   // Drops naturally from meadow down to stream bank with organic rock crags and crevices
-  const cliffDrop = smoothstep(frontEdgeZ, frontEdgeZ + 1.30, z);
+  const bankFloor = 0.40 + SimplexNoise2D(x * 0.4, z * 0.4) * 0.04;
+  const cliffDrop = smoothstep(frontEdgeZ, frontEdgeZ + 1.40, z);
   const cragNoise = SimplexNoise2D(x * 1.8, z * 1.8) * 0.06 + SimplexNoise2D(x * 0.8 + 5.0, z * 0.8 + 5.0) * 0.04;
-  const naturalCliffH = THREE.MathUtils.lerp(plateauGentle, 0.35, cliffDrop) + cragNoise * (1.0 - cliffDrop) * cliffDrop * 2.2;
+  const naturalCliffH = THREE.MathUtils.lerp(plateauGentle, bankFloor, cliffDrop) + cragNoise * (1.0 - cliffDrop) * cliffDrop * 1.8;
 
   // 4. Right bank: lower and gently rolling with knolls embracing the wide lake basin
   const rightKnoll1 = Math.exp(-Math.pow((x - 4.8) / 1.9, 2) - Math.pow((z - 2.5) / 1.9, 2)) * 0.28;
@@ -204,27 +136,20 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   } else if (inPlateauBox && plateauCore > 0.70) {
     baseH = plateauGentle;
     currentZone = 'plateau';
-  } else if (inPlateauBox || (x < rightEdgeX + 0.6 && z <= frontEdgeZ + 1.4)) {
-    const isCliff = z >= frontEdgeZ && z <= frontEdgeZ + 1.4 && x <= rightEdgeX + 0.6;
-    if (isCliff) {
-      baseH = naturalCliffH;
-      currentZone = 'cliff';
-    } else {
-      const pFactor = smoothstep(-0.4, 0.5, distEdge);
-      baseH = THREE.MathUtils.lerp(0.55, plateauGentle, pFactor);
-      currentZone = pFactor > 0.6 ? 'plateau' : 'cliff';
-    }
+  } else if (inPlateauBox) {
+    const pFactor = smoothstep(-0.4, 0.5, distEdge);
+    baseH = THREE.MathUtils.lerp(0.55, plateauGentle, pFactor);
+    currentZone = pFactor > 0.6 ? 'plateau' : 'cliff';
+  } else if (x <= rightEdgeX + 0.6 && z >= frontEdgeZ && z <= frontEdgeZ + 1.40) {
+    baseH = naturalCliffH;
+    currentZone = 'cliff';
   } else if (x > 1.0) {
     baseH = rightBankH;
     currentZone = 'bank';
   } else {
-    baseH = 0.42 + SimplexNoise2D(x * 0.4, z * 0.4) * 0.05;
+    baseH = bankFloor;
     currentZone = 'bank';
   }
-
-  // Apply staircase corridor grading to excavate bedrock along the two descent paths,
-  // revealing step treads and intermediate landings with zero ground penetration.
-  baseH = applyStaircaseCorridorGrading(x, z, baseH);
 
   // Ensure gorge and cascade banks rise naturally above stream elevation in upper mountain reaches
   if (z < 0.2) {
@@ -793,7 +718,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     { x: -0.25, z: 3.30, scale: 0.40, col: new THREE.Color(0x9e968b) },
     // Boulder 2: On right gravel spit, weathered river stone
     { x: 4.6, z: 3.6, scale: 0.38, col: new THREE.Color(0xaba092) },
-    // Boulder 3: Near lower stairs landing, flat stepping stone
+    // Boulder 3: Natural slope accent stone, flat weathered boulder
     { x: -2.60, z: 2.40, scale: 0.35, col: new THREE.Color(0x8e877c) },
     // Boulder 4: Mountain gorge cascade boulder upstream
     { x: 2.8, z: -2.6, scale: 0.40, col: new THREE.Color(0xb0a696) },
