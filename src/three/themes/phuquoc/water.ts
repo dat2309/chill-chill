@@ -28,11 +28,8 @@ export interface PhuQuocWaterSystem {
   getTideOffset(): number;
   setSunLighting(sunDir: THREE.Vector3, sunCol: THREE.Color, skyCol: THREE.Color): void;
   updateBoatCavities?(cavities: {
-    thungPos: THREE.Vector2;
-    thungRadius: number;
-    ghePos: THREE.Vector2;
-    gheAngle: number;
-    gheHalfSize: THREE.Vector2;
+    thungInvMatrix: THREE.Matrix4;
+    gheInvMatrix: THREE.Matrix4;
   }): void;
   setForceAnalyticalFallback?(force: boolean): void;
   isUsingGpuSimulation?(): boolean;
@@ -451,11 +448,8 @@ export function createPhuQuocWater(
       uUseGpu: { value: useGpuSimulation ? 1.0 : 0.0 },
       uAnalyticalCount: { value: 0 },
       uAnalyticalRipples: { value: analyticalBuffer },
-      uBoatThungPos: { value: new THREE.Vector2(1.8, 4.5) },
-      uBoatThungRadius: { value: 0.50 },
-      uBoatGhePos: { value: new THREE.Vector2(-4.5, 5.2) },
-      uBoatGheAngle: { value: -0.6 },
-      uBoatGheHalfSize: { value: new THREE.Vector2(0.32, 1.15) },
+      uThungInvMatrix: { value: new THREE.Matrix4() },
+      uGheInvMatrix: { value: new THREE.Matrix4() },
     },
     vertexShader: `
       attribute float aTerrainH;
@@ -534,11 +528,8 @@ export function createPhuQuocWater(
       uniform float uUseGpu;
       uniform int uAnalyticalCount;
       uniform vec4 uAnalyticalRipples[10];
-      uniform vec2 uBoatThungPos;
-      uniform float uBoatThungRadius;
-      uniform vec2 uBoatGhePos;
-      uniform float uBoatGheAngle;
-      uniform vec2 uBoatGheHalfSize;
+      uniform mat4 uThungInvMatrix;
+      uniform mat4 uGheInvMatrix;
 
       varying vec3 vWorldPos;
       varying vec2 vUv;
@@ -555,26 +546,46 @@ export function createPhuQuocWater(
         }
 
         // Boat interior cavity water discard (prevent water clipping inside open boat hulls)
-        // 1. Thuyen Thung: circular basket cavity
-        if (distance(vWorldPos.xz, uBoatThungPos) < uBoatThungRadius) {
-          discard;
+        // 1. Thuyen Thung: transformed via exact inverse world matrix
+        vec4 localThung4 = uThungInvMatrix * vec4(vWorldPos, 1.0);
+        vec3 localThung = localThung4.xyz / localThung4.w;
+
+        // In Thung local space (floor at -0.11, rim at +0.22):
+        if (localThung.y >= -0.11 && localThung.y <= 0.22) {
+          float rInner = localThung.y < 0.05
+            ? mix(0.28, 0.45, (localThung.y + 0.11) / 0.16)
+            : mix(0.45, 0.51, (localThung.y - 0.05) / 0.17);
+          float rDist = length(localThung.xz);
+          if (rDist < rInner - 0.015) {
+            discard;
+          }
         }
 
-        // 2. Ghe Nho: oriented skiff cockpit cavity
-        vec2 deltaGhe = vWorldPos.xz - uBoatGhePos;
-        float cosG = cos(-uBoatGheAngle);
-        float sinG = sin(-uBoatGheAngle);
-        vec2 localGhe = vec2(
-          deltaGhe.x * cosG - deltaGhe.y * sinG,
-          deltaGhe.x * sinG + deltaGhe.y * cosG
-        );
-        if (abs(localGhe.y) < uBoatGheHalfSize.y) {
-          float ny = localGhe.y / uBoatGheHalfSize.y; // -1 (stern) to +1 (bow)
-          float bowTaper = ny > 0.0 ? (1.0 - ny * 0.82) : 1.0;
-          float sternTaper = ny < 0.0 ? (1.0 + ny * 0.35) : 1.0;
-          float halfW = uBoatGheHalfSize.x * bowTaper * sternTaper;
-          if (abs(localGhe.x) < halfW) {
-            discard;
+        // 2. Ghe Nho: transformed via exact inverse world matrix
+        vec4 localGhe4 = uGheInvMatrix * vec4(vWorldPos, 1.0);
+        vec3 localGhe = localGhe4.xyz / localGhe4.w;
+
+        // In Ghe local space (transom at -1.18, bow at +1.15):
+        if (localGhe.z >= -1.18 && localGhe.z <= 1.15) {
+          float lz = localGhe.z;
+          float normZ = lz < 0.0 ? (lz / 1.18) : (lz / 1.15); // -1 at stern, 0 at mid, +1 at bow
+          float floorY = lz < 0.0 ? mix(-0.14, -0.11, -normZ) : mix(-0.14, 0.06, normZ);
+          float sheerY = lz < 0.0 ? mix(0.20, 0.24, -normZ) : mix(0.20, 0.32, normZ);
+
+          if (localGhe.y >= floorY && localGhe.y <= sheerY) {
+            float sheerHalfW = lz < 0.0
+              ? mix(0.30, 0.21, -normZ)
+              : (normZ < 0.65 ? mix(0.30, 0.22, normZ / 0.65) : mix(0.22, 0.03, (normZ - 0.65) / 0.35));
+            float floorHalfW = lz < 0.0
+              ? mix(0.20, 0.14, -normZ)
+              : mix(0.20, 0.02, normZ);
+
+            float yFrac = clamp((localGhe.y - floorY) / max(0.01, sheerY - floorY), 0.0, 1.0);
+            float innerW = mix(floorHalfW, sheerHalfW, yFrac);
+
+            if (abs(localGhe.x) < innerW - 0.015) {
+              discard;
+            }
           }
         }
 
@@ -797,11 +808,8 @@ export function createPhuQuocWater(
       waterMaterial.uniforms.uSunsetSkyColor.value.copy(skyCol);
     },
     updateBoatCavities(cavities) {
-      waterMaterial.uniforms.uBoatThungPos.value.copy(cavities.thungPos);
-      waterMaterial.uniforms.uBoatThungRadius.value = cavities.thungRadius;
-      waterMaterial.uniforms.uBoatGhePos.value.copy(cavities.ghePos);
-      waterMaterial.uniforms.uBoatGheAngle.value = cavities.gheAngle;
-      waterMaterial.uniforms.uBoatGheHalfSize.value.copy(cavities.gheHalfSize);
+      waterMaterial.uniforms.uThungInvMatrix.value.copy(cavities.thungInvMatrix);
+      waterMaterial.uniforms.uGheInvMatrix.value.copy(cavities.gheInvMatrix);
     },
     setForceAnalyticalFallback(force: boolean) {
       useGpuSimulation = !force && Boolean(rtA && rtB);

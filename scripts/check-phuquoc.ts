@@ -33,6 +33,9 @@ import {
   BOAT_SPECS,
   getOceanWaveElevation,
   getOceanWaveSlopes,
+  isInsideThungCavity,
+  isInsideGheCavity,
+  isPointInBoatCavity,
 } from '../src/three/themes/phuquoc/boats';
 import {
   sanitizeGardenState,
@@ -326,7 +329,201 @@ assert(
   `Ghe Nhỏ thwarts are strictly above design waterline (+${thwart1Y.toFixed(3)}m and +${thwart2Y.toFixed(3)}m above DWL)`
 );
 
-// Check 6c: Dynamic Wave Floatation & Alignment
+// Check 6c: Material Side & Solid Winding Verification (Strict FrontSide, No DoubleSide)
+const thungMat = thungHullMesh.material as THREE.Material;
+const gheMat = gheHullMesh.material as THREE.Material;
+assert(
+  thungMat.side === THREE.FrontSide && gheMat.side === THREE.FrontSide,
+  'Both Thuyền Thúng and Ghe Nhỏ use strictly FrontSide materials (no DoubleSide used to mask winding errors)'
+);
+
+// Check 6d: Cross Product Normal Verification on Real Geometry Faces
+// 1. Thuyền Thúng Face Normals
+const thungGeo = thungHullMesh.geometry;
+const thungPosAttr = thungGeo.getAttribute('position') as THREE.BufferAttribute;
+const thungIdxAttr = thungGeo.getIndex()!;
+let thungInnerFloorUpCount = 0;
+let thungOuterBottomDownCount = 0;
+let thungInnerWallInwardCount = 0;
+let thungOuterWallOutwardCount = 0;
+let thungRimUpCount = 0;
+
+for (let i = 0; i < thungIdxAttr.count; i += 3) {
+  const i0 = thungIdxAttr.getX(i);
+  const i1 = thungIdxAttr.getX(i + 1);
+  const i2 = thungIdxAttr.getX(i + 2);
+
+  const v0 = new THREE.Vector3(thungPosAttr.getX(i0), thungPosAttr.getY(i0), thungPosAttr.getZ(i0));
+  const v1 = new THREE.Vector3(thungPosAttr.getX(i1), thungPosAttr.getY(i1), thungPosAttr.getZ(i1));
+  const v2 = new THREE.Vector3(thungPosAttr.getX(i2), thungPosAttr.getY(i2), thungPosAttr.getZ(i2));
+
+  const fn = new THREE.Vector3().crossVectors(
+    new THREE.Vector3().subVectors(v1, v0),
+    new THREE.Vector3().subVectors(v2, v0)
+  ).normalize();
+
+  const c = new THREE.Vector3().add(v0).add(v1).add(v2).multiplyScalar(1 / 3);
+  const rRadial = Math.hypot(c.x, c.z);
+  const radialDot = fn.x * (c.x / Math.max(1e-4, rRadial)) + fn.z * (c.z / Math.max(1e-4, rRadial));
+
+  if (Math.abs(c.y - (-0.11)) < 0.01) {
+    if (fn.y > 0.90) thungInnerFloorUpCount++;
+  } else if (Math.abs(c.y - (-0.14)) < 0.01) {
+    if (fn.y < -0.90) thungOuterBottomDownCount++;
+  } else if (Math.abs(c.y - 0.22) < 0.02 && rRadial > 0.50) {
+    if (fn.y > 0.90) thungRimUpCount++;
+  } else if (rRadial < 0.46) {
+    if (radialDot < -0.20) thungInnerWallInwardCount++;
+  } else {
+    if (radialDot > 0.20) thungOuterWallOutwardCount++;
+  }
+}
+
+assert(
+  thungInnerFloorUpCount >= 28 && thungOuterBottomDownCount >= 28,
+  `Thuyền Thúng inner bottom faces strictly UP (+Y) and outer bottom faces DOWN (-Y) (floors: ${thungInnerFloorUpCount}, bottoms: ${thungOuterBottomDownCount})`
+);
+assert(
+  thungInnerWallInwardCount >= 56 && thungOuterWallOutwardCount >= 56 && thungRimUpCount >= 56,
+  `Thuyền Thúng inner walls point inward, outer walls point outward, and top rim faces up (+Y) (inner: ${thungInnerWallInwardCount}, outer: ${thungOuterWallOutwardCount}, rim: ${thungRimUpCount})`
+);
+
+// 2. Ghe Nhỏ Face Normals
+const gheGeo = gheHullMesh.geometry;
+const ghePosAttr = gheGeo.getAttribute('position') as THREE.BufferAttribute;
+const gheIdxAttr = gheGeo.getIndex()!;
+
+let gheInnerFloorUpCount = 0;
+let gheOuterBottomDownCount = 0;
+let gheInnerWallInwardCount = 0;
+let gheOuterWallOutwardCount = 0;
+let gheSheerLipUpCount = 0;
+let gheTransomSternCount = 0;
+let gheBowStemForwardCount = 0;
+
+for (let i = 0; i < gheIdxAttr.count; i += 3) {
+  const i0 = gheIdxAttr.getX(i);
+  const i1 = gheIdxAttr.getX(i + 1);
+  const i2 = gheIdxAttr.getX(i + 2);
+
+  const v0 = new THREE.Vector3(ghePosAttr.getX(i0), ghePosAttr.getY(i0), ghePosAttr.getZ(i0));
+  const v1 = new THREE.Vector3(ghePosAttr.getX(i1), ghePosAttr.getY(i1), ghePosAttr.getZ(i1));
+  const v2 = new THREE.Vector3(ghePosAttr.getX(i2), ghePosAttr.getY(i2), ghePosAttr.getZ(i2));
+
+  const fn = new THREE.Vector3().crossVectors(
+    new THREE.Vector3().subVectors(v1, v0),
+    new THREE.Vector3().subVectors(v2, v0)
+  ).normalize();
+
+  const c = new THREE.Vector3().add(v0).add(v1).add(v2).multiplyScalar(1 / 3);
+
+  if (c.z < -1.18) {
+    // Transom region
+    if (fn.z < -0.90) gheTransomSternCount++;
+  } else if (c.z > 1.15) {
+    // Bow stem region
+    if (fn.z > 0.50) gheBowStemForwardCount++;
+  } else if (fn.y > 0.85) {
+    if (Math.abs(c.x) < 0.15) gheInnerFloorUpCount++;
+    else gheSheerLipUpCount++;
+  } else if (fn.y < -0.30) {
+    if ((c.x < 0 && fn.x < 0) || (c.x > 0 && fn.x > 0)) gheOuterBottomDownCount++;
+  } else {
+    // Wall surfaces
+    if (c.x < 0) {
+      // Port side: outward is -X, inward into cockpit is +X
+      if (fn.x < -0.30) gheOuterWallOutwardCount++;
+      else if (fn.x > 0.30) gheInnerWallInwardCount++;
+    } else if (c.x > 0) {
+      // Starboard side: outward is +X, inward into cockpit is -X
+      if (fn.x > 0.30) gheOuterWallOutwardCount++;
+      else if (fn.x < -0.30) gheInnerWallInwardCount++;
+    }
+  }
+}
+
+assert(
+  gheOuterBottomDownCount >= 10 && gheInnerFloorUpCount >= 10 && gheSheerLipUpCount >= 10,
+  `Ghe Nhỏ outer bottom faces down/out, inner floor faces up (+Y), and sheer lips face up (+Y) (bottom: ${gheOuterBottomDownCount}, floor: ${gheInnerFloorUpCount}, lips: ${gheSheerLipUpCount})`
+);
+assert(
+  gheOuterWallOutwardCount >= 10 && gheInnerWallInwardCount >= 10,
+  `Ghe Nhỏ outer topsides face outward and inner walls face inward into cockpit (out: ${gheOuterWallOutwardCount}, in: ${gheInnerWallInwardCount})`
+);
+assert(
+  gheTransomSternCount >= 3 && gheBowStemForwardCount >= 3,
+  `Ghe Nhỏ transom faces stern (-Z) and bow stem faces forward (+Z) (transom: ${gheTransomSternCount}, bow: ${gheBowStemForwardCount})`
+);
+
+// Check 6e: Real Mesh Raycast Verification from Inside & Outside
+const raycaster = new THREE.Raycaster();
+
+// 1. Raycast into Thuyền Thúng: from inside out to inner wall
+raycaster.set(new THREE.Vector3(0, 0.05, 0), new THREE.Vector3(1, 0, 0));
+const thungInnerHit = raycaster.intersectObject(thungHullMesh, false);
+assert(
+  thungInnerHit.length > 0 && thungInnerHit[0].face!.normal.x < -0.20,
+  'Raycast from cockpit interior hits front face of Thuyền Thúng inner wall pointing inward (normal.x < 0)'
+);
+
+// Raycast from outside towards Thuyền Thúng outer wall
+raycaster.set(new THREE.Vector3(1.2, 0.05, 0), new THREE.Vector3(-1, 0, 0));
+const thungOuterHit = raycaster.intersectObject(thungHullMesh, false);
+assert(
+  thungOuterHit.length > 0 && thungOuterHit[0].face!.normal.x > 0.20,
+  'Raycast from outside hits front face of Thuyền Thúng outer wall pointing outward (normal.x > 0)'
+);
+
+// Raycast downward onto Thuyền Thúng inner floor
+raycaster.set(new THREE.Vector3(0, 0.05, 0), new THREE.Vector3(0, -1, 0));
+const thungFloorHit = raycaster.intersectObject(thungHullMesh, false);
+assert(
+  thungFloorHit.length > 0 && thungFloorHit[0].face!.normal.y > 0.90,
+  'Raycast downward from interior hits Thuyền Thúng inner floor with normal pointing UP (+Y)'
+);
+
+// Raycast upward onto Thuyền Thúng outer keel bottom
+raycaster.set(new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 1, 0));
+const thungKeelHit = raycaster.intersectObject(thungHullMesh, false);
+assert(
+  thungKeelHit.length > 0 && thungKeelHit[0].face!.normal.y < -0.90,
+  'Raycast upward from ocean hits Thuyền Thúng outer bottom with normal pointing DOWN (-Y)'
+);
+
+// 2. Raycast into Ghe Nhỏ
+// From cockpit interior to starboard inner wall
+raycaster.set(new THREE.Vector3(0, 0.05, 0), new THREE.Vector3(1, 0, 0));
+const gheStarboardInnerHit = raycaster.intersectObject(gheHullMesh, false);
+assert(
+  gheStarboardInnerHit.length > 0 && gheStarboardInnerHit[0].face!.normal.x < -0.20,
+  'Raycast from cockpit hits front face of Ghe Nhỏ starboard inner wall pointing inward into hold (normal.x < 0)'
+);
+
+// From outside into starboard outer topside
+raycaster.set(new THREE.Vector3(1.2, 0.05, 0), new THREE.Vector3(-1, 0, 0));
+const gheStarboardOuterHit = raycaster.intersectObject(gheHullMesh, false);
+assert(
+  gheStarboardOuterHit.length > 0 && gheStarboardOuterHit[0].face!.normal.x > 0.20,
+  'Raycast from outside hits front face of Ghe Nhỏ starboard outer hull pointing outward (normal.x > 0)'
+);
+
+// Raycast from outside stern into transom
+raycaster.set(new THREE.Vector3(0, 0.05, -2.0), new THREE.Vector3(0, 0, 1));
+const gheTransomHit = raycaster.intersectObject(gheHullMesh, false);
+assert(
+  gheTransomHit.length > 0 && gheTransomHit[0].face!.normal.z < -0.90,
+  'Raycast from ocean behind stern hits Ghe Nhỏ transom with normal pointing aft (-Z)'
+);
+
+// Raycast from outside bow into bow stem
+raycaster.set(new THREE.Vector3(0, 0.15, 2.0), new THREE.Vector3(0, 0, -1));
+const gheBowHit = raycaster.intersectObject(gheHullMesh, false);
+assert(
+  gheBowHit.length > 0 && gheBowHit[0].face!.normal.z > 0.50,
+  'Raycast from ocean ahead of bow hits Ghe Nhỏ bow stem with normal pointing forward (+Z)'
+);
+
+// Check 6f: Dynamic Wave Floatation, Inverse Transform Matrices & Cavity Discard
 const tTime = 4.2;
 const tWind = 0.4;
 const tFlow = 0.5;
@@ -347,20 +544,58 @@ assert(
   'Ghe Nhỏ floats precisely on water surface and rides ocean swell'
 );
 
-// Check 6d: Water Cavity Coordinates
+// 3D Inverse Matrix Water Cavity Discard Verification across tides, waves and rotations
 const cavities = boatSys.getCavities();
 assert(
-  Math.abs(cavities.thungPos.x - thung.x) < 1e-4 && Math.abs(cavities.thungPos.y - thung.z) < 1e-4,
-  'Thuyền Thúng water discard cavity follows basket boat position'
+  cavities.thungInvMatrix instanceof THREE.Matrix4 && cavities.gheInvMatrix instanceof THREE.Matrix4,
+  'Boat system provides valid 4x4 inverse transform matrices for shader water cavity discard'
 );
+
+// Point strictly inside Thúng cockpit (at boat center at water level)
+const ptInsideThung = new THREE.Vector3(thungObj.position.x, thungObj.position.y, thungObj.position.z);
 assert(
-  Math.abs(cavities.ghePos.x - ghe.x) < 1e-4 && Math.abs(cavities.ghePos.y - ghe.z) < 1e-4,
-  'Ghe Nhỏ water discard cavity follows skiff boat position'
+  isPointInBoatCavity(ptInsideThung, boatSys),
+  'Water inside Thuyền Thúng cockpit is discarded to prevent clipping through bottom'
 );
+
+// Point outside Thúng (0.75m from center in open ocean)
+const ptOutsideThung = new THREE.Vector3(thungObj.position.x + 0.75, thungObj.position.y, thungObj.position.z);
 assert(
-  cavities.thungRadius >= 0.48 && cavities.thungRadius <= 0.52,
-  'Thuyền Thúng water cavity radius matches inner cockpit boundary'
+  !isPointInBoatCavity(ptOutsideThung, boatSys),
+  'Water outside Thuyền Thúng hull is preserved and not discarded'
 );
+
+// Point strictly inside Ghe Nhỏ hold
+const ptInsideGhe = new THREE.Vector3(gheObj.position.x, gheObj.position.y, gheObj.position.z);
+assert(
+  isPointInBoatCavity(ptInsideGhe, boatSys),
+  'Water inside Ghe Nhỏ open hold is discarded to keep cockpit clean and dry'
+);
+
+// Point outside Ghe Nhỏ hull (0.60m abeam in open ocean)
+const ptOutsideGhe = new THREE.Vector3(gheObj.position.x + 0.60, gheObj.position.y, gheObj.position.z);
+assert(
+  !isPointInBoatCavity(ptOutsideGhe, boatSys),
+  'Water outside Ghe Nhỏ hull is preserved and not discarded'
+);
+
+// Verify cavity discard consistency across high and low tide
+for (const tideLvl of [SEA_LEVEL_LOW, SEA_LEVEL_BASE, SEA_LEVEL_HIGH]) {
+  boatSys.update(0.016, 2.5, tideLvl, 0.35, 0.5);
+  const pInThung = new THREE.Vector3(thungObj.position.x, thungObj.position.y, thungObj.position.z);
+  const pOutThung = new THREE.Vector3(thungObj.position.x + 0.80, thungObj.position.y, thungObj.position.z);
+  const pInGhe = new THREE.Vector3(gheObj.position.x, gheObj.position.y, gheObj.position.z);
+  const pOutGhe = new THREE.Vector3(gheObj.position.x + 0.65, gheObj.position.y, gheObj.position.z);
+
+  assert(
+    isPointInBoatCavity(pInThung, boatSys) && !isPointInBoatCavity(pOutThung, boatSys),
+    `Thuyền Thúng water cavity cleanly segments interior vs exterior at tide level ${tideLvl}m`
+  );
+  assert(
+    isPointInBoatCavity(pInGhe, boatSys) && !isPointInBoatCavity(pOutGhe, boatSys),
+    `Ghe Nhỏ water cavity cleanly segments interior vs exterior at tide level ${tideLvl}m`
+  );
+}
 
 boatSys.dispose();
 

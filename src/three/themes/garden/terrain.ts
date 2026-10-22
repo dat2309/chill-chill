@@ -79,6 +79,82 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3.0 - 2.0 * t);
 }
 
+function getWestStairProfile(z: number): { x: number; y: number } {
+  if (z <= 0.60) {
+    return { x: -5.80, y: 1.48 };
+  } else if (z <= 1.25) {
+    const t = (z - 0.60) / (1.25 - 0.60);
+    return {
+      x: THREE.MathUtils.lerp(-5.80, -5.56, t),
+      y: THREE.MathUtils.lerp(1.48, 0.94, t),
+    };
+  } else if (z <= 1.85) {
+    return { x: -5.54, y: 0.94 };
+  } else if (z <= 2.30) {
+    const t = (z - 1.85) / (2.30 - 1.85);
+    return {
+      x: THREE.MathUtils.lerp(-5.50, -5.28, t),
+      y: THREE.MathUtils.lerp(0.94, 0.40, t),
+    };
+  } else {
+    return { x: -5.26, y: 0.40 };
+  }
+}
+
+function getEastStairProfile(z: number): { x: number; y: number } {
+  if (z <= 0.92) {
+    return { x: -1.85, y: 1.46 };
+  } else if (z <= 1.65) {
+    const t = (z - 0.92) / (1.65 - 0.92);
+    return {
+      x: THREE.MathUtils.lerp(-1.85, -1.50, t),
+      y: THREE.MathUtils.lerp(1.46, 0.93, t),
+    };
+  } else if (z <= 2.15) {
+    return { x: -1.48, y: 0.93 };
+  } else if (z <= 2.65) {
+    const t = (z - 2.15) / (2.65 - 2.15);
+    return {
+      x: THREE.MathUtils.lerp(-1.42, -1.18, t),
+      y: THREE.MathUtils.lerp(0.93, 0.40, t),
+    };
+  } else {
+    return { x: -1.15, y: 0.40 };
+  }
+}
+
+function applyStaircaseCorridorGrading(x: number, z: number, currentH: number): number {
+  let gradedH = currentH;
+
+  // 1. West Staircase Corridor
+  // Covers top landing (z: 0.05-0.80), flights, mid landing, and bottom landing (z: 2.30-3.25)
+  if (x >= -6.8 && x <= -4.4 && z >= 0.05 && z <= 3.25) {
+    const prof = getWestStairProfile(z);
+    const distToPath = Math.abs(x - prof.x);
+    // Target excavated bedrock 8.5cm beneath the tread surface
+    const targetBedH = prof.y - 0.085;
+    // Step/landing half-width up to 0.58m; blend smoothly over [0.70m, 1.20m]
+    const blend = 1.0 - smoothstep(0.70, 1.20, distToPath);
+    if (blend > 0 && targetBedH < gradedH) {
+      gradedH = THREE.MathUtils.lerp(gradedH, targetBedH, blend);
+    }
+  }
+
+  // 2. East Staircase Corridor
+  // Covers top landing (z: 0.45-1.20), flights, mid landing, and bottom landing (z: 2.65-3.60)
+  if (x >= -2.8 && x <= -0.3 && z >= 0.45 && z <= 3.60) {
+    const prof = getEastStairProfile(z);
+    const distToPath = Math.abs(x - prof.x);
+    const targetBedH = prof.y - 0.085;
+    const blend = 1.0 - smoothstep(0.70, 1.20, distToPath);
+    if (blend > 0 && targetBedH < gradedH) {
+      gradedH = THREE.MathUtils.lerp(gradedH, targetBedH, blend);
+    }
+  }
+
+  return gradedH;
+}
+
 /**
  * Procedural heightfield creating a natural glamping valley:
  * - High rear mountain ridge (z < -3.5)
@@ -152,6 +228,10 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
     baseH = 0.42 + SimplexNoise2D(x * 0.4, z * 0.4) * 0.05;
     currentZone = 'bank';
   }
+
+  // Apply staircase corridor grading to excavate bedrock along the two descent paths,
+  // revealing step treads and intermediate landings with zero ground penetration.
+  baseH = applyStaircaseCorridorGrading(x, z, baseH);
 
   // Ensure gorge and cascade banks rise naturally above stream elevation in upper mountain reaches
   if (z < 0.2) {

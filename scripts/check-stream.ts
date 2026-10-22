@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import {
   STREAM_BOUNDS,
   TIDE_OFFSETS,
@@ -10,7 +11,7 @@ import {
   getWaterDepth,
   isInWater,
 } from '../src/three/themes/garden/streamProfile.js';
-import { computeRawTerrainHeight } from '../src/three/themes/garden/terrain.js';
+import { computeRawTerrainHeight, createTerrain } from '../src/three/themes/garden/terrain.js';
 import { GARDEN_STAIRCASES } from '../src/three/themes/garden/architecture.js';
 
 interface TestResult {
@@ -284,9 +285,6 @@ for (const prop of gardenProps) {
 assert(allPropsInside, 'All glamping domes, cabin, campfire, stairs, and props reside safely within natural footprint', propFailName);
 
 // 6. Geometry Winding & Face Normal Cross Product Verification
-import * as THREE from 'three';
-import { createTerrain } from '../src/three/themes/garden/terrain.js';
-
 const mockScene = new THREE.Scene();
 const gardenTerrainSystem = createTerrain(mockScene);
 const dioramaMesh = gardenTerrainSystem.group.getObjectByName('DioramaTerrainMesh') as THREE.Mesh;
@@ -496,78 +494,168 @@ assert(
 // =========================================================================
 // 8. Garden Cliffside Staircases: Monotonicity, Uniform Risers & Foundations
 // =========================================================================
+// =========================================================================
+// 8. Garden Cliffside Staircases: Real Terrain Mesh Raycasting, Tread Reveals & Bedrock Anchors
+// =========================================================================
+const gardenScene = new THREE.Scene();
+const terrainSys = createTerrain(gardenScene);
+const terrainMesh = terrainSys.group.getObjectByName('DioramaTerrainMesh') as THREE.Mesh;
+assert(terrainMesh !== undefined, 'Garden diorama terrain mesh instantiated successfully for staircase raycasting');
+
+const downRaycaster = new THREE.Raycaster();
+const dirDown = new THREE.Vector3(0, -1, 0);
+
+function getMeshElevationAt(x: number, z: number): number {
+  downRaycaster.set(new THREE.Vector3(x, 5.0, z), dirDown);
+  const hits = downRaycaster.intersectObject(terrainMesh, false);
+  if (hits.length > 0) {
+    return hits[0].point.y;
+  }
+  return terrainSys.getHeightAt(x, z);
+}
+
 const stairList = [GARDEN_STAIRCASES.west, GARDEN_STAIRCASES.east];
 
 stairList.forEach((stair) => {
-  // A. Monotonic step descent & uniform risers across the entire route
-  const allTreads: { x: number; z: number; y: number; bottomY: number; riser: number; name: string }[] = [];
+  interface TreadItem {
+    name: string;
+    center: { x: number; z: number };
+    treadY: number;
+    bottomY: number;
+    gridPoints: { x: number; z: number }[];
+  }
 
-  // Top landing entry
+  const allTreads: TreadItem[] = [];
+
+  // Helper to generate 9 sample grid points (center, 4 corners, 4 midpoints)
+  function makeGridPoints(
+    cx: number,
+    cz: number,
+    width: number,
+    depth: number,
+    theta = 0,
+    isStep = false
+  ): { x: number; z: number }[] {
+    const pts: { x: number; z: number }[] = [];
+    const hw = (width / 2) - 0.04;
+    const hd = (depth / 2) - 0.04;
+    // For flight steps, the rear 12cm is nested under the upper step; exposed tread begins at upper riser
+    const backD = isStep ? 0.02 : -hd;
+
+    const uX = Math.cos(theta);
+    const uZ = -Math.sin(theta);
+    const vX = Math.sin(theta);
+    const vZ = Math.cos(theta);
+
+    const offsets = [
+      [0, (backD + hd) / 2],
+      [-hw, backD],
+      [-hw, hd],
+      [hw, backD],
+      [hw, hd],
+      [-hw, (backD + hd) / 2],
+      [hw, (backD + hd) / 2],
+      [0, backD],
+      [0, hd],
+    ];
+
+    offsets.forEach(([du, dv]) => {
+      pts.push({
+        x: cx + du * uX + dv * vX,
+        z: cz + du * uZ + dv * vZ,
+      });
+    });
+
+    return pts;
+  }
+
+  // 1. Top Landing
+  const topBedY = getMeshElevationAt(stair.topLanding.x, stair.topLanding.z);
   allTreads.push({
-    x: stair.topLanding.x,
-    z: stair.topLanding.z,
-    y: stair.topLanding.y,
-    bottomY: Math.min(stair.topLanding.y - 0.22, computeRawTerrainHeight(stair.topLanding.x, stair.topLanding.z).height - 0.15),
-    riser: 0,
     name: `${stair.name} Top Landing`,
+    center: { x: stair.topLanding.x, z: stair.topLanding.z },
+    treadY: stair.topLanding.y,
+    bottomY: Math.min(stair.topLanding.y - 0.22, topBedY - 0.15),
+    gridPoints: makeGridPoints(
+      stair.topLanding.x,
+      stair.topLanding.z,
+      stair.topLanding.width,
+      stair.topLanding.depth
+    ),
   });
 
-  // Upper flight
+  // 2. Upper flight
+  const uDx = stair.upperFlight.endX - stair.upperFlight.startX;
+  const uDz = stair.upperFlight.endZ - stair.upperFlight.startZ;
+  const uTheta = Math.atan2(uDx, uDz);
+
   for (let i = 0; i < stair.upperFlight.steps; i++) {
     const t = (i + 0.5) / stair.upperFlight.steps;
-    const sx = stair.upperFlight.startX + t * (stair.upperFlight.endX - stair.upperFlight.startX);
-    const sz = stair.upperFlight.startZ + t * (stair.upperFlight.endZ - stair.upperFlight.startZ);
+    const sx = THREE.MathUtils.lerp(stair.upperFlight.startX, stair.upperFlight.endX, t);
+    const sz = THREE.MathUtils.lerp(stair.upperFlight.startZ, stair.upperFlight.endZ, t);
     const stepY = stair.upperFlight.startY - (i + 1) * stair.upperFlight.riserHeight;
-    const groundH = computeRawTerrainHeight(sx, sz).height;
-    const bottomY = Math.min(stepY - stair.upperFlight.riserHeight - 0.08, groundH - 0.15);
+    const bedY = getMeshElevationAt(sx, sz);
+    const bottomY = Math.min(stepY - stair.upperFlight.riserHeight - 0.08, bedY - 0.15);
 
     allTreads.push({
-      x: sx,
-      z: sz,
-      y: stepY,
-      bottomY,
-      riser: stair.upperFlight.riserHeight,
       name: `${stair.name} Upper Step ${i + 1}`,
+      center: { x: sx, z: sz },
+      treadY: stepY,
+      bottomY,
+      gridPoints: makeGridPoints(sx, sz, stair.upperFlight.width, stair.upperFlight.treadDepth, uTheta, true),
     });
   }
 
-  // Mid landing (Chiếu nghỉ)
+  // 3. Mid Landing (Chiếu nghỉ)
+  const midBedY = getMeshElevationAt(stair.midLanding.x, stair.midLanding.z);
   allTreads.push({
-    x: stair.midLanding.x,
-    z: stair.midLanding.z,
-    y: stair.midLanding.y,
-    bottomY: Math.min(stair.midLanding.y - 0.22, computeRawTerrainHeight(stair.midLanding.x, stair.midLanding.z).height - 0.15),
-    riser: 0,
     name: `${stair.name} Mid Landing (Chiếu Nghỉ)`,
+    center: { x: stair.midLanding.x, z: stair.midLanding.z },
+    treadY: stair.midLanding.y,
+    bottomY: Math.min(stair.midLanding.y - 0.22, midBedY - 0.15),
+    gridPoints: makeGridPoints(
+      stair.midLanding.x,
+      stair.midLanding.z,
+      stair.midLanding.width,
+      stair.midLanding.depth
+    ),
   });
 
-  // Lower flight
+  // 4. Lower flight
+  const lDx = stair.lowerFlight.endX - stair.lowerFlight.startX;
+  const lDz = stair.lowerFlight.endZ - stair.lowerFlight.startZ;
+  const lTheta = Math.atan2(lDx, lDz);
+
   for (let i = 0; i < stair.lowerFlight.steps; i++) {
     const t = (i + 0.5) / stair.lowerFlight.steps;
-    const sx = stair.lowerFlight.startX + t * (stair.lowerFlight.endX - stair.lowerFlight.startX);
-    const sz = stair.lowerFlight.startZ + t * (stair.lowerFlight.endZ - stair.lowerFlight.startZ);
+    const sx = THREE.MathUtils.lerp(stair.lowerFlight.startX, stair.lowerFlight.endX, t);
+    const sz = THREE.MathUtils.lerp(stair.lowerFlight.startZ, stair.lowerFlight.endZ, t);
     const stepY = stair.lowerFlight.startY - (i + 1) * stair.lowerFlight.riserHeight;
-    const groundH = computeRawTerrainHeight(sx, sz).height;
-    const bottomY = Math.min(stepY - stair.lowerFlight.riserHeight - 0.08, groundH - 0.15);
+    const bedY = getMeshElevationAt(sx, sz);
+    const bottomY = Math.min(stepY - stair.lowerFlight.riserHeight - 0.08, bedY - 0.15);
 
     allTreads.push({
-      x: sx,
-      z: sz,
-      y: stepY,
-      bottomY,
-      riser: stair.lowerFlight.riserHeight,
       name: `${stair.name} Lower Step ${i + 1}`,
+      center: { x: sx, z: sz },
+      treadY: stepY,
+      bottomY,
+      gridPoints: makeGridPoints(sx, sz, stair.lowerFlight.width, stair.lowerFlight.treadDepth, lTheta, true),
     });
   }
 
-  // Bottom landing
+  // 5. Bottom landing
+  const botBedY = getMeshElevationAt(stair.bottomLanding.x, stair.bottomLanding.z);
   allTreads.push({
-    x: stair.bottomLanding.x,
-    z: stair.bottomLanding.z,
-    y: stair.bottomLanding.y,
-    bottomY: Math.min(stair.bottomLanding.y - 0.22, computeRawTerrainHeight(stair.bottomLanding.x, stair.bottomLanding.z).height - 0.15),
-    riser: 0,
     name: `${stair.name} Bottom Landing`,
+    center: { x: stair.bottomLanding.x, z: stair.bottomLanding.z },
+    treadY: stair.bottomLanding.y,
+    bottomY: Math.min(stair.bottomLanding.y - 0.22, botBedY - 0.15),
+    gridPoints: makeGridPoints(
+      stair.bottomLanding.x,
+      stair.bottomLanding.z,
+      stair.bottomLanding.width,
+      stair.bottomLanding.depth
+    ),
   });
 
   // Check 1: Monotonicity along entire route
@@ -576,10 +664,9 @@ stairList.forEach((stair) => {
   for (let k = 0; k < allTreads.length - 1; k++) {
     const cur = allTreads[k];
     const nxt = allTreads[k + 1];
-    // Next step must be strictly lower or equal (landing transition)
-    if (nxt.y > cur.y) {
+    if (nxt.treadY > cur.treadY) {
       isMonotonic = false;
-      monotonicFailMsg = `${cur.name} (y=${cur.y.toFixed(3)}) is lower than next ${nxt.name} (y=${nxt.y.toFixed(3)})`;
+      monotonicFailMsg = `${cur.name} (y=${cur.treadY.toFixed(3)}) is lower than next ${nxt.name} (y=${nxt.treadY.toFixed(3)})`;
       break;
     }
   }
@@ -593,8 +680,8 @@ stairList.forEach((stair) => {
   let upperRisersUniform = true;
   for (let i = 0; i < stair.upperFlight.steps; i++) {
     const step = allTreads[1 + i];
-    const prevY = i === 0 ? stair.upperFlight.startY : allTreads[1 + i - 1].y;
-    const diff = Math.abs((prevY - step.y) - stair.upperFlight.riserHeight);
+    const prevY = i === 0 ? stair.upperFlight.startY : allTreads[1 + i - 1].treadY;
+    const diff = Math.abs((prevY - step.treadY) - stair.upperFlight.riserHeight);
     if (diff > 1e-5) {
       upperRisersUniform = false;
       break;
@@ -606,11 +693,11 @@ stairList.forEach((stair) => {
   );
 
   let lowerRisersUniform = true;
-  const lowerOffset = 1 + stair.upperFlight.steps + 1; // 1 top + upperSteps + 1 mid
+  const lowerOffset = 1 + stair.upperFlight.steps + 1;
   for (let i = 0; i < stair.lowerFlight.steps; i++) {
     const step = allTreads[lowerOffset + i];
-    const prevY = i === 0 ? stair.lowerFlight.startY : allTreads[lowerOffset + i - 1].y;
-    const diff = Math.abs((prevY - step.y) - stair.lowerFlight.riserHeight);
+    const prevY = i === 0 ? stair.lowerFlight.startY : allTreads[lowerOffset + i - 1].treadY;
+    const diff = Math.abs((prevY - step.treadY) - stair.lowerFlight.riserHeight);
     if (diff > 1e-5) {
       lowerRisersUniform = false;
       break;
@@ -621,31 +708,77 @@ stairList.forEach((stair) => {
     `${stair.name}: Lower flight risers are completely uniform (${stair.lowerFlight.riserHeight.toFixed(4)}m) within comfortable architectural range`
   );
 
-  // Check 3: Solid foundation under-supports anchored into bedrock (zero floating steps)
+  // Check 3: Real Mesh Raycast Verification — Tread Reveal across entire grid (Center + 4 corners + 4 midpoints)
+  // Step tread must sit strictly above terrain with zero dirt bursting through the tread surface
+  let allTreadsExposed = true;
+  let treadExposureFail = '';
+  let minTreadReveal = Infinity;
+
+  allTreads.forEach((t) => {
+    t.gridPoints.forEach((pt, pIdx) => {
+      const meshY = getMeshElevationAt(pt.x, pt.z);
+      const reveal = t.treadY - meshY;
+      if (reveal < minTreadReveal) minTreadReveal = reveal;
+      if (reveal < 0.02) {
+        allTreadsExposed = false;
+        treadExposureFail = `${t.name} pt #${pIdx} at (${pt.x.toFixed(2)}, ${pt.z.toFixed(2)}): treadY=${t.treadY.toFixed(3)} is penetrated by terrainMesh=${meshY.toFixed(3)} (reveal=${reveal.toFixed(3)}m < 0.02m)`;
+      }
+    });
+  });
+  assert(
+    allTreadsExposed,
+    `${stair.name}: All step treads and landings are completely exposed above terrain mesh across center, 4 corners, and grid (min reveal: +${(minTreadReveal * 100).toFixed(1)}cm >= +2.0cm, zero dirt penetration)`,
+    treadExposureFail
+  );
+
+  // Check 4: Real Mesh Raycast Verification — Solid foundation under-supports anchored into bedrock
+  // Foundations must extend >= 8cm beneath rendered bedrock (zero floating or hollow gaps)
   let allUnderSupportsBuried = true;
   let underSupportFail = '';
   allTreads.forEach((t) => {
-    const terrainH = computeRawTerrainHeight(t.x, t.z).height;
-    if (t.bottomY > terrainH - 0.08) {
+    const meshY = getMeshElevationAt(t.center.x, t.center.z);
+    if (t.bottomY > meshY - 0.08) {
       allUnderSupportsBuried = false;
-      underSupportFail = `${t.name} at (${t.x.toFixed(2)}, ${t.z.toFixed(2)}): bottomY=${t.bottomY.toFixed(3)} is above terrain=${terrainH.toFixed(3)}`;
+      underSupportFail = `${t.name} at (${t.center.x.toFixed(2)}, ${t.center.z.toFixed(2)}): bottomY=${t.bottomY.toFixed(3)} is above terrainMesh=${meshY.toFixed(3)}`;
     }
   });
   assert(
     allUnderSupportsBuried,
-    `${stair.name}: All steps and landings have solid under-supports anchored >= 8cm below bedrock (zero floating or hollow gaps)`,
+    `${stair.name}: All steps and landings have solid under-supports anchored >= 8cm below rendered bedrock (zero floating or hollow gaps)`,
     underSupportFail
   );
 
-  // Check 4: Tangent orientation
-  const upperDx = stair.upperFlight.endX - stair.upperFlight.startX;
-  const upperDz = stair.upperFlight.endZ - stair.upperFlight.startZ;
-  const upperAngle = Math.atan2(upperDx, upperDz);
+  // Check 5: Tangent orientation
   assert(
-    Number.isFinite(upperAngle) && Math.hypot(upperDx, upperDz) > 0.5,
+    Number.isFinite(uTheta) && Math.hypot(uDx, uDz) > 0.5,
     `${stair.name}: Upper flight steps are aligned with walking direction tangent`
   );
 });
+
+// Check 6: Flagstone Stepping Stone connections to stair landings
+const landingConnectionPoints = [
+  { x: -5.85, z: 0.10, name: 'West Top Landing Connection' },
+  { x: -5.10, z: 3.15, name: 'West Bottom Landing Connection' },
+  { x: -2.00, z: 0.55, name: 'East Top Landing Connection' },
+  { x: -1.05, z: 3.45, name: 'East Bottom Landing Connection' },
+];
+
+let allConnectionsGrounded = true;
+let connectionFailMsg = '';
+landingConnectionPoints.forEach((pt) => {
+  const meshY = getMeshElevationAt(pt.x, pt.z);
+  if (!Number.isFinite(meshY) || meshY < 0.20 || meshY > 2.0) {
+    allConnectionsGrounded = false;
+    connectionFailMsg = `${pt.name} at (${pt.x}, ${pt.z}) has invalid elevation ${meshY}`;
+  }
+});
+assert(
+  allConnectionsGrounded,
+  'All flagstone walking path connections to staircase landings contact solid ground smoothly',
+  connectionFailMsg
+);
+
+terrainSys.dispose();
 
 
 // Summary

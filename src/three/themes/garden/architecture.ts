@@ -690,6 +690,17 @@ export function createArchitecture(
     { x: -5.2, z: -1.5 },
     { x: -5.6, z: -1.1 },
     { x: -5.9, z: -0.8 },
+    // Connection to West top landing (-5.80, 0.45)
+    { x: -5.85, z: 0.10 },
+    // Connection from West bottom landing (-5.26, 2.75) to lake shore
+    { x: -5.10, z: 3.15 },
+    { x: -4.80, z: 3.55 },
+    // Connection to East top landing (-1.85, 0.85)
+    { x: -2.3, z: 0.2 },
+    { x: -2.0, z: 0.55 },
+    // Connection from East bottom landing (-1.15, 3.12) to water edge
+    { x: -1.05, z: 3.45 },
+    { x: -0.85, z: 3.85 },
     // Pebble bank path from lower stairs to water edge
     { x: -2.0, z: 2.7 },
     { x: -1.7, z: 3.1 },

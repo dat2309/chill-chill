@@ -3,15 +3,14 @@ import { PHUQUOC_COLORS } from './constants';
 import { BOAT_SPOTS } from './shoreline';
 
 export interface BoatCavityState {
-  thungPos: THREE.Vector2;
-  thungRadius: number;
-  ghePos: THREE.Vector2;
-  gheAngle: number;
-  gheHalfSize: THREE.Vector2;
+  thungInvMatrix: THREE.Matrix4;
+  gheInvMatrix: THREE.Matrix4;
 }
 
 export interface PhuQuocBoatsSystem {
   group: THREE.Group;
+  thungGroup: THREE.Group;
+  gheGroup: THREE.Group;
   getCavities(): BoatCavityState;
   update(dt: number, elapsed: number, waterLevel: number, windStrength: number, flowSpeed: number): void;
   dispose(): void;
@@ -64,6 +63,58 @@ export function getOceanWaveSlopes(x: number, z: number, time: number, windStren
   const dSdz = Math.cos(z * 1.8 - time * 1.5) * 1.8 * 0.035 * windStrength
              - Math.sin(x * 1.2 + z * 0.8 - time * 2.0) * 0.8 * 0.02 * windStrength;
   return { dSdx, dSdz };
+}
+
+/**
+ * Evaluates whether a local coordinate point (lx, ly, lz) is inside the open inner cavity of Thuyen Thung.
+ */
+export function isInsideThungCavity(local: THREE.Vector3): boolean {
+  if (local.y < -0.11 || local.y > 0.22) return false;
+  const rInner = local.y < 0.05
+    ? THREE.MathUtils.lerp(0.28, 0.45, (local.y + 0.11) / 0.16)
+    : THREE.MathUtils.lerp(0.45, 0.51, (local.y - 0.05) / 0.17);
+  const r = Math.hypot(local.x, local.z);
+  return r < rInner - 0.015;
+}
+
+/**
+ * Evaluates whether a local coordinate point (lx, ly, lz) is inside the open cockpit hold of Ghe Nho.
+ */
+export function isInsideGheCavity(local: THREE.Vector3): boolean {
+  if (local.z < -1.18 || local.z > 1.15) return false;
+  const lz = local.z;
+  const normZ = lz < 0.0 ? (lz / 1.18) : (lz / 1.15); // -1 at stern, 0 at mid, +1 at bow
+  const floorY = lz < 0.0 ? THREE.MathUtils.lerp(-0.14, -0.11, -normZ) : THREE.MathUtils.lerp(-0.14, 0.06, normZ);
+  const sheerY = lz < 0.0 ? THREE.MathUtils.lerp(0.20, 0.24, -normZ) : THREE.MathUtils.lerp(0.20, 0.32, normZ);
+
+  if (local.y < floorY || local.y > sheerY) return false;
+
+  const sheerHalfW = lz < 0.0
+    ? THREE.MathUtils.lerp(0.30, 0.21, -normZ)
+    : (normZ < 0.65 ? THREE.MathUtils.lerp(0.30, 0.22, normZ / 0.65) : THREE.MathUtils.lerp(0.22, 0.03, (normZ - 0.65) / 0.35));
+  const floorHalfW = lz < 0.0
+    ? THREE.MathUtils.lerp(0.20, 0.14, -normZ)
+    : THREE.MathUtils.lerp(0.20, 0.02, normZ);
+
+  const yFrac = Math.min(Math.max((local.y - floorY) / Math.max(0.01, sheerY - floorY), 0.0), 1.0);
+  const innerW = THREE.MathUtils.lerp(floorHalfW, sheerHalfW, yFrac);
+
+  return Math.abs(local.x) < innerW - 0.015;
+}
+
+/**
+ * Evaluates whether a world-space point falls inside either boat's open cockpit cavity,
+ * taking into account the boat's full 3D position, wave heave, yaw, pitch, and roll.
+ */
+export function isPointInBoatCavity(worldPos: THREE.Vector3, boats: PhuQuocBoatsSystem): boolean {
+  const cavities = boats.getCavities();
+  const thungLoc = worldPos.clone().applyMatrix4(cavities.thungInvMatrix);
+  if (isInsideThungCavity(thungLoc)) return true;
+
+  const gheLoc = worldPos.clone().applyMatrix4(cavities.gheInvMatrix);
+  if (isInsideGheCavity(gheLoc)) return true;
+
+  return false;
 }
 
 export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem {
@@ -119,27 +170,27 @@ export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem
     const col0 = s * pCount;
     const col1 = nextS * pCount;
 
-    // Inner bottom fan (center is 0)
-    thungIndices.push(col0 + 0, col0 + 1, col1 + 1);
+    // Inner bottom fan (center is 0) -> normal points UP (+Y)
+    thungIndices.push(col0 + 0, col1 + 1, col0 + 1);
 
-    // Inner wall quads (1 -> 2, 2 -> 3)
+    // Inner wall quads (1 -> 2, 2 -> 3) -> normal points INWARD into cockpit
     for (let p = 1; p < 3; p++) {
-      thungIndices.push(col0 + p, col0 + p + 1, col1 + p + 1);
-      thungIndices.push(col0 + p, col1 + p + 1, col1 + p);
+      thungIndices.push(col0 + p, col1 + p + 1, col0 + p + 1);
+      thungIndices.push(col0 + p, col1 + p, col1 + p + 1);
     }
 
-    // Top rim lip quad (3 -> 4)
-    thungIndices.push(col0 + 3, col0 + 4, col1 + 4);
-    thungIndices.push(col0 + 3, col1 + 4, col1 + 3);
+    // Top rim lip quad (3 -> 4) -> normal points UP (+Y)
+    thungIndices.push(col0 + 3, col1 + 3, col0 + 4);
+    thungIndices.push(col0 + 4, col1 + 3, col1 + 4);
 
-    // Outer wall quads (4 -> 5, 5 -> 6)
+    // Outer wall quads (4 -> 5, 5 -> 6) -> normal points OUTWARD away from boat
     for (let p = 4; p < 6; p++) {
       thungIndices.push(col0 + p, col1 + p + 1, col0 + p + 1);
       thungIndices.push(col0 + p, col1 + p, col1 + p + 1);
     }
 
-    // Outer bottom fan (center is 7)
-    thungIndices.push(col0 + 7, col1 + 6, col0 + 6);
+    // Outer bottom fan (center is 7) -> normal points DOWN (-Y)
+    thungIndices.push(col0 + 7, col0 + 6, col1 + 6);
   }
 
   const thungHullGeo = new THREE.BufferGeometry();
@@ -375,61 +426,68 @@ export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem
     const c1 = (s + 1) * vPerSt;
 
     // Outer hull faces
-    // Port bottom: 0 -> 1
-    gIndices.push(c0 + 0, c0 + 1, c1 + 1);
-    gIndices.push(c0 + 0, c1 + 1, c1 + 0);
+    // Port bottom: 0 -> 1 (Normal: port -X and down -Y)
+    gIndices.push(c0 + 0, c1 + 1, c0 + 1);
+    gIndices.push(c0 + 0, c1 + 0, c1 + 1);
 
-    // Port topsides: 1 -> 2
-    gIndices.push(c0 + 1, c0 + 2, c1 + 2);
-    gIndices.push(c0 + 1, c1 + 2, c1 + 1);
+    // Port topsides: 1 -> 2 (Normal: port -X and up +Y)
+    gIndices.push(c0 + 1, c1 + 2, c0 + 2);
+    gIndices.push(c0 + 1, c1 + 1, c1 + 2);
 
-    // Port gunwale sheer lip: 2 -> 3
-    gIndices.push(c0 + 2, c0 + 3, c1 + 3);
-    gIndices.push(c0 + 2, c1 + 3, c1 + 2);
+    // Port gunwale sheer lip: 2 -> 3 (Normal: up +Y)
+    gIndices.push(c0 + 2, c1 + 2, c0 + 3);
+    gIndices.push(c0 + 3, c1 + 2, c1 + 3);
 
-    // Starboard bottom: 0 -> 9
-    gIndices.push(c0 + 0, c1 + 9, c0 + 9);
-    gIndices.push(c0 + 0, c1 + 0, c1 + 9);
+    // Starboard bottom: 0 -> 9 (Normal: starboard +X and down -Y)
+    gIndices.push(c0 + 0, c0 + 9, c1 + 9);
+    gIndices.push(c0 + 0, c1 + 9, c1 + 0);
 
-    // Starboard topsides: 9 -> 8
-    gIndices.push(c0 + 9, c1 + 8, c0 + 8);
-    gIndices.push(c0 + 9, c1 + 9, c1 + 8);
+    // Starboard topsides: 9 -> 8 (Normal: starboard +X and up +Y)
+    gIndices.push(c0 + 9, c0 + 8, c1 + 8);
+    gIndices.push(c0 + 9, c1 + 8, c1 + 9);
 
-    // Starboard gunwale sheer lip: 8 -> 7
-    gIndices.push(c0 + 8, c1 + 7, c0 + 7);
-    gIndices.push(c0 + 8, c1 + 8, c1 + 7);
+    // Starboard gunwale sheer lip: 8 -> 7 (Normal: up +Y)
+    gIndices.push(c0 + 8, c0 + 7, c1 + 8);
+    gIndices.push(c0 + 7, c1 + 7, c1 + 8);
 
     // Inner cockpit faces
-    // Port inner wall: 3 -> 4
+    // Port inner wall: 3 -> 4 (Normal: starboard +X into cockpit)
     gIndices.push(c0 + 3, c1 + 4, c0 + 4);
     gIndices.push(c0 + 3, c1 + 3, c1 + 4);
 
-    // Port inner floor: 4 -> 5
-    gIndices.push(c0 + 4, c1 + 5, c0 + 5);
-    gIndices.push(c0 + 4, c1 + 4, c1 + 5);
+    // Port inner floor: 4 -> 5 (Normal: up +Y)
+    gIndices.push(c0 + 4, c1 + 4, c0 + 5);
+    gIndices.push(c0 + 5, c1 + 4, c1 + 5);
 
-    // Starboard inner floor: 5 -> 6
-    gIndices.push(c0 + 5, c1 + 6, c0 + 6);
-    gIndices.push(c0 + 5, c1 + 5, c1 + 6);
+    // Starboard inner floor: 5 -> 6 (Normal: up +Y)
+    gIndices.push(c0 + 5, c1 + 5, c0 + 6);
+    gIndices.push(c0 + 6, c1 + 5, c1 + 6);
 
-    // Starboard inner wall: 6 -> 7
-    gIndices.push(c0 + 6, c1 + 7, c0 + 7);
-    gIndices.push(c0 + 6, c1 + 6, c1 + 7);
+    // Starboard inner wall: 6 -> 7 (Normal: port -X into cockpit)
+    gIndices.push(c0 + 6, c1 + 6, c0 + 7);
+    gIndices.push(c0 + 7, c1 + 6, c1 + 7);
   }
 
-  // Transom rear face closing station 0
-  gIndices.push(0, 9, 8);
-  gIndices.push(0, 8, 2);
-  gIndices.push(0, 2, 1);
-  gIndices.push(2, 8, 7);
-  gIndices.push(2, 7, 3);
-  gIndices.push(3, 7, 5);
+  // Transom rear face closing station 0 (Normal: stern -Z)
+  gIndices.push(0, 1, 2);
+  gIndices.push(0, 2, 8);
+  gIndices.push(0, 8, 9);
 
-  // Bow stem front closure at station 6
+  // Cockpit aft interior bulkhead at station 0 (Normal: forward +Z into cockpit)
+  gIndices.push(5, 3, 4);
+  gIndices.push(5, 7, 3);
+  gIndices.push(5, 6, 7);
+
+  // Bow stem front closure at station 6 (Normal: bow +Z)
   const lastC = (gheStations.length - 1) * vPerSt;
-  gIndices.push(lastC + 0, lastC + 1, lastC + 2);
-  gIndices.push(lastC + 0, lastC + 8, lastC + 9);
-  gIndices.push(lastC + 0, lastC + 2, lastC + 8);
+  gIndices.push(lastC + 0, lastC + 2, lastC + 1);
+  gIndices.push(lastC + 0, lastC + 8, lastC + 2);
+  gIndices.push(lastC + 0, lastC + 9, lastC + 8);
+
+  // Cockpit forward interior bulkhead at station 6 (Normal: aft -Z into cockpit)
+  gIndices.push(lastC + 5, lastC + 4, lastC + 3);
+  gIndices.push(lastC + 5, lastC + 3, lastC + 7);
+  gIndices.push(lastC + 5, lastC + 7, lastC + 6);
 
   const gheHullGeo = new THREE.BufferGeometry();
   gheHullGeo.setAttribute('position', new THREE.Float32BufferAttribute(gPositions, 3));
@@ -565,17 +623,19 @@ export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem
 
   boatsGroup.add(gheGroup);
 
-  // Dynamic boat cavity parameters shared with water shader
+  // Inverse matrices for exact 3D water cavity discard
+  const thungInvMatrix = new THREE.Matrix4();
+  const gheInvMatrix = new THREE.Matrix4();
+
   const cavityState: BoatCavityState = {
-    thungPos: new THREE.Vector2(BOAT_SPOTS.thung.x, BOAT_SPOTS.thung.z),
-    thungRadius: 0.50,
-    ghePos: new THREE.Vector2(BOAT_SPOTS.ghe.x, BOAT_SPOTS.ghe.z),
-    gheAngle: -0.6,
-    gheHalfSize: new THREE.Vector2(0.32, 1.15),
+    thungInvMatrix,
+    gheInvMatrix,
   };
 
   return {
     group: boatsGroup,
+    thungGroup,
+    gheGroup,
     getCavities() {
       return cavityState;
     },
@@ -594,8 +654,9 @@ export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem
       // Model origin y = 0 is DWL, so world Y is waterLevel + wave elevation
       thungGroup.position.set(thungCfg.x, waterLevel + thungWave + thungBobHarmonic, thungCfg.z);
       thungGroup.rotation.set(thungPitch, thungYaw, thungRoll);
-
-      cavityState.thungPos.set(thungCfg.x, thungCfg.z);
+      thungGroup.updateMatrix();
+      thungGroup.updateMatrixWorld(true);
+      thungInvMatrix.copy(thungGroup.matrixWorld).invert();
 
       // 2. Ghe Nhỏ: oriented skiff hull riding wave elevation and aligned pitch/roll
       const gheCfg = BOAT_SPOTS.ghe;
@@ -615,9 +676,9 @@ export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem
 
       gheGroup.position.set(gheCfg.x, waterLevel + gheWave + gheBobHarmonic, gheCfg.z);
       gheGroup.rotation.set(ghePitch, gheYaw, gheRoll);
-
-      cavityState.ghePos.set(gheCfg.x, gheCfg.z);
-      cavityState.gheAngle = gheYaw;
+      gheGroup.updateMatrix();
+      gheGroup.updateMatrixWorld(true);
+      gheInvMatrix.copy(gheGroup.matrixWorld).invert();
     },
     dispose() {
       geometriesToDispose.forEach((g) => g.dispose());
