@@ -12,6 +12,94 @@ export interface ArchitectureSystem {
   dispose(): void;
 }
 
+export interface StairFlightDef {
+  startX: number;
+  startZ: number;
+  endX: number;
+  endZ: number;
+  startY: number;
+  endY: number;
+  steps: number;
+  width: number;
+  riserHeight: number;
+  treadDepth: number;
+}
+
+export interface StaircaseDef {
+  id: string;
+  name: string;
+  topLanding: { x: number; z: number; y: number; width: number; depth: number };
+  upperFlight: StairFlightDef;
+  midLanding: { x: number; z: number; y: number; width: number; depth: number };
+  lowerFlight: StairFlightDef;
+  bottomLanding: { x: number; z: number; y: number; width: number; depth: number };
+}
+
+export const GARDEN_STAIRCASES: Record<'west' | 'east', StaircaseDef> = {
+  west: {
+    id: 'west',
+    name: 'West Plateau Staircase',
+    topLanding: { x: -5.80, z: 0.45, y: 1.48, width: 1.05, depth: 0.70 },
+    upperFlight: {
+      startX: -5.78,
+      startZ: 0.68,
+      endX: -5.60,
+      endZ: 1.28,
+      startY: 1.48,
+      endY: 0.94,
+      steps: 3,
+      width: 0.88,
+      riserHeight: 0.135,
+      treadDepth: 0.32,
+    },
+    midLanding: { x: -5.54, z: 1.58, y: 0.94, width: 1.05, depth: 0.75 },
+    lowerFlight: {
+      startX: -5.48,
+      startZ: 1.88,
+      endX: -5.32,
+      endZ: 2.48,
+      startY: 0.94,
+      endY: 0.40,
+      steps: 3,
+      width: 0.88,
+      riserHeight: 0.135,
+      treadDepth: 0.32,
+    },
+    bottomLanding: { x: -5.26, z: 2.75, y: 0.40, width: 1.15, depth: 0.85 },
+  },
+  east: {
+    id: 'east',
+    name: 'East Meadow Staircase',
+    topLanding: { x: -1.85, z: 0.85, y: 1.46, width: 1.05, depth: 0.70 },
+    upperFlight: {
+      startX: -1.80,
+      startZ: 1.08,
+      endX: -1.56,
+      endZ: 1.68,
+      startY: 1.46,
+      endY: 0.93,
+      steps: 3,
+      width: 0.88,
+      riserHeight: 0.1325,
+      treadDepth: 0.32,
+    },
+    midLanding: { x: -1.48, z: 1.98, y: 0.93, width: 1.05, depth: 0.75 },
+    lowerFlight: {
+      startX: -1.40,
+      startZ: 2.26,
+      endX: -1.22,
+      endZ: 2.86,
+      startY: 0.93,
+      endY: 0.40,
+      steps: 3,
+      width: 0.88,
+      riserHeight: 0.1325,
+      treadDepth: 0.32,
+    },
+    bottomLanding: { x: -1.15, z: 3.12, y: 0.40, width: 1.15, depth: 0.85 },
+  },
+};
+
 function prepareGeometry(
   geo: THREE.BufferGeometry,
   color: THREE.Color | number | ((pos: THREE.Vector3, norm: THREE.Vector3, index: number) => THREE.Color)
@@ -490,81 +578,92 @@ export function createArchitecture(
   woodGeometries.push(prepareGeometry(legB, COLORS.wood.dark));
 
   // 6. CLIFFSIDE STONE STAIRCASES WITH LANDING (CHIẾU NGHỈ)
-  // Hugs the bedrock cliff naturally without floating gaps or steep ramps
-  interface StairFlightDef {
-    startX: number;
-    startZ: number;
-    endX: number;
-    endZ: number;
-    steps: number;
-    width: number;
-  }
+  // Engineered with strictly monotonic descent, uniform risers, tangent orientation,
+  // intermediate landings, solid under-supports anchored into bedrock, and winter snow caps.
+  const staircases = [GARDEN_STAIRCASES.west, GARDEN_STAIRCASES.east];
 
-  // Two separate descents frame the meadow, matching its two bank approaches.
-  const stairFlights: StairFlightDef[] = [
-    { startX: -5.8, startZ: 0.65, endX: -5.45, endZ: 2.15, steps: 12, width: 0.85 },
-    { startX: -1.8, startZ: 1.05, endX: -1.25, endZ: 2.65, steps: 12, width: 0.85 },
-  ];
+  staircases.forEach((sc) => {
+    // A. Render Landings (Top, Mid Chiếu Nghỉ, Bottom)
+    const landings = [sc.topLanding, sc.midLanding, sc.bottomLanding];
+    landings.forEach((land) => {
+      const bedY = getHeightAt(land.x, land.z);
+      const bottomY = Math.min(land.y - 0.22, bedY - 0.15);
+      const landH = land.y - bottomY;
 
-  stairFlights.forEach((flight) => {
-    for (let i = 0; i < flight.steps; i++) {
-      const t = i / Math.max(1, flight.steps - 1);
-      const sx = THREE.MathUtils.lerp(flight.startX, flight.endX, t);
-      const sz = THREE.MathUtils.lerp(flight.startZ, flight.endZ, t);
+      // Solid stone landing platform
+      const landGeo = new THREE.BoxGeometry(land.width, landH, land.depth).toNonIndexed();
+      landGeo.translate(land.x, land.y - landH / 2, land.z);
+      stoneGeometries.push(prepareGeometry(landGeo, COLORS.terrain.rock));
 
-      // Bedrock ground at this exact point
-      const bedY = getHeightAt(sx, sz);
-      const stepH = 0.12;
-      const stepD = 0.32;
-      const stepTreadY = bedY + 0.05;
-      const foundationH = 0.22;
-
-      // Solid stone step firmly embedded in terrain
-      const stepGeo = new THREE.BoxGeometry(flight.width, foundationH, stepD).toNonIndexed();
-      stepGeo.translate(sx, stepTreadY - foundationH / 2 + stepH / 2, sz);
-      stoneGeometries.push(prepareGeometry(stepGeo, COLORS.terrain.rock));
-
-      // Flanking stone curb blocks
-      [-flight.width / 2 - 0.05, flight.width / 2 + 0.05].forEach((cx) => {
-        const curb = new THREE.BoxGeometry(0.12, foundationH + 0.10, stepD).toNonIndexed();
-        curb.translate(sx + cx, stepTreadY - foundationH / 2 + stepH / 2 + 0.05, sz);
-        stoneGeometries.push(prepareGeometry(curb, COLORS.terrain.rockDark));
+      // Perimeter stone curb blocks
+      const curbThick = 0.10;
+      const curbH = landH + 0.06;
+      [-land.width / 2, land.width / 2].forEach((ox) => {
+        const cGeo = new THREE.BoxGeometry(curbThick, curbH, land.depth).toNonIndexed();
+        cGeo.translate(land.x + ox, land.y - landH / 2 + 0.03, land.z);
+        stoneGeometries.push(prepareGeometry(cGeo, COLORS.terrain.rockDark));
       });
 
-      // Winter snow cap on step tread
-      const stepSnow = new THREE.BoxGeometry(flight.width - 0.04, 0.02, stepD - 0.04).toNonIndexed();
-      stepSnow.translate(sx, stepTreadY + stepH / 2 + 0.01, sz);
-      snowGeometries.push(prepareGeometry(stepSnow, COLORS.terrain.snow));
-    }
+      // Winter snow cap on landing surface
+      const snowGeo = new THREE.BoxGeometry(land.width - 0.06, 0.02, land.depth - 0.06).toNonIndexed();
+      snowGeo.translate(land.x, land.y + 0.01, land.z);
+      snowGeometries.push(prepareGeometry(snowGeo, COLORS.terrain.snow));
+    });
+
+    // B. Render Flights (Upper flight & Lower flight)
+    const flights = [sc.upperFlight, sc.lowerFlight];
+    flights.forEach((fl) => {
+      const dx = fl.endX - fl.startX;
+      const dz = fl.endZ - fl.startZ;
+      const theta = Math.atan2(dx, dz);
+      const nx = Math.cos(theta);
+      const nz = -Math.sin(theta);
+
+      for (let i = 0; i < fl.steps; i++) {
+        const t = (i + 0.5) / fl.steps;
+        const sx = THREE.MathUtils.lerp(fl.startX, fl.endX, t);
+        const sz = THREE.MathUtils.lerp(fl.startZ, fl.endZ, t);
+
+        // Strictly monotonic uniform tread top elevation
+        const stepTreadY = fl.startY - (i + 1) * fl.riserHeight;
+
+        // Bedrock ground sampled at center and lateral sides
+        const bedCenter = getHeightAt(sx, sz);
+        const bedLeft = getHeightAt(sx - nx * (fl.width * 0.45), sz - nz * (fl.width * 0.45));
+        const bedRight = getHeightAt(sx + nx * (fl.width * 0.45), sz + nz * (fl.width * 0.45));
+        const minBedY = Math.min(bedCenter, bedLeft, bedRight);
+
+        // Foundation under-support (mố đỡ chống hở đáy) extends deep below bedrock
+        const stepBottomY = Math.min(stepTreadY - fl.riserHeight - 0.08, minBedY - 0.15);
+        const totalStepH = stepTreadY - stepBottomY;
+        const stepCenterY = stepTreadY - totalStepH / 2;
+
+        // Solid stone step tread & foundation
+        const stepGeo = new THREE.BoxGeometry(fl.width, totalStepH, fl.treadDepth).toNonIndexed();
+        stepGeo.rotateY(theta);
+        stepGeo.translate(sx, stepCenterY, sz);
+        stoneGeometries.push(prepareGeometry(stepGeo, COLORS.terrain.rock));
+
+        // Lateral stringers / curbs (thành bo / stringer) on port and starboard sides
+        [-1, 1].forEach((side) => {
+          const curbOffset = side * (fl.width / 2 + 0.05);
+          const cx = sx + nx * curbOffset;
+          const cz = sz + nz * curbOffset;
+          const curbH = totalStepH + 0.08;
+          const curbGeo = new THREE.BoxGeometry(0.10, curbH, fl.treadDepth + 0.02).toNonIndexed();
+          curbGeo.rotateY(theta);
+          curbGeo.translate(cx, stepCenterY + 0.04, cz);
+          stoneGeometries.push(prepareGeometry(curbGeo, COLORS.terrain.rockDark));
+        });
+
+        // Winter snow cap on step tread
+        const snowGeo = new THREE.BoxGeometry(fl.width - 0.05, 0.02, fl.treadDepth - 0.05).toNonIndexed();
+        snowGeo.rotateY(theta);
+        snowGeo.translate(sx, stepTreadY + 0.01, sz);
+        snowGeometries.push(prepareGeometry(snowGeo, COLORS.terrain.snow));
+      }
+    });
   });
-
-  // Left descent landing on the dry bank
-  const landingX = -5.45;
-  const landingZ = 2.25;
-  const landingBedY = getHeightAt(landingX, landingZ);
-  const landingTerraceH = 0.24;
-  const landingGeo = new THREE.BoxGeometry(1.15, landingTerraceH, 1.05).toNonIndexed();
-  landingGeo.translate(landingX, landingBedY + 0.05 - landingTerraceH / 2 + 0.06, landingZ);
-  stoneGeometries.push(prepareGeometry(landingGeo, COLORS.terrain.rock));
-
-  // Stone curbs around intermediate landing edge
-  const landingCurbs = [
-    { x: landingX - 0.58, z: landingZ, w: 0.12, d: 1.05 },
-    { x: landingX, z: landingZ + 0.53, w: 1.15, d: 0.12 },
-  ];
-  landingCurbs.forEach((c) => {
-    const cGeo = new THREE.BoxGeometry(c.w, landingTerraceH + 0.10, c.d).toNonIndexed();
-    cGeo.translate(c.x, landingBedY + 0.05 - landingTerraceH / 2 + 0.11, c.z);
-    stoneGeometries.push(prepareGeometry(cGeo, COLORS.terrain.rockDark));
-  });
-
-  // Right descent landing on the dry bank
-  const rLandingX = -1.25;
-  const rLandingZ = 2.75;
-  const rLandingBedY = getHeightAt(rLandingX, rLandingZ);
-  const rLandingGeo = new THREE.BoxGeometry(1.10, 0.20, 0.95).toNonIndexed();
-  rLandingGeo.translate(rLandingX, rLandingBedY + 0.04, rLandingZ);
-  stoneGeometries.push(prepareGeometry(rLandingGeo, COLORS.terrain.rock));
 
   // Natural Flagstone Stepping Stones connecting campsite to stairs and stairs to water
   const flagstoneSpots = [

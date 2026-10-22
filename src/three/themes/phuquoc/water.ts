@@ -27,6 +27,13 @@ export interface PhuQuocWaterSystem {
   getWaterLevel(): number;
   getTideOffset(): number;
   setSunLighting(sunDir: THREE.Vector3, sunCol: THREE.Color, skyCol: THREE.Color): void;
+  updateBoatCavities?(cavities: {
+    thungPos: THREE.Vector2;
+    thungRadius: number;
+    ghePos: THREE.Vector2;
+    gheAngle: number;
+    gheHalfSize: THREE.Vector2;
+  }): void;
   setForceAnalyticalFallback?(force: boolean): void;
   isUsingGpuSimulation?(): boolean;
   onContextRestored?(): void;
@@ -444,6 +451,11 @@ export function createPhuQuocWater(
       uUseGpu: { value: useGpuSimulation ? 1.0 : 0.0 },
       uAnalyticalCount: { value: 0 },
       uAnalyticalRipples: { value: analyticalBuffer },
+      uBoatThungPos: { value: new THREE.Vector2(1.8, 4.5) },
+      uBoatThungRadius: { value: 0.50 },
+      uBoatGhePos: { value: new THREE.Vector2(-4.5, 5.2) },
+      uBoatGheAngle: { value: -0.6 },
+      uBoatGheHalfSize: { value: new THREE.Vector2(0.32, 1.15) },
     },
     vertexShader: `
       attribute float aTerrainH;
@@ -522,6 +534,11 @@ export function createPhuQuocWater(
       uniform float uUseGpu;
       uniform int uAnalyticalCount;
       uniform vec4 uAnalyticalRipples[10];
+      uniform vec2 uBoatThungPos;
+      uniform float uBoatThungRadius;
+      uniform vec2 uBoatGhePos;
+      uniform float uBoatGheAngle;
+      uniform vec2 uBoatGheHalfSize;
 
       varying vec3 vWorldPos;
       varying vec2 vUv;
@@ -535,6 +552,30 @@ export function createPhuQuocWater(
         if (vIsSkirt > 0.5) {
           gl_FragColor = vec4(uDeepColor * 0.72, 0.88);
           return;
+        }
+
+        // Boat interior cavity water discard (prevent water clipping inside open boat hulls)
+        // 1. Thuyen Thung: circular basket cavity
+        if (distance(vWorldPos.xz, uBoatThungPos) < uBoatThungRadius) {
+          discard;
+        }
+
+        // 2. Ghe Nho: oriented skiff cockpit cavity
+        vec2 deltaGhe = vWorldPos.xz - uBoatGhePos;
+        float cosG = cos(-uBoatGheAngle);
+        float sinG = sin(-uBoatGheAngle);
+        vec2 localGhe = vec2(
+          deltaGhe.x * cosG - deltaGhe.y * sinG,
+          deltaGhe.x * sinG + deltaGhe.y * cosG
+        );
+        if (abs(localGhe.y) < uBoatGheHalfSize.y) {
+          float ny = localGhe.y / uBoatGheHalfSize.y; // -1 (stern) to +1 (bow)
+          float bowTaper = ny > 0.0 ? (1.0 - ny * 0.82) : 1.0;
+          float sternTaper = ny < 0.0 ? (1.0 + ny * 0.35) : 1.0;
+          float halfW = uBoatGheHalfSize.x * bowTaper * sternTaper;
+          if (abs(localGhe.x) < halfW) {
+            discard;
+          }
         }
 
         // Calculate physical water depth
@@ -754,6 +795,13 @@ export function createPhuQuocWater(
       waterMaterial.uniforms.uSunDirection.value.copy(sunDir);
       waterMaterial.uniforms.uSunColor.value.copy(sunCol);
       waterMaterial.uniforms.uSunsetSkyColor.value.copy(skyCol);
+    },
+    updateBoatCavities(cavities) {
+      waterMaterial.uniforms.uBoatThungPos.value.copy(cavities.thungPos);
+      waterMaterial.uniforms.uBoatThungRadius.value = cavities.thungRadius;
+      waterMaterial.uniforms.uBoatGhePos.value.copy(cavities.ghePos);
+      waterMaterial.uniforms.uBoatGheAngle.value = cavities.gheAngle;
+      waterMaterial.uniforms.uBoatGheHalfSize.value.copy(cavities.gheHalfSize);
     },
     setForceAnalyticalFallback(force: boolean) {
       useGpuSimulation = !force && Boolean(rtA && rtB);

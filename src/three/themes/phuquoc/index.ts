@@ -150,6 +150,9 @@ export class PhuQuocTheme implements ThemeInstance<'phuquoc'> {
     this.architecture?.update(dt, elapsed, state.timeOfDay);
     const waterLevel = this.water?.getWaterLevel() ?? 0.3;
     this.boats?.update(dt, elapsed, waterLevel, state.windStrength, state.flowSpeed);
+    if (this.boats && this.water?.updateBoatCavities) {
+      this.water.updateBoatCavities(this.boats.getCavities());
+    }
     this.vegetation?.update(dt, elapsed, state.windStrength);
     this.fish?.update(dt, elapsed, waterLevel);
     this.weather?.update(dt, elapsed, state.windStrength, waterLevel);

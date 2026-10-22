@@ -29,6 +29,12 @@ import {
   PHUQUOC_FOOTPRINT_BOUNDS,
 } from '../src/three/themes/phuquoc/footprint';
 import {
+  createPhuQuocBoats,
+  BOAT_SPECS,
+  getOceanWaveElevation,
+  getOceanWaveSlopes,
+} from '../src/three/themes/phuquoc/boats';
+import {
   sanitizeGardenState,
   sanitizePhuQuocState,
   sanitizeCameraState,
@@ -209,7 +215,7 @@ for (let i = 0; i < pCfg.pilingPairs; i++) {
 }
 assert(pilingsTouchBed, 'All pier pilings successfully reach from deck to seabed', pilingFailDetails);
 
-// 6. Boat Locations & Realistic Draft
+// 6. Boat Locations, Geometry Normalization, Freeboard & Realistic Draft
 const thung = BOAT_SPOTS.thung;
 const thungInWater = isInWater(thung.x, thung.z, 0);
 const thungDepth = getWaterDepth(thung.x, thung.z, 0);
@@ -223,6 +229,140 @@ const gheDepth = getWaterDepth(ghe.x, ghe.z, 0);
 assert(gheInWater && gheDepth > ghe.draft + 0.1, 'Ghe Nhỏ floats freely with sufficient water depth in coastal bay');
 const gheLowDepth = getWaterDepth(ghe.x, ghe.z, -1.0);
 assert(gheLowDepth > ghe.draft + 0.02, 'Ghe Nhỏ retains positive draft clearance even at Low Tide');
+
+// 6b. Real Mesh Geometry Measurements (Freeboard, Seat Elevation, Open Cockpit, Wave Alignment)
+const boatTestParent = new THREE.Group();
+const boatSys = createPhuQuocBoats(boatTestParent);
+
+const thungObj = boatSys.group.getObjectByName('ThuyenThung') as THREE.Group;
+const gheObj = boatSys.group.getObjectByName('GheNho') as THREE.Group;
+
+assert(thungObj !== undefined && gheObj !== undefined, 'Both Thuyền Thúng and Ghe Nhỏ models are created successfully');
+
+// Thuyền Thúng measurements in local model space (DWL at y = 0)
+const thungHullMesh = thungObj.getObjectByName('ThungHull') as THREE.Mesh;
+const thungSeatMesh = thungObj.getObjectByName('ThungSeat') as THREE.Mesh;
+
+assert(thungHullMesh !== undefined && thungSeatMesh !== undefined, 'Thuyền Thúng hull and seat meshes found');
+
+thungHullMesh.geometry.computeBoundingBox();
+thungSeatMesh.geometry.computeBoundingBox();
+const thungHullBox = thungHullMesh.geometry.boundingBox!;
+const thungSeatBox = thungSeatMesh.geometry.boundingBox!;
+
+const thungFreeboard = thungHullBox.max.y;
+const thungKeelDepth = -thungHullBox.min.y;
+const thungSeatY = (thungSeatBox.min.y + thungSeatBox.max.y) / 2;
+
+assert(
+  thungFreeboard >= 0.20 && thungFreeboard <= 0.25,
+  `Thuyền Thúng has clearly visible positive freeboard (${thungFreeboard.toFixed(3)}m >= 0.20m)`
+);
+assert(
+  thungKeelDepth >= 0.12 && thungKeelDepth <= 0.16,
+  `Thuyền Thúng keel draft is physically realistic (${thungKeelDepth.toFixed(3)}m)`
+);
+assert(
+  thungSeatY >= 0.05 && thungSeatY <= 0.10,
+  `Thuyền Thúng bamboo seat is strictly elevated above waterline (+${thungSeatY.toFixed(3)}m above DWL)`
+);
+
+// Ghe Nhỏ measurements in local model space (DWL at y = 0)
+const gheHullMesh = gheObj.getObjectByName('GheHull') as THREE.Mesh;
+const thwartFwdMesh = gheObj.getObjectByName('GheThwartFwd') as THREE.Mesh;
+const thwartAftMesh = gheObj.getObjectByName('GheThwartAft') as THREE.Mesh;
+
+assert(gheHullMesh !== undefined && thwartFwdMesh !== undefined && thwartAftMesh !== undefined, 'Ghe Nhỏ hull and thwart meshes found');
+
+gheHullMesh.geometry.computeBoundingBox();
+thwartFwdMesh.geometry.computeBoundingBox();
+thwartAftMesh.geometry.computeBoundingBox();
+
+const gheHullBox = gheHullMesh.geometry.boundingBox!;
+const thwartFwdBox = thwartFwdMesh.geometry.boundingBox!;
+const thwartAftBox = thwartAftMesh.geometry.boundingBox!;
+let hasSolidCoverBox = false;
+
+gheObj.traverse((child) => {
+  if ((child as THREE.Mesh).isMesh) {
+    const m = child as THREE.Mesh;
+    if (m.geometry) {
+      m.geometry.computeBoundingBox();
+      const b = m.geometry.boundingBox!;
+      // Check for old solid box slab covering the cockpit (large width & large length at sheer level)
+      const szX = b.max.x - b.min.x;
+      const szZ = b.max.z - b.min.z;
+      if (szX > 0.55 && szZ > 2.0 && b.min.y > 0.10) {
+        hasSolidCoverBox = true;
+      }
+    }
+  }
+});
+
+const gheFreeboard = gheHullBox.max.y;
+const gheKeelDepth = -gheHullBox.min.y;
+
+assert(
+  !hasSolidCoverBox,
+  'Ghe Nhỏ has completely open cockpit with no solid box slab covering the top'
+);
+assert(
+  thwartFwdMesh !== undefined && thwartAftMesh !== undefined,
+  'Ghe Nhỏ features clearly visible open forward and aft transverse thwarts'
+);
+assert(
+  gheFreeboard >= 0.28 && gheFreeboard <= 0.36,
+  `Ghe Nhỏ bow sheerline sweeps up gracefully with strong freeboard (${gheFreeboard.toFixed(3)}m)`
+);
+assert(
+  gheKeelDepth >= 0.16 && gheKeelDepth <= 0.20,
+  `Ghe Nhỏ keel draft is physically realistic (${gheKeelDepth.toFixed(3)}m)`
+);
+
+const thwart1Y = (thwartFwdBox.min.y + thwartFwdBox.max.y) / 2;
+const thwart2Y = (thwartAftBox.min.y + thwartAftBox.max.y) / 2;
+assert(
+  thwart1Y >= 0.06 && thwart1Y <= 0.11 && thwart2Y >= 0.06 && thwart2Y <= 0.11,
+  `Ghe Nhỏ thwarts are strictly above design waterline (+${thwart1Y.toFixed(3)}m and +${thwart2Y.toFixed(3)}m above DWL)`
+);
+
+// Check 6c: Dynamic Wave Floatation & Alignment
+const tTime = 4.2;
+const tWind = 0.4;
+const tFlow = 0.5;
+const tWaterLvl = 0.30;
+boatSys.update(0.016, tTime, tWaterLvl, tWind, tFlow);
+
+const expectedThungWave = getOceanWaveElevation(thung.x, thung.z, tTime, tWind);
+const thungActualY = thungObj.position.y;
+assert(
+  Math.abs(thungActualY - (tWaterLvl + expectedThungWave)) < 0.012,
+  'Thuyền Thúng floats precisely on water surface and bobbles with ocean waves'
+);
+
+const expectedGheWave = getOceanWaveElevation(ghe.x, ghe.z, tTime, tWind);
+const gheActualY = gheObj.position.y;
+assert(
+  Math.abs(gheActualY - (tWaterLvl + expectedGheWave)) < 0.012,
+  'Ghe Nhỏ floats precisely on water surface and rides ocean swell'
+);
+
+// Check 6d: Water Cavity Coordinates
+const cavities = boatSys.getCavities();
+assert(
+  Math.abs(cavities.thungPos.x - thung.x) < 1e-4 && Math.abs(cavities.thungPos.y - thung.z) < 1e-4,
+  'Thuyền Thúng water discard cavity follows basket boat position'
+);
+assert(
+  Math.abs(cavities.ghePos.x - ghe.x) < 1e-4 && Math.abs(cavities.ghePos.y - ghe.z) < 1e-4,
+  'Ghe Nhỏ water discard cavity follows skiff boat position'
+);
+assert(
+  cavities.thungRadius >= 0.48 && cavities.thungRadius <= 0.52,
+  'Thuyền Thúng water cavity radius matches inner cockpit boundary'
+);
+
+boatSys.dispose();
 
 // 7. State & Season Isolation (Discriminated Unions & Sanitization)
 // A. Invalid season on Phu Quoc (e.g. 'winter' passed to phuquoc) must fallback to 'dry'

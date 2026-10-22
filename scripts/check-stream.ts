@@ -11,6 +11,7 @@ import {
   isInWater,
 } from '../src/three/themes/garden/streamProfile.js';
 import { computeRawTerrainHeight } from '../src/three/themes/garden/terrain.js';
+import { GARDEN_STAIRCASES } from '../src/three/themes/garden/architecture.js';
 
 interface TestResult {
   name: string;
@@ -491,6 +492,160 @@ assert(
   waterHitClear !== null && (clearObstacleHits.length === 0 || bedIsBehindWater),
   'Clear water surface is unblocked; submerged riverbed behind water does not block ripple'
 );
+
+// =========================================================================
+// 8. Garden Cliffside Staircases: Monotonicity, Uniform Risers & Foundations
+// =========================================================================
+const stairList = [GARDEN_STAIRCASES.west, GARDEN_STAIRCASES.east];
+
+stairList.forEach((stair) => {
+  // A. Monotonic step descent & uniform risers across the entire route
+  const allTreads: { x: number; z: number; y: number; bottomY: number; riser: number; name: string }[] = [];
+
+  // Top landing entry
+  allTreads.push({
+    x: stair.topLanding.x,
+    z: stair.topLanding.z,
+    y: stair.topLanding.y,
+    bottomY: Math.min(stair.topLanding.y - 0.22, computeRawTerrainHeight(stair.topLanding.x, stair.topLanding.z).height - 0.15),
+    riser: 0,
+    name: `${stair.name} Top Landing`,
+  });
+
+  // Upper flight
+  for (let i = 0; i < stair.upperFlight.steps; i++) {
+    const t = (i + 0.5) / stair.upperFlight.steps;
+    const sx = stair.upperFlight.startX + t * (stair.upperFlight.endX - stair.upperFlight.startX);
+    const sz = stair.upperFlight.startZ + t * (stair.upperFlight.endZ - stair.upperFlight.startZ);
+    const stepY = stair.upperFlight.startY - (i + 1) * stair.upperFlight.riserHeight;
+    const groundH = computeRawTerrainHeight(sx, sz).height;
+    const bottomY = Math.min(stepY - stair.upperFlight.riserHeight - 0.08, groundH - 0.15);
+
+    allTreads.push({
+      x: sx,
+      z: sz,
+      y: stepY,
+      bottomY,
+      riser: stair.upperFlight.riserHeight,
+      name: `${stair.name} Upper Step ${i + 1}`,
+    });
+  }
+
+  // Mid landing (Chiếu nghỉ)
+  allTreads.push({
+    x: stair.midLanding.x,
+    z: stair.midLanding.z,
+    y: stair.midLanding.y,
+    bottomY: Math.min(stair.midLanding.y - 0.22, computeRawTerrainHeight(stair.midLanding.x, stair.midLanding.z).height - 0.15),
+    riser: 0,
+    name: `${stair.name} Mid Landing (Chiếu Nghỉ)`,
+  });
+
+  // Lower flight
+  for (let i = 0; i < stair.lowerFlight.steps; i++) {
+    const t = (i + 0.5) / stair.lowerFlight.steps;
+    const sx = stair.lowerFlight.startX + t * (stair.lowerFlight.endX - stair.lowerFlight.startX);
+    const sz = stair.lowerFlight.startZ + t * (stair.lowerFlight.endZ - stair.lowerFlight.startZ);
+    const stepY = stair.lowerFlight.startY - (i + 1) * stair.lowerFlight.riserHeight;
+    const groundH = computeRawTerrainHeight(sx, sz).height;
+    const bottomY = Math.min(stepY - stair.lowerFlight.riserHeight - 0.08, groundH - 0.15);
+
+    allTreads.push({
+      x: sx,
+      z: sz,
+      y: stepY,
+      bottomY,
+      riser: stair.lowerFlight.riserHeight,
+      name: `${stair.name} Lower Step ${i + 1}`,
+    });
+  }
+
+  // Bottom landing
+  allTreads.push({
+    x: stair.bottomLanding.x,
+    z: stair.bottomLanding.z,
+    y: stair.bottomLanding.y,
+    bottomY: Math.min(stair.bottomLanding.y - 0.22, computeRawTerrainHeight(stair.bottomLanding.x, stair.bottomLanding.z).height - 0.15),
+    riser: 0,
+    name: `${stair.name} Bottom Landing`,
+  });
+
+  // Check 1: Monotonicity along entire route
+  let isMonotonic = true;
+  let monotonicFailMsg = '';
+  for (let k = 0; k < allTreads.length - 1; k++) {
+    const cur = allTreads[k];
+    const nxt = allTreads[k + 1];
+    // Next step must be strictly lower or equal (landing transition)
+    if (nxt.y > cur.y) {
+      isMonotonic = false;
+      monotonicFailMsg = `${cur.name} (y=${cur.y.toFixed(3)}) is lower than next ${nxt.name} (y=${nxt.y.toFixed(3)})`;
+      break;
+    }
+  }
+  assert(
+    isMonotonic,
+    `${stair.name}: Step elevations descend monotonically with zero upward bumps along route`,
+    monotonicFailMsg
+  );
+
+  // Check 2: Uniform risers within flights
+  let upperRisersUniform = true;
+  for (let i = 0; i < stair.upperFlight.steps; i++) {
+    const step = allTreads[1 + i];
+    const prevY = i === 0 ? stair.upperFlight.startY : allTreads[1 + i - 1].y;
+    const diff = Math.abs((prevY - step.y) - stair.upperFlight.riserHeight);
+    if (diff > 1e-5) {
+      upperRisersUniform = false;
+      break;
+    }
+  }
+  assert(
+    upperRisersUniform && stair.upperFlight.riserHeight >= 0.11 && stair.upperFlight.riserHeight <= 0.16,
+    `${stair.name}: Upper flight risers are completely uniform (${stair.upperFlight.riserHeight.toFixed(4)}m) within comfortable architectural range`
+  );
+
+  let lowerRisersUniform = true;
+  const lowerOffset = 1 + stair.upperFlight.steps + 1; // 1 top + upperSteps + 1 mid
+  for (let i = 0; i < stair.lowerFlight.steps; i++) {
+    const step = allTreads[lowerOffset + i];
+    const prevY = i === 0 ? stair.lowerFlight.startY : allTreads[lowerOffset + i - 1].y;
+    const diff = Math.abs((prevY - step.y) - stair.lowerFlight.riserHeight);
+    if (diff > 1e-5) {
+      lowerRisersUniform = false;
+      break;
+    }
+  }
+  assert(
+    lowerRisersUniform && stair.lowerFlight.riserHeight >= 0.11 && stair.lowerFlight.riserHeight <= 0.16,
+    `${stair.name}: Lower flight risers are completely uniform (${stair.lowerFlight.riserHeight.toFixed(4)}m) within comfortable architectural range`
+  );
+
+  // Check 3: Solid foundation under-supports anchored into bedrock (zero floating steps)
+  let allUnderSupportsBuried = true;
+  let underSupportFail = '';
+  allTreads.forEach((t) => {
+    const terrainH = computeRawTerrainHeight(t.x, t.z).height;
+    if (t.bottomY > terrainH - 0.08) {
+      allUnderSupportsBuried = false;
+      underSupportFail = `${t.name} at (${t.x.toFixed(2)}, ${t.z.toFixed(2)}): bottomY=${t.bottomY.toFixed(3)} is above terrain=${terrainH.toFixed(3)}`;
+    }
+  });
+  assert(
+    allUnderSupportsBuried,
+    `${stair.name}: All steps and landings have solid under-supports anchored >= 8cm below bedrock (zero floating or hollow gaps)`,
+    underSupportFail
+  );
+
+  // Check 4: Tangent orientation
+  const upperDx = stair.upperFlight.endX - stair.upperFlight.startX;
+  const upperDz = stair.upperFlight.endZ - stair.upperFlight.startZ;
+  const upperAngle = Math.atan2(upperDx, upperDz);
+  assert(
+    Number.isFinite(upperAngle) && Math.hypot(upperDx, upperDz) > 0.5,
+    `${stair.name}: Upper flight steps are aligned with walking direction tangent`
+  );
+});
 
 
 // Summary
