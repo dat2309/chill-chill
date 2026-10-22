@@ -207,6 +207,60 @@ export function getGheInnerStationProfile(z: number): {
 }
 
 /**
+ * Evaluates the exact physical inner hold half-width of Ghe Nhỏ at local coordinate (y, z),
+ * aligning with the precise triangulated 3D hull geometry of GHE_STATIONS.
+ */
+export function getGheInnerWidthAt(y: number, z: number): number {
+  if (z < -1.18 || z > 1.16) return 0.0;
+
+  // Station 4 (z = 0.70) to Station 5 (z = 1.02):
+  // The forward cockpit floor rises through waterline y = 0 along the triangulated diagonal
+  // from (0.13, 0, 0.70) to (0, 0, 1.02), forming an exact planar diagonal boundary at y = 0.
+  if (z >= 0.70 && z <= 1.02) {
+    const t = (z - 0.70) / 0.32;
+    const yFloor = -0.09 * (1.0 - t);
+    const yChine = 0.10 * t;
+    const ySheer = THREE.MathUtils.lerp(0.25, 0.29, t);
+    if (y < yFloor || y > ySheer) return 0.0;
+
+    const diagX = 0.13 * (1.0 - t);
+    if (y <= 0.0) {
+      return Math.max(0.0, 1.4444 * y + diagX);
+    } else if (y <= yChine) {
+      return Math.max(0.0, 0.50 * y + diagX);
+    } else {
+      const wChine = THREE.MathUtils.lerp(0.13, 0.05, t);
+      const wSheer = THREE.MathUtils.lerp(0.22, 0.12, t);
+      const sFrac = Math.min(Math.max((y - yChine) / Math.max(0.001, ySheer - yChine), 0.0), 1.0);
+      return THREE.MathUtils.lerp(wChine, wSheer, sFrac);
+    }
+  }
+
+  const prof = getGheInnerStationProfile(z);
+  if (!prof) return 0.0;
+
+  if (y < prof.yFloor || y > prof.ySheer) return 0.0;
+
+  if (y <= prof.yChine) {
+    const fFrac = Math.min(Math.max((y - prof.yFloor) / Math.max(0.001, prof.yChine - prof.yFloor), 0.0), 1.0);
+    return prof.wChine * fFrac;
+  } else {
+    const sFrac = Math.min(Math.max((y - prof.yChine) / Math.max(0.001, prof.ySheer - prof.yChine), 0.0), 1.0);
+    return THREE.MathUtils.lerp(prof.wChine, prof.wSheer, sFrac);
+  }
+}
+
+/**
+ * Evaluates whether a local coordinate point (lx, ly, lz) is inside the open cockpit hold of Ghe Nho.
+ */
+export function isInsideGheCavity(local: THREE.Vector3): boolean {
+  if (local.z < -1.18 || local.z > 1.16) return false;
+  const innerW = getGheInnerWidthAt(local.y, local.z);
+  if (innerW <= 0.006) return false;
+  return Math.abs(local.x) < (innerW - 0.006);
+}
+
+/**
  * Generates the optimized GLSL fragment code snippet for Ghe Nhỏ water cavity discard,
  * derived directly from GHE_STATIONS to guarantee zero discrepancy with physical geometry.
  */
@@ -216,6 +270,35 @@ export function generateGheCavityShaderGlsl(): string {
   for (let i = 0; i < n - 1; i++) {
     const stA = GHE_STATIONS[i];
     const stB = GHE_STATIONS[i + 1];
+
+    if (stA.z >= 0.69 && stB.z <= 1.03) {
+      // Special exact planar triangulated diagonal between Station 4 and Station 5
+      branches += `          else if (lz < 1.02) {
+            float t = (lz - 0.70) * 3.125000;
+            float diagX = 0.1300 * (1.0 - t);
+            float yFloor = -0.0900 * (1.0 - t);
+            float yChine = 0.1000 * t;
+            float ySheer = mix(0.2500, 0.2900, t);
+            if (ly >= yFloor && ly <= ySheer) {
+              if (ly <= 0.0) {
+                innerW = max(0.0, 1.4444 * ly + diagX);
+              } else if (ly <= yChine) {
+                innerW = max(0.0, 0.5000 * ly + diagX);
+              } else {
+                float wChine = mix(0.1300, 0.0500, t);
+                float wSheer = mix(0.2200, 0.1200, t);
+                float sFrac = clamp((ly - yChine) / max(0.001, ySheer - yChine), 0.0, 1.0);
+                innerW = mix(wChine, wSheer, sFrac);
+              }
+              if (abs(localGhe.x) < (innerW - 0.006)) {
+                discard;
+              }
+            }
+          }
+`;
+      continue;
+    }
+
     const cond = i === 0
       ? `if (lz < ${stB.z.toFixed(2)})`
       : (i === n - 2 ? `else` : `else if (lz < ${stB.z.toFixed(2)})`);
@@ -223,11 +306,24 @@ export function generateGheCavityShaderGlsl(): string {
     const invRange = (1.0 / (stB.z - stA.z)).toFixed(6);
     branches += `          ${cond} {
             float t = (lz - (${stA.z.toFixed(2)})) * ${invRange};
-            yFloor = mix(${stA.yFloorIn.toFixed(4)}, ${stB.yFloorIn.toFixed(4)}, t);
-            yChine = mix(${stA.yChineIn.toFixed(4)}, ${stB.yChineIn.toFixed(4)}, t);
-            wChine = mix(${stA.wChineIn.toFixed(4)}, ${stB.wChineIn.toFixed(4)}, t);
-            ySheer = mix(${stA.ySheerIn.toFixed(4)}, ${stB.ySheerIn.toFixed(4)}, t);
-            wSheer = mix(${stA.wSheerIn.toFixed(4)}, ${stB.wSheerIn.toFixed(4)}, t);
+            float yFloor = mix(${stA.yFloorIn.toFixed(4)}, ${stB.yFloorIn.toFixed(4)}, t);
+            float yChine = mix(${stA.yChineIn.toFixed(4)}, ${stB.yChineIn.toFixed(4)}, t);
+            float wChine = mix(${stA.wChineIn.toFixed(4)}, ${stB.wChineIn.toFixed(4)}, t);
+            float ySheer = mix(${stA.ySheerIn.toFixed(4)}, ${stB.ySheerIn.toFixed(4)}, t);
+            float wSheer = mix(${stA.wSheerIn.toFixed(4)}, ${stB.wSheerIn.toFixed(4)}, t);
+
+            if (ly >= yFloor && ly <= ySheer) {
+              if (ly <= yChine) {
+                float fFrac = clamp((ly - yFloor) / max(0.001, yChine - yFloor), 0.0, 1.0);
+                innerW = wChine * fFrac;
+              } else {
+                float sFrac = clamp((ly - yChine) / max(0.001, ySheer - yChine), 0.0, 1.0);
+                innerW = mix(wChine, wSheer, sFrac);
+              }
+              if (abs(localGhe.x) < (innerW - 0.006)) {
+                discard;
+              }
+            }
           }
 `;
   }
@@ -239,24 +335,10 @@ export function generateGheCavityShaderGlsl(): string {
 
         if (localGhe.z >= -1.18 && localGhe.z <= 1.16) {
           float lz = localGhe.z;
-          float yFloor, yChine, wChine, ySheer, wSheer;
+          float ly = localGhe.y;
+          float innerW = 0.0;
 
 ${branches}
-          float ly = localGhe.y;
-          if (ly >= yFloor && ly <= ySheer) {
-            float innerW;
-            if (ly <= yChine) {
-              float fFrac = clamp((ly - yFloor) / max(0.001, yChine - yFloor), 0.0, 1.0);
-              innerW = wChine * fFrac;
-            } else {
-              float sFrac = clamp((ly - yChine) / max(0.001, ySheer - yChine), 0.0, 1.0);
-              innerW = mix(wChine, wSheer, sFrac);
-            }
-
-            if (abs(localGhe.x) < (innerW - 0.006)) {
-              discard;
-            }
-          }
         }
   `;
 }
@@ -290,29 +372,6 @@ export function isInsideThungCavity(local: THREE.Vector3): boolean {
   return r < rInner - 0.015;
 }
 
-/**
- * Evaluates whether a local coordinate point (lx, ly, lz) is inside the open cockpit hold of Ghe Nho.
- */
-export function isInsideGheCavity(local: THREE.Vector3): boolean {
-  if (local.z < -1.18 || local.z > 1.16) return false;
-  const prof = getGheInnerStationProfile(local.z);
-  if (!prof) return false;
-
-  const ly = local.y;
-  if (ly < prof.yFloor || ly > prof.ySheer) return false;
-
-  let innerW: number;
-  if (ly <= prof.yChine) {
-    const fFrac = Math.min(Math.max((ly - prof.yFloor) / Math.max(0.001, prof.yChine - prof.yFloor), 0.0), 1.0);
-    innerW = prof.wChine * fFrac;
-  } else {
-    const sFrac = Math.min(Math.max((ly - prof.yChine) / Math.max(0.001, prof.ySheer - prof.yChine), 0.0), 1.0);
-    innerW = THREE.MathUtils.lerp(prof.wChine, prof.wSheer, sFrac);
-  }
-
-  // Margin of 6mm (0.006m) ensures water terminates cleanly before penetrating inner wood planking
-  return Math.abs(local.x) < (innerW - 0.006);
-}
 
 /**
  * Evaluates whether a world-space point falls inside either boat's open cockpit cavity,

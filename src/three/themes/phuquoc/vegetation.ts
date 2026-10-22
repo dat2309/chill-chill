@@ -101,14 +101,13 @@ export function createPhuQuocVegetation(
     side: THREE.DoubleSide,
   });
   const casuarinaMat = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.vegetation.casuarina });
-  const bushMat = new THREE.MeshLambertMaterial({ color: PHUQUOC_COLORS.vegetation.coastalBush });
   // Softer bougainvillea material using vertexColors and smooth Lambert shading
   const bougainvilleaMat = new THREE.MeshLambertMaterial({
     vertexColors: true,
     flatShading: false,
   });
 
-  materialsToDispose.push(palmTrunkMat, palmFrondMat, casuarinaMat, bushMat, bougainvilleaMat);
+  materialsToDispose.push(palmTrunkMat, palmFrondMat, casuarinaMat, bougainvilleaMat);
 
   // --- Box3-based Bungalow Roof Exclusion ---
   // Evaluates the actual 3D bounding box (Box3) of the palm crown against each bungalow roof footprint.
@@ -326,35 +325,7 @@ export function createPhuQuocVegetation(
   vegGroup.add(pineTrunkMesh);
   vegGroup.add(pineCanopyMesh);
 
-  // --- 3. Coastal Bushes & Shrubs ---
-  const bushCount = 50;
-  const bushGeo = new THREE.DodecahedronGeometry(0.35, 1);
-  geometriesToDispose.push(bushGeo);
-  const bushMesh = new THREE.InstancedMesh(bushGeo, bushMat, bushCount);
-  bushMesh.castShadow = true;
-
-  let placedBushes = 0;
-  for (let i = 0; i < bushCount * 5 && placedBushes < bushCount; i++) {
-    const bx = rng.range(-9.2, 9.2);
-    const bz = rng.range(-6.5, 2.0);
-
-    if (isInsidePhuQuocFootprint(bx, bz, 0.40) && getDistanceToShore(bx, bz) > 0.5 && !isInWater(bx, bz)) {
-      const by = getHeightAt(bx, bz);
-      const bScale = rng.range(0.5, 1.1);
-
-      dummy.position.set(bx, by + bScale * 0.25, bz);
-      dummy.scale.set(bScale * 1.2, bScale * 0.8, bScale * 1.2);
-      dummy.rotation.set(0, rng.range(0, Math.PI * 2), 0);
-      dummy.updateMatrix();
-      bushMesh.setMatrixAt(placedBushes, dummy.matrix);
-      placedBushes++;
-    }
-  }
-  bushMesh.count = Math.max(1, placedBushes);
-  bushMesh.instanceMatrix.needsUpdate = true;
-  vegGroup.add(bushMesh);
-
-  // --- 4. Soft Rose Bougainvillea (Hoa Giấy Hồng Êm) ---
+  // --- 3. Soft Rose Bougainvillea (Hoa Giấy Hồng Êm) ---
   // Cascading multi-lobed floral clusters with soft rose-pink petals and subtle foliage undertones
   const bougCount = 38;
   const bougClusterGeo = createBougainvilleaClusterGeometry();
