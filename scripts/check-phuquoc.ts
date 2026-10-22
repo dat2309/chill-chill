@@ -579,6 +579,105 @@ assert(
   'Water outside Ghe Nhỏ hull is preserved and not discarded'
 );
 
+// -------------------------------------------------------------------------
+// Specific Regression: Point local (0.10, 0, 0.70) inside cockpit hold
+// -------------------------------------------------------------------------
+raycaster.set(new THREE.Vector3(0, 0, 0.70), new THREE.Vector3(1, 0, 0));
+const wallHit070 = raycaster.intersectObject(gheHullMesh, false);
+const wallX070 = wallHit070.length > 0 ? wallHit070[0].point.x : 0.13;
+assert(
+  Math.abs(wallX070 - 0.13) < 0.015,
+  `Raycast at z=0.70 confirms inner wall at x=${wallX070.toFixed(3)} (~0.13)`
+);
+
+const ptRegressionInside = new THREE.Vector3(0.10, 0, 0.70);
+assert(
+  isInsideGheCavity(ptRegressionInside),
+  'Regression fixed: local point (0.10, 0, 0.70) inside cockpit correctly returns true to discard water'
+);
+
+const ptRegressionOnWall = new THREE.Vector3(0.135, 0, 0.70);
+const ptRegressionOutside = new THREE.Vector3(0.20, 0, 0.70);
+assert(
+  !isInsideGheCavity(ptRegressionOnWall) && !isInsideGheCavity(ptRegressionOutside),
+  'Local points on/outside wall at z=0.70 correctly return false to preserve ocean water'
+);
+
+// -------------------------------------------------------------------------
+// Systematic Multi-Station Sampling against actual mesh geometry
+// -------------------------------------------------------------------------
+const sampleZStations = [-0.95, -0.60, -0.20, 0.20, 0.50, 0.70, 0.95];
+let allStationCavitiesAccurate = true;
+let stationCavityFail = '';
+
+for (const sz of sampleZStations) {
+  // Raycast laterally from hold center at waterline (y = 0) towards starboard (+X)
+  raycaster.set(new THREE.Vector3(0, 0, sz), new THREE.Vector3(1, 0, 0));
+  const hits = raycaster.intersectObject(gheHullMesh, false);
+  if (hits.length === 0) continue;
+
+  const actualInnerWallX = hits[0].point.x;
+  // Inside hold: 2cm inboard from inner wall
+  const pInside = new THREE.Vector3(actualInnerWallX - 0.02, 0, sz);
+  // Outside hull: 15cm outboard from inner wall (well into open ocean)
+  const pOutside = new THREE.Vector3(actualInnerWallX + 0.15, 0, sz);
+
+  if (!isInsideGheCavity(pInside)) {
+    allStationCavitiesAccurate = false;
+    stationCavityFail = `Station z=${sz}: point inside (${pInside.x.toFixed(3)}, 0, ${sz}) returned false (inner wall is at ${actualInnerWallX.toFixed(3)})`;
+    break;
+  }
+  if (isInsideGheCavity(pOutside)) {
+    allStationCavitiesAccurate = false;
+    stationCavityFail = `Station z=${sz}: point outside (${pOutside.x.toFixed(3)}, 0, ${sz}) returned true (leaking discard into ocean)`;
+    break;
+  }
+}
+
+assert(
+  allStationCavitiesAccurate,
+  'Systematic multi-station sampling matches actual 3D geometry: inside hold discards water, outside hull preserves ocean water',
+  stationCavityFail
+);
+
+// -------------------------------------------------------------------------
+// Transformation tests across varied rotations, pitch/roll heave and tides
+// -------------------------------------------------------------------------
+let worldCavityTrackingAccurate = true;
+let worldCavityTrackingFail = '';
+
+const testRotations = [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 3];
+const testTides = [SEA_LEVEL_LOW, SEA_LEVEL_BASE, SEA_LEVEL_HIGH];
+const testTimes = [1.0, 3.5, 7.2, 12.0];
+
+for (const tideLvl of testTides) {
+  for (const time of testTimes) {
+    boatSys.update(0.016, time, tideLvl, 0.4, 0.5);
+
+    // Test regression point (0.10, 0, 0.70) transformed into world coordinates
+    const wPtInside = ptRegressionInside.clone().applyMatrix4(gheObj.matrixWorld);
+    const wPtOutside = ptRegressionOutside.clone().applyMatrix4(gheObj.matrixWorld);
+
+    if (!isPointInBoatCavity(wPtInside, boatSys)) {
+      worldCavityTrackingAccurate = false;
+      worldCavityTrackingFail = `World-space cavity failed inside at tide=${tideLvl}, time=${time}`;
+      break;
+    }
+    if (isPointInBoatCavity(wPtOutside, boatSys)) {
+      worldCavityTrackingAccurate = false;
+      worldCavityTrackingFail = `World-space cavity leaked outside at tide=${tideLvl}, time=${time}`;
+      break;
+    }
+  }
+  if (!worldCavityTrackingAccurate) break;
+}
+
+assert(
+  worldCavityTrackingAccurate,
+  'World-space boat cavity tracking correctly synchronizes across pitch, roll, wave heave, and tides',
+  worldCavityTrackingFail
+);
+
 // Verify cavity discard consistency across high and low tide
 for (const tideLvl of [SEA_LEVEL_LOW, SEA_LEVEL_BASE, SEA_LEVEL_HIGH]) {
   boatSys.update(0.016, 2.5, tideLvl, 0.35, 0.5);

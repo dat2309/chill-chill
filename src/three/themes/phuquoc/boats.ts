@@ -49,6 +49,219 @@ export const BOAT_SPECS = {
 };
 
 /**
+ * Shared Multi-station Structural Cross-Sections for Ghe Nhỏ:
+ * Single source of truth shared between 3D hull geometry, CPU cavity queries,
+ * and the GPU water shader cavity discard.
+ */
+export interface GheStation {
+  z: number;
+  yKeelOut: number;
+  wChineOut: number;
+  yChineOut: number;
+  wSheerOut: number;
+  ySheerOut: number;
+  wSheerIn: number;
+  ySheerIn: number;
+  wChineIn: number;
+  yChineIn: number;
+  yFloorIn: number;
+}
+
+export const GHE_STATIONS: readonly GheStation[] = [
+  // Station 0: Transom stern
+  {
+    z: -1.20,
+    yKeelOut: -0.14,
+    wChineOut: 0.18,
+    yChineOut: -0.10,
+    wSheerOut: 0.25,
+    ySheerOut: 0.22,
+    wSheerIn: 0.21,
+    ySheerIn: 0.22,
+    wChineIn: 0.14,
+    yChineIn: -0.07,
+    yFloorIn: -0.11,
+  },
+  // Station 1: Aft
+  {
+    z: -0.75,
+    yKeelOut: -0.17,
+    wChineOut: 0.23,
+    yChineOut: -0.07,
+    wSheerOut: 0.31,
+    ySheerOut: 0.21,
+    wSheerIn: 0.27,
+    ySheerIn: 0.21,
+    wChineIn: 0.19,
+    yChineIn: -0.04,
+    yFloorIn: -0.13,
+  },
+  // Station 2: Midship aft
+  {
+    z: -0.25,
+    yKeelOut: -0.18,
+    wChineOut: 0.25,
+    yChineOut: -0.08,
+    wSheerOut: 0.34,
+    ySheerOut: 0.21,
+    wSheerIn: 0.30,
+    ySheerIn: 0.21,
+    wChineIn: 0.21,
+    yChineIn: -0.05,
+    yFloorIn: -0.14,
+  },
+  // Station 3: Midship forward
+  {
+    z: 0.25,
+    yKeelOut: -0.18,
+    wChineOut: 0.24,
+    yChineOut: -0.08,
+    wSheerOut: 0.33,
+    ySheerOut: 0.21,
+    wSheerIn: 0.29,
+    ySheerIn: 0.21,
+    wChineIn: 0.20,
+    yChineIn: -0.05,
+    yFloorIn: -0.14,
+  },
+  // Station 4: Forward
+  {
+    z: 0.70,
+    yKeelOut: -0.13,
+    wChineOut: 0.17,
+    yChineOut: -0.03,
+    wSheerOut: 0.26,
+    ySheerOut: 0.25,
+    wSheerIn: 0.22,
+    ySheerIn: 0.25,
+    wChineIn: 0.13,
+    yChineIn: 0.00,
+    yFloorIn: -0.09,
+  },
+  // Station 5: Bow shoulder
+  {
+    z: 1.02,
+    yKeelOut: -0.02,
+    wChineOut: 0.08,
+    yChineOut: 0.08,
+    wSheerOut: 0.16,
+    ySheerOut: 0.29,
+    wSheerIn: 0.12,
+    ySheerIn: 0.29,
+    wChineIn: 0.05,
+    yChineIn: 0.10,
+    yFloorIn: 0.00,
+  },
+  // Station 6: Bow stem tip
+  {
+    z: 1.20,
+    yKeelOut: 0.10,
+    wChineOut: 0.02,
+    yChineOut: 0.18,
+    wSheerOut: 0.04,
+    ySheerOut: 0.32,
+    wSheerIn: 0.02,
+    ySheerIn: 0.32,
+    wChineIn: 0.01,
+    yChineIn: 0.19,
+    yFloorIn: 0.11,
+  },
+];
+
+/**
+ * Samples the interpolated structural inner profile parameters of Ghe Nhỏ at any longitudinal position z.
+ */
+export function getGheInnerStationProfile(z: number): {
+  yFloor: number;
+  yChine: number;
+  wChine: number;
+  ySheer: number;
+  wSheer: number;
+} | null {
+  const n = GHE_STATIONS.length;
+  if (z < GHE_STATIONS[0].z || z > GHE_STATIONS[n - 1].z) {
+    return null;
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const stA = GHE_STATIONS[i];
+    const stB = GHE_STATIONS[i + 1];
+    if (z <= stB.z) {
+      const t = (z - stA.z) / (stB.z - stA.z);
+      return {
+        yFloor: THREE.MathUtils.lerp(stA.yFloorIn, stB.yFloorIn, t),
+        yChine: THREE.MathUtils.lerp(stA.yChineIn, stB.yChineIn, t),
+        wChine: THREE.MathUtils.lerp(stA.wChineIn, stB.wChineIn, t),
+        ySheer: THREE.MathUtils.lerp(stA.ySheerIn, stB.ySheerIn, t),
+        wSheer: THREE.MathUtils.lerp(stA.wSheerIn, stB.wSheerIn, t),
+      };
+    }
+  }
+  const last = GHE_STATIONS[n - 1];
+  return {
+    yFloor: last.yFloorIn,
+    yChine: last.yChineIn,
+    wChine: last.wChineIn,
+    ySheer: last.ySheerIn,
+    wSheer: last.wSheerIn,
+  };
+}
+
+/**
+ * Generates the optimized GLSL fragment code snippet for Ghe Nhỏ water cavity discard,
+ * derived directly from GHE_STATIONS to guarantee zero discrepancy with physical geometry.
+ */
+export function generateGheCavityShaderGlsl(): string {
+  let branches = '';
+  const n = GHE_STATIONS.length;
+  for (let i = 0; i < n - 1; i++) {
+    const stA = GHE_STATIONS[i];
+    const stB = GHE_STATIONS[i + 1];
+    const cond = i === 0
+      ? `if (lz < ${stB.z.toFixed(2)})`
+      : (i === n - 2 ? `else` : `else if (lz < ${stB.z.toFixed(2)})`);
+
+    const invRange = (1.0 / (stB.z - stA.z)).toFixed(6);
+    branches += `          ${cond} {
+            float t = (lz - (${stA.z.toFixed(2)})) * ${invRange};
+            yFloor = mix(${stA.yFloorIn.toFixed(4)}, ${stB.yFloorIn.toFixed(4)}, t);
+            yChine = mix(${stA.yChineIn.toFixed(4)}, ${stB.yChineIn.toFixed(4)}, t);
+            wChine = mix(${stA.wChineIn.toFixed(4)}, ${stB.wChineIn.toFixed(4)}, t);
+            ySheer = mix(${stA.ySheerIn.toFixed(4)}, ${stB.ySheerIn.toFixed(4)}, t);
+            wSheer = mix(${stA.wSheerIn.toFixed(4)}, ${stB.wSheerIn.toFixed(4)}, t);
+          }
+`;
+  }
+
+  return `
+        // 2. Ghe Nho: transformed via exact inverse world matrix
+        vec4 localGhe4 = uGheInvMatrix * vec4(vWorldPos, 1.0);
+        vec3 localGhe = localGhe4.xyz / localGhe4.w;
+
+        if (localGhe.z >= -1.18 && localGhe.z <= 1.16) {
+          float lz = localGhe.z;
+          float yFloor, yChine, wChine, ySheer, wSheer;
+
+${branches}
+          float ly = localGhe.y;
+          if (ly >= yFloor && ly <= ySheer) {
+            float innerW;
+            if (ly <= yChine) {
+              float fFrac = clamp((ly - yFloor) / max(0.001, yChine - yFloor), 0.0, 1.0);
+              innerW = wChine * fFrac;
+            } else {
+              float sFrac = clamp((ly - yChine) / max(0.001, ySheer - yChine), 0.0, 1.0);
+              innerW = mix(wChine, wSheer, sFrac);
+            }
+
+            if (abs(localGhe.x) < (innerW - 0.006)) {
+              discard;
+            }
+          }
+        }
+  `;
+}
+
+/**
  * Exact analytical water wave elevation and slope matching Phu Quoc water shader:
  * S(x, z, t) = sin(1.8*z - 1.5*t) * 0.035 * w + cos(1.2*x + 0.8*z - 2.0*t) * 0.02 * w
  */
@@ -81,25 +294,24 @@ export function isInsideThungCavity(local: THREE.Vector3): boolean {
  * Evaluates whether a local coordinate point (lx, ly, lz) is inside the open cockpit hold of Ghe Nho.
  */
 export function isInsideGheCavity(local: THREE.Vector3): boolean {
-  if (local.z < -1.18 || local.z > 1.15) return false;
-  const lz = local.z;
-  const normZ = lz < 0.0 ? (lz / 1.18) : (lz / 1.15); // -1 at stern, 0 at mid, +1 at bow
-  const floorY = lz < 0.0 ? THREE.MathUtils.lerp(-0.14, -0.11, -normZ) : THREE.MathUtils.lerp(-0.14, 0.06, normZ);
-  const sheerY = lz < 0.0 ? THREE.MathUtils.lerp(0.20, 0.24, -normZ) : THREE.MathUtils.lerp(0.20, 0.32, normZ);
+  if (local.z < -1.18 || local.z > 1.16) return false;
+  const prof = getGheInnerStationProfile(local.z);
+  if (!prof) return false;
 
-  if (local.y < floorY || local.y > sheerY) return false;
+  const ly = local.y;
+  if (ly < prof.yFloor || ly > prof.ySheer) return false;
 
-  const sheerHalfW = lz < 0.0
-    ? THREE.MathUtils.lerp(0.30, 0.21, -normZ)
-    : (normZ < 0.65 ? THREE.MathUtils.lerp(0.30, 0.22, normZ / 0.65) : THREE.MathUtils.lerp(0.22, 0.03, (normZ - 0.65) / 0.35));
-  const floorHalfW = lz < 0.0
-    ? THREE.MathUtils.lerp(0.20, 0.14, -normZ)
-    : THREE.MathUtils.lerp(0.20, 0.02, normZ);
+  let innerW: number;
+  if (ly <= prof.yChine) {
+    const fFrac = Math.min(Math.max((ly - prof.yFloor) / Math.max(0.001, prof.yChine - prof.yFloor), 0.0), 1.0);
+    innerW = prof.wChine * fFrac;
+  } else {
+    const sFrac = Math.min(Math.max((ly - prof.yChine) / Math.max(0.001, prof.ySheer - prof.yChine), 0.0), 1.0);
+    innerW = THREE.MathUtils.lerp(prof.wChine, prof.wSheer, sFrac);
+  }
 
-  const yFrac = Math.min(Math.max((local.y - floorY) / Math.max(0.01, sheerY - floorY), 0.0), 1.0);
-  const innerW = THREE.MathUtils.lerp(floorHalfW, sheerHalfW, yFrac);
-
-  return Math.abs(local.x) < innerW - 0.015;
+  // Margin of 6mm (0.006m) ensures water terminates cleanly before penetrating inner wood planking
+  return Math.abs(local.x) < (innerW - 0.006);
 }
 
 /**
@@ -275,120 +487,7 @@ export function createPhuQuocBoats(parentGroup: THREE.Group): PhuQuocBoatsSystem
 
   const gSpecs = BOAT_SPECS.ghe;
 
-  interface GheStation {
-    z: number;
-    yKeelOut: number;
-    wChineOut: number;
-    yChineOut: number;
-    wSheerOut: number;
-    ySheerOut: number;
-    wSheerIn: number;
-    ySheerIn: number;
-    wChineIn: number;
-    yChineIn: number;
-    yFloorIn: number;
-  }
-
-  const gheStations: GheStation[] = [
-    // Station 0: Transom stern
-    {
-      z: -1.20,
-      yKeelOut: -0.14,
-      wChineOut: 0.18,
-      yChineOut: -0.10,
-      wSheerOut: 0.25,
-      ySheerOut: gSpecs.sternSheerY,
-      wSheerIn: 0.21,
-      ySheerIn: gSpecs.sternSheerY,
-      wChineIn: 0.14,
-      yChineIn: -0.07,
-      yFloorIn: -0.11,
-    },
-    // Station 1: Aft
-    {
-      z: -0.75,
-      yKeelOut: -0.17,
-      wChineOut: 0.23,
-      yChineOut: -0.07,
-      wSheerOut: 0.31,
-      ySheerOut: 0.21,
-      wSheerIn: 0.27,
-      ySheerIn: 0.21,
-      wChineIn: 0.19,
-      yChineIn: -0.04,
-      yFloorIn: -0.13,
-    },
-    // Station 2: Midship aft
-    {
-      z: -0.25,
-      yKeelOut: gSpecs.keelY,
-      wChineOut: 0.25,
-      yChineOut: -0.08,
-      wSheerOut: 0.34,
-      ySheerOut: gSpecs.midGunwaleY,
-      wSheerIn: 0.30,
-      ySheerIn: gSpecs.midGunwaleY,
-      wChineIn: 0.21,
-      yChineIn: -0.05,
-      yFloorIn: -0.14,
-    },
-    // Station 3: Midship forward
-    {
-      z: 0.25,
-      yKeelOut: gSpecs.keelY,
-      wChineOut: 0.24,
-      yChineOut: -0.08,
-      wSheerOut: 0.33,
-      ySheerOut: 0.21,
-      wSheerIn: 0.29,
-      ySheerIn: 0.21,
-      wChineIn: 0.20,
-      yChineIn: -0.05,
-      yFloorIn: -0.14,
-    },
-    // Station 4: Forward
-    {
-      z: 0.70,
-      yKeelOut: -0.13,
-      wChineOut: 0.17,
-      yChineOut: -0.03,
-      wSheerOut: 0.26,
-      ySheerOut: 0.25,
-      wSheerIn: 0.22,
-      ySheerIn: 0.25,
-      wChineIn: 0.13,
-      yChineIn: 0.00,
-      yFloorIn: -0.09,
-    },
-    // Station 5: Bow shoulder
-    {
-      z: 1.02,
-      yKeelOut: -0.02,
-      wChineOut: 0.08,
-      yChineOut: 0.08,
-      wSheerOut: 0.16,
-      ySheerOut: 0.29,
-      wSheerIn: 0.12,
-      ySheerIn: 0.29,
-      wChineIn: 0.05,
-      yChineIn: 0.10,
-      yFloorIn: 0.00,
-    },
-    // Station 6: Bow stem tip
-    {
-      z: 1.20,
-      yKeelOut: 0.10,
-      wChineOut: 0.02,
-      yChineOut: 0.18,
-      wSheerOut: 0.04,
-      ySheerOut: gSpecs.bowSheerY,
-      wSheerIn: 0.02,
-      ySheerIn: gSpecs.bowSheerY,
-      wChineIn: 0.01,
-      yChineIn: 0.19,
-      yFloorIn: 0.11,
-    },
-  ];
+  const gheStations = GHE_STATIONS;
 
   // Construct skiff hull vertices: 10 vertices per station (outer and inner rings)
   // Indices per station:

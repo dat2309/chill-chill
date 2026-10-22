@@ -17,6 +17,7 @@ import {
   isInsidePhuQuocFootprint,
   PHUQUOC_FOOTPRINT_BOUNDS,
 } from './footprint';
+import { generateGheCavityShaderGlsl } from './boats';
 
 export interface PhuQuocWaterSystem {
   group: THREE.Group;
@@ -561,33 +562,7 @@ export function createPhuQuocWater(
           }
         }
 
-        // 2. Ghe Nho: transformed via exact inverse world matrix
-        vec4 localGhe4 = uGheInvMatrix * vec4(vWorldPos, 1.0);
-        vec3 localGhe = localGhe4.xyz / localGhe4.w;
-
-        // In Ghe local space (transom at -1.18, bow at +1.15):
-        if (localGhe.z >= -1.18 && localGhe.z <= 1.15) {
-          float lz = localGhe.z;
-          float normZ = lz < 0.0 ? (lz / 1.18) : (lz / 1.15); // -1 at stern, 0 at mid, +1 at bow
-          float floorY = lz < 0.0 ? mix(-0.14, -0.11, -normZ) : mix(-0.14, 0.06, normZ);
-          float sheerY = lz < 0.0 ? mix(0.20, 0.24, -normZ) : mix(0.20, 0.32, normZ);
-
-          if (localGhe.y >= floorY && localGhe.y <= sheerY) {
-            float sheerHalfW = lz < 0.0
-              ? mix(0.30, 0.21, -normZ)
-              : (normZ < 0.65 ? mix(0.30, 0.22, normZ / 0.65) : mix(0.22, 0.03, (normZ - 0.65) / 0.35));
-            float floorHalfW = lz < 0.0
-              ? mix(0.20, 0.14, -normZ)
-              : mix(0.20, 0.02, normZ);
-
-            float yFrac = clamp((localGhe.y - floorY) / max(0.01, sheerY - floorY), 0.0, 1.0);
-            float innerW = mix(floorHalfW, sheerHalfW, yFrac);
-
-            if (abs(localGhe.x) < innerW - 0.015) {
-              discard;
-            }
-          }
-        }
+${generateGheCavityShaderGlsl()}
 
         // Calculate physical water depth
         float depth = max(0.0, uWaterLevel - vTerrainH);
