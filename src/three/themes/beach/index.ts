@@ -37,9 +37,12 @@ export class BeachTheme implements ThemeInstance<'beach'> {
   }
 
   async init(): Promise<void> {
+    const nextFrame = () =>
+      new Promise((r) => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(r) : setTimeout(r, 0)));
+
     // 1. Terrain & Shoreline
     this.terrain = createBeachTerrain(this.group);
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 2. Tropical Water
     this.water = createBeachWater(
@@ -47,18 +50,18 @@ export class BeachTheme implements ThemeInstance<'beach'> {
       this.group,
       (x, z) => this.terrain.getHeightAt(x, z)
     );
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 3. Stilt Bungalows & Pier
     this.architecture = createBeachArchitecture(
       this.group,
       (x, z) => this.terrain.getHeightAt(x, z)
     );
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 4. Vietnamese Boats (Thung & Ghe)
     this.boats = createBeachBoats(this.group);
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 5. Tropical Vegetation (Palms, pines)
     this.vegetation = createBeachVegetation(
@@ -66,22 +69,23 @@ export class BeachTheme implements ThemeInstance<'beach'> {
       (x, z) => this.terrain.getHeightAt(x, z),
       (x, z) => this.terrain.getSlopeAt(x, z)
     );
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 6. Tropical Fish
     this.fish = createBeachFish(
       this.group,
       (x, z) => this.terrain.getHeightAt(x, z)
     );
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 7. Weather & Tropical Rain
     this.weather = createBeachWeather(
       this.group,
       (season, progress) => {
-        this.terrain.updateSeason(season, progress);
-        this.architecture.updateSeason(season, progress);
-        this.vegetation.updateSeason(season, progress);
+        // Continuous transition factor [0, 1] applied uniformly across all subsystems
+        this.terrain.updateSeason(progress);
+        this.architecture.updateSeason(progress);
+        this.vegetation.updateSeason(progress);
       },
       (x, z, strength) => {
         if (this.isInWater(x, z) && !this.architecture.isUnderRoof(x, z)) {
@@ -132,17 +136,20 @@ export class BeachTheme implements ThemeInstance<'beach'> {
 
     const waterLevel = this.water?.getWaterLevel() ?? 0.3;
 
-    // 1. Weather update first to obtain exact smooth rain intensity over dt
-    this.weather?.update(dt, elapsed, state.windStrength, waterLevel);
+    // 1. Advance weather progress over dt first to obtain continuous rain intensity
+    this.weather?.updateProgress(dt);
     const rainIntensity = this.weather?.getRainIntensity() ?? 0.0;
 
-    // 2. Compute harmonized effective wind combining user slider and rain preset
+    // 2. Compute harmonized effective wind combining user slider and continuous rain preset
     // (creates moderate ocean swell without turning into an exaggerated hurricane)
     const effectiveWind = THREE.MathUtils.clamp(
       state.windStrength * (1.0 + rainIntensity * 0.50) + rainIntensity * 0.15,
       0.1,
       1.2
     );
+
+    // 3. Falling raindrops animated using the unified effectiveWind
+    this.weather?.updateRaindrops(dt, elapsed, effectiveWind, waterLevel);
 
     const beachThemeState: BeachState = {
       timeOfDay: state.timeOfDay,
@@ -155,9 +162,9 @@ export class BeachTheme implements ThemeInstance<'beach'> {
       quality: this.currentQuality,
     };
 
-    // Subsystem updates with synchronized effective weather
+    // 4. Subsystem updates with synchronized continuous weather & lighting
     const scene = (this.group.parent as THREE.Scene) || undefined;
-    this.lighting?.update(beachThemeState, scene);
+    this.lighting?.update(beachThemeState, scene, rainIntensity);
     if (this.lighting && this.water) {
       this.water.setSunLighting(this.lighting.sunDirection, this.lighting.sunColor, this.lighting.skyColor);
     }

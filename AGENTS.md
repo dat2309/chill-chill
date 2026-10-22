@@ -49,6 +49,8 @@
 - Mưa biển tác động đồng thời và hài hòa lên độ cao sóng swell, bọt sóng vỡ tự nhiên (không dùng dải contour song song cứng), độ đục (turbidity), độ nhám tán xạ bề mặt và độ chao đảo của phương tiện nổi. Gió hiệu dụng tăng vừa phải theo mưa, không biến cảnh thành bão quá mức.
 - Giữ vững bản sắc và khí hậu từng chủ đề: Chillax Garden là thung lũng suối ôn đới có chu kỳ 4 mùa với băng tuyết mùa đông; Sunset Beach (beach) là biển đảo nhiệt đới chỉ có mùa khô và mùa mưa, không áp đặt tuyết hoặc đóng băng vào vùng biển nhiệt đới.
 - Thao tác tương tác của người dùng (slider điều khiển, click tạo sóng) phải tương thích với trạng thái vật lý thực tế: trên mặt băng đóng kín không tạo sóng nước lỏng; ở vùng nước hở vẫn tương tác bình thường; slider gió kết hợp mượt mà với preset thời tiết theo biên độ rõ ràng.
+- Đảo chiều chuyển mùa giữa chừng (reversal giữa dry và rainy) phải tiếp tục mượt mà từ giá trị hiện tại theo thời gian thực qua dt, không khởi động lại từ đầu hoặc gây bước nhảy màu/ánh sáng đột ngột; toàn bộ cảnh (mưa, vật liệu, bầu trời, ánh sáng, nước) dùng chung một hệ số tiến độ liên tục.
+- Vùng băng hiển thị trên shader và vùng chặn tương tác trên CPU phải đồng nhất tuyệt đối: dùng cùng mực nước địa phương theo tọa độ z và tide hiện tại, cùng địa hình và quy tắc đánh giá băng; phân biệt rõ băng chuyển tiếp và băng đủ kín để chặn tương tác; không dùng mực nước hồ tiền cảnh cho thượng nguồn hay suối dốc.
 
 ## Kiểm tra và review
 

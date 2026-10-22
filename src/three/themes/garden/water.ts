@@ -15,6 +15,7 @@ import {
   isInWater as checkIsInWater,
   getTideOffset,
   getGardenIcePotential,
+  getGardenLocalIce,
   isGardenWaterFrozen,
 } from './streamProfile';
 import { isInsideGardenFootprint } from './footprint';
@@ -31,6 +32,7 @@ export interface WaterSystem {
   setFreezeProgress(progress: number): void;
   getFreezeProgress(): number;
   isFrozen(x: number, z: number): boolean;
+  getLocalIce(x: number, z: number): number;
   dispose(): void;
 }
 
@@ -568,7 +570,7 @@ export function createWater(
 
   const geometry = createStreamGeometry(getHeightAt);
 
-  const isWebGL2 = Boolean(renderer.capabilities.isWebGL2);
+  const isWebGL2 = Boolean(renderer?.capabilities?.isWebGL2);
   let gpuSimulationSupported = false;
 
   const rtType = isWebGL2 ? THREE.HalfFloatType : THREE.UnsignedByteType;
@@ -626,24 +628,27 @@ export function createWater(
 
   // Robust capability test using checkFramebufferStatus
   try {
-    const gl = renderer.getContext();
-    const prevRT = renderer.getRenderTarget();
-    renderer.setRenderTarget(currentRT);
-    renderer.render(simScene, simCamera);
-    const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (fbStatus === gl.FRAMEBUFFER_COMPLETE) {
-      gpuSimulationSupported = true;
-    } else {
-      console.warn('GPU ripple simulation not supported by framebuffer status:', fbStatus);
-      gpuSimulationSupported = false;
-    }
+    if (renderer && typeof renderer.getContext === 'function') {
+      const gl = renderer.getContext();
+      if (gl) {
+        const prevRT = renderer.getRenderTarget();
+        renderer.setRenderTarget(currentRT);
+        renderer.render(simScene, simCamera);
+        const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        if (fbStatus === gl.FRAMEBUFFER_COMPLETE) {
+          gpuSimulationSupported = true;
+        } else {
+          gpuSimulationSupported = false;
+        }
 
-    // Initialize simulation fields deterministically to zero state
-    renderer.setRenderTarget(currentRT);
-    renderer.clearColor();
-    renderer.setRenderTarget(nextRT);
-    renderer.clearColor();
-    renderer.setRenderTarget(prevRT);
+        // Initialize simulation fields deterministically to zero state
+        renderer.setRenderTarget(currentRT);
+        renderer.clearColor();
+        renderer.setRenderTarget(nextRT);
+        renderer.clearColor();
+        renderer.setRenderTarget(prevRT);
+      }
+    }
   } catch (err) {
     console.warn('GPU ripple simulation fallback to analytical ripples:', err);
     gpuSimulationSupported = false;
@@ -694,13 +699,37 @@ export function createWater(
   let currentElapsed = 0;
   let simAccumulator = 0.0;
   const FIXED_TIMESTEP = 1.0 / 60.0;
+  let lastIceTideOffset = currentTideOffset;
+
+  function updateIcePotentials(tideOffset: number): void {
+    const iceAttr = geometry.getAttribute('aIcePotential') as THREE.BufferAttribute | undefined;
+    const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    const terrainAttr = geometry.getAttribute('aTerrainHeight') as THREE.BufferAttribute | undefined;
+    if (!iceAttr || !posAttr || !terrainAttr) return;
+
+    const count = iceAttr.count;
+    for (let i = 0; i < count; i++) {
+      const x = posAttr.getX(i);
+      const z = posAttr.getZ(i);
+      const tH = terrainAttr.getX(i);
+      const waterSurfaceY = getWaterSurfaceHeight(z, tideOffset);
+      iceAttr.setX(i, getGardenIcePotential(x, z, waterSurfaceY, tH));
+    }
+    iceAttr.needsUpdate = true;
+  }
 
   function isFrozen(worldX: number, worldZ: number): boolean {
-    return isGardenWaterFrozen(worldX, worldZ, currentFreezeProgress, getWaterLevel(), getHeightAt(worldX, worldZ));
+    const localWaterLevel = getWaterSurfaceHeight(worldZ, currentTideOffset);
+    return isGardenWaterFrozen(worldX, worldZ, currentFreezeProgress, localWaterLevel, getHeightAt(worldX, worldZ));
+  }
+
+  function getLocalIce(worldX: number, worldZ: number): number {
+    const localWaterLevel = getWaterSurfaceHeight(worldZ, currentTideOffset);
+    return getGardenLocalIce(worldX, worldZ, currentFreezeProgress, localWaterLevel, getHeightAt(worldX, worldZ));
   }
 
   function addRipple(worldX: number, worldZ: number, strength: number): void {
-    // Suppress liquid ripples on frozen ice surface
+    // Suppress liquid ripples on solid frozen ice surface
     if (isFrozen(worldX, worldZ)) {
       return;
     }
@@ -736,6 +765,10 @@ export function createWater(
       tideTransition = 1.0;
       waterUniforms.uTideOffset.value = target;
       waterUniforms.uWaterLevel.value = BASE_WATER_LEVEL + target;
+      if (Math.abs(currentTideOffset - lastIceTideOffset) > 0.001) {
+        updateIcePotentials(currentTideOffset);
+        lastIceTideOffset = currentTideOffset;
+      }
     } else {
       startTideOffset = currentTideOffset;
       targetTideOffset = target;
@@ -764,6 +797,10 @@ export function createWater(
       currentTideOffset = THREE.MathUtils.lerp(startTideOffset, targetTideOffset, s);
       waterUniforms.uTideOffset.value = currentTideOffset;
       waterUniforms.uWaterLevel.value = BASE_WATER_LEVEL + currentTideOffset;
+      if (Math.abs(currentTideOffset - lastIceTideOffset) > 0.002) {
+        updateIcePotentials(currentTideOffset);
+        lastIceTideOffset = currentTideOffset;
+      }
     }
 
     waterUniforms.uTime.value = elapsed;
@@ -836,6 +873,7 @@ export function createWater(
     setFreezeProgress,
     getFreezeProgress,
     isFrozen,
+    getLocalIce,
     dispose() {
       geometry.dispose();
       waterMaterial.dispose();

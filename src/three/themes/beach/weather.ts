@@ -5,6 +5,8 @@ import { Quality } from '../../core/types';
 export interface BeachWeatherSystem {
   group: THREE.Group;
   update(dt: number, elapsed: number, windStrength: number, waterLevel?: number): void;
+  updateProgress(dt: number): void;
+  updateRaindrops(dt: number, elapsed: number, effectiveWind: number, waterLevel?: number): void;
   setSeason(targetSeason: BeachSeason): void;
   setQuality(quality: Quality): void;
   getRainIntensity(): number;
@@ -63,12 +65,11 @@ export function createBeachWeather(
   const rainLines = new THREE.LineSegments(rainGeo, rainMat);
   weatherGroup.add(rainLines);
 
-  // Transition state: snapshot-based smooth blend
+  // Continuous weather transition factor in [0, 1]: 0.0 = dry, 1.0 = rainy
+  let currentRainFactor = 0.0;
+  let targetRainFactor = 0.0;
   let currentSeason: BeachSeason = 'dry';
   let targetSeason: BeachSeason = 'dry';
-  let transitionProgress = 1.0;
-  let startOpacity = 0.0;
-  let targetOpacity = 0.0;
   const TRANSITION_DURATION = 1.8;
 
   let lastSplashSimTime = 0;
@@ -95,73 +96,85 @@ export function createBeachWeather(
   // Update initial visibility
   rainLines.visible = !prefersReducedMotion && rainMat.opacity > 0.005;
 
-  return {
-    group: weatherGroup,
-    update(dt: number, elapsed: number, windStrength: number, waterLevel: number = 0.3) {
-      // 1. Progress smooth season blend from snapshot
-      if (transitionProgress < 1.0) {
-        transitionProgress += dt / TRANSITION_DURATION;
-        if (transitionProgress >= 1.0) {
-          transitionProgress = 1.0;
-          currentSeason = targetSeason;
-        }
-
-        const t = transitionProgress;
-        rainMat.opacity = startOpacity + (targetOpacity - startOpacity) * (t * t * (3 - 2 * t));
-        onSeasonProgress(targetSeason, transitionProgress);
+  function updateProgress(dt: number): void {
+    if (Math.abs(currentRainFactor - targetRainFactor) > 0.0001) {
+      const step = dt / TRANSITION_DURATION;
+      if (currentRainFactor < targetRainFactor) {
+        currentRainFactor = Math.min(targetRainFactor, currentRainFactor + step);
+      } else {
+        currentRainFactor = Math.max(targetRainFactor, currentRainFactor - step);
       }
+      if (currentRainFactor === targetRainFactor) {
+        currentSeason = targetSeason;
+      }
+    }
+    rainMat.opacity = currentRainFactor * 0.48;
+    onSeasonProgress(targetSeason, currentRainFactor);
+  }
 
-      const shouldRenderRain = rainMat.opacity > 0.005 && !prefersReducedMotion;
-      rainLines.visible = shouldRenderRain;
+  function updateRaindrops(dt: number, elapsed: number, effectiveWind: number, waterLevel: number = 0.3): void {
+    const shouldRenderRain = rainMat.opacity > 0.005 && !prefersReducedMotion;
+    rainLines.visible = shouldRenderRain;
 
-      // 2. Animate raindrops if visible
-      if (shouldRenderRain) {
-        const positions = rainGeo.attributes.position.array as Float32Array;
-        const windTilt = windStrength * 0.8;
+    if (shouldRenderRain) {
+      const positions = rainGeo.attributes.position.array as Float32Array;
+      const windTilt = effectiveWind * 0.8;
 
-        for (let i = 0; i < activeDropCount; i++) {
-          const idx = i * 6;
-          const dropDt = rainVelocities[i] * dt;
-          const len = streakLengths[i];
+      for (let i = 0; i < activeDropCount; i++) {
+        const idx = i * 6;
+        const dropDt = rainVelocities[i] * dt;
+        const len = streakLengths[i];
 
-          positions[idx + 1] -= dropDt;
-          positions[idx] += windTilt * dt * 3.0;
+        positions[idx + 1] -= dropDt;
+        positions[idx] += windTilt * dt * 3.0;
 
-          // Trail vertex
-          positions[idx + 3] = positions[idx] - windTilt * 0.25;
+        // Trail vertex
+        positions[idx + 3] = positions[idx] - windTilt * 0.25;
+        positions[idx + 4] = positions[idx + 1] - len;
+        positions[idx + 5] = positions[idx + 2];
+
+        // Check hit against physical sea level (waterLevel)
+        if (positions[idx + 1] <= waterLevel) {
+          // Splash ripple using engine simulation time
+          if (onRainSplash && elapsed - lastSplashSimTime > 0.14 && Math.random() < 0.28) {
+            onRainSplash(positions[idx], positions[idx + 2], 0.16);
+            lastSplashSimTime = elapsed;
+          }
+
+          // Recycle raindrop to top
+          positions[idx] = (Math.random() - 0.5) * DIORAMA_WIDTH * 1.1;
+          positions[idx + 1] = 8.0 + Math.random() * 2.0;
+          positions[idx + 2] = (Math.random() - 0.5) * DIORAMA_DEPTH * 1.1;
+
+          positions[idx + 3] = positions[idx];
           positions[idx + 4] = positions[idx + 1] - len;
           positions[idx + 5] = positions[idx + 2];
-
-          // Check hit against physical sea level (waterLevel)
-          if (positions[idx + 1] <= waterLevel) {
-            // Splash ripple using engine simulation time
-            if (onRainSplash && elapsed - lastSplashSimTime > 0.14 && Math.random() < 0.28) {
-              onRainSplash(positions[idx], positions[idx + 2], 0.16);
-              lastSplashSimTime = elapsed;
-            }
-
-            // Recycle raindrop to top
-            positions[idx] = (Math.random() - 0.5) * DIORAMA_WIDTH * 1.1;
-            positions[idx + 1] = 8.0 + Math.random() * 2.0;
-            positions[idx + 2] = (Math.random() - 0.5) * DIORAMA_DEPTH * 1.1;
-
-            positions[idx + 3] = positions[idx];
-            positions[idx + 4] = positions[idx + 1] - len;
-            positions[idx + 5] = positions[idx + 2];
-          }
         }
-        rainGeo.attributes.position.needsUpdate = true;
       }
+      rainGeo.attributes.position.needsUpdate = true;
+    }
+  }
+
+  return {
+    group: weatherGroup,
+    updateProgress,
+    updateRaindrops,
+    update(dt: number, elapsed: number, windStrength: number, waterLevel: number = 0.3) {
+      updateProgress(dt);
+      const rainIntensity = currentRainFactor;
+      const effectiveWind = THREE.MathUtils.clamp(
+        windStrength * (1.0 + rainIntensity * 0.50) + rainIntensity * 0.15,
+        0.1,
+        1.2
+      );
+      updateRaindrops(dt, elapsed, effectiveWind, waterLevel);
     },
     setSeason(newSeason: BeachSeason) {
-      if (newSeason === targetSeason) return;
       targetSeason = newSeason;
-      startOpacity = rainMat.opacity;
-      targetOpacity = newSeason === 'rainy' ? 0.48 : 0.0;
-      transitionProgress = 0.0;
+      targetRainFactor = newSeason === 'rainy' ? 1.0 : 0.0;
     },
     getRainIntensity(): number {
-      return THREE.MathUtils.clamp(rainMat.opacity / 0.48, 0.0, 1.0);
+      return currentRainFactor;
     },
     setQuality(quality: Quality) {
       const prevCount = activeDropCount;

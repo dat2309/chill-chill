@@ -33,7 +33,7 @@ export interface BeachTerrainSystem {
   getHeightAt(x: number, z: number): number;
   getNormalAt(x: number, z: number): THREE.Vector3;
   getSlopeAt(x: number, z: number): number;
-  updateSeason(season: BeachSeason, t: number): void;
+  updateSeason(season: BeachSeason | number, t?: number): void;
   dispose(): void;
 }
 export type PhuQuocTerrainSystem = BeachTerrainSystem;
@@ -475,13 +475,19 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     getHeightAt: sampleHeight,
     getNormalAt: sampleNormal,
     getSlopeAt: sampleSlope,
-    updateSeason(season: BeachSeason, t: number) {
+    updateSeason(seasonOrFactor: BeachSeason | number, t?: number) {
       const colorAttr = topGeo.attributes.color as THREE.BufferAttribute;
-      const targetColors = season === 'rainy' ? rainyColors : dryColors;
-      const fromColors = season === 'rainy' ? dryColors : rainyColors;
+      let rainFactor: number;
+      if (typeof seasonOrFactor === 'number') {
+        rainFactor = THREE.MathUtils.clamp(seasonOrFactor, 0.0, 1.0);
+      } else if (t !== undefined) {
+        rainFactor = seasonOrFactor === 'rainy' ? t : (1.0 - t);
+      } else {
+        rainFactor = seasonOrFactor === 'rainy' ? 1.0 : 0.0;
+      }
 
       for (let i = 0; i < topVertCount * 3; i++) {
-        colorAttr.array[i] = fromColors[i] + (targetColors[i] - fromColors[i]) * t;
+        colorAttr.array[i] = dryColors[i] + (rainyColors[i] - dryColors[i]) * rainFactor;
       }
       colorAttr.needsUpdate = true;
     },

@@ -50,6 +50,8 @@ import {
   isInsideGheCavity,
   isPointInBoatCavity,
 } from '../src/three/themes/beach/boats';
+import { BeachTheme } from '../src/three/themes/beach/index';
+import { createBeachWeather } from '../src/three/themes/beach/weather';
 import {
   sanitizeGardenState,
   sanitizeBeachState,
@@ -1479,14 +1481,99 @@ assert(!outsideInCavity, 'Point 2m away from boat is NOT inside cavity');
 
 boatsSys.dispose();
 
-// Summary
-const totalPassed = results.filter((r) => r.passed).length;
-console.log('----------------------------------------------------');
-console.log(`TOTAL TESTS: ${results.length} | PASSED: ${totalPassed} | FAILED: ${results.length - totalPassed}`);
-if (totalPassed === results.length) {
-  console.log('>>> ALL PHU QUOC & MULTI-THEME VALIDATION TESTS PASSED! <<<');
-  process.exit(0);
-} else {
-  console.error('>>> SOME VALIDATION TESTS FAILED! <<<');
+(async () => {
+  // 5. Beach Continuous Season Transition Reversal & Effective Wind
+  const bTheme = new BeachTheme({} as THREE.WebGLRenderer);
+  await bTheme.init();
+
+  // 5.1 Reversal after 0.3s: subsequent 0.001s update must not cause color step jump
+  const beachBaseState = { themeId: 'beach' as const, ...DEFAULT_BEACH_STATE };
+  bTheme.applyState({ ...beachBaseState, season: 'dry' });
+  for (let i = 0; i < 5; i++) {
+    bTheme.update(0.016, i * 0.016, { ...beachBaseState, season: 'dry' });
+  }
+  assert(bTheme.getRainIntensity() === 0.0, 'Beach starts at 0.0 rain intensity in dry season');
+
+  // Trigger rainy transition
+  bTheme.applyState({ ...beachBaseState, season: 'rainy' });
+  for (let i = 0; i < 18; i++) { // ~0.3s elapsed
+    bTheme.update(0.01667, 0.1 + i * 0.01667, { ...beachBaseState, season: 'rainy' });
+  }
+  const rainAt03 = bTheme.getRainIntensity();
+  assert(rainAt03 > 0.12 && rainAt03 < 0.22, `Rain intensity at ~0.3s is within expected transition range [0.12, 0.22] (actual: ${rainAt03.toFixed(3)})`);
+
+  // Query terrain and sky colors before reversal
+  const beachTerrainMesh = (bTheme as any).terrain.group.children.find((c: any) => c instanceof THREE.Mesh && c.receiveShadow) as THREE.Mesh;
+  const topGeoColors = Array.from((beachTerrainMesh.geometry.getAttribute('color') as THREE.BufferAttribute).array as Float32Array);
+
+  const skyTop0 = new THREE.Color(), skyMid0 = new THREE.Color(), skyBot0 = new THREE.Color();
+  getBeachSkyGradient(17.75, rainAt03, skyTop0, skyMid0, skyBot0);
+
+  // Reversal: switch back to dry mid-transition
+  bTheme.applyState({ ...beachBaseState, season: 'dry' });
+
+  // Update immediately with tiny dt = 0.001s
+  bTheme.update(0.001, 0.401, { ...beachBaseState, season: 'dry' });
+
+  const rainAfter0001 = bTheme.getRainIntensity();
+  assert(rainAfter0001 <= rainAt03, 'Rain intensity smoothly reverses towards 0 without snapping');
+
+  const topGeoColorsAfter = Array.from((beachTerrainMesh.geometry.getAttribute('color') as THREE.BufferAttribute).array as Float32Array);
+  let maxTerrainColorJump = 0;
+  for (let i = 0; i < topGeoColors.length; i++) {
+    const d = Math.abs(topGeoColors[i] - topGeoColorsAfter[i]);
+    if (d > maxTerrainColorJump) maxTerrainColorJump = d;
+  }
+  assert(
+    maxTerrainColorJump < 0.005,
+    `Mid-transition reversal at 0.3s: updating 0.001s has max color jump of ${(maxTerrainColorJump * 255).toFixed(2)}/255 (threshold <= 1.0/255)`
+  );
+
+  const skyTop1 = new THREE.Color(), skyMid1 = new THREE.Color(), skyBot1 = new THREE.Color();
+  getBeachSkyGradient(17.75, rainAfter0001, skyTop1, skyMid1, skyBot1);
+  const skyJump = Math.max(
+    Math.abs(skyTop0.r - skyTop1.r),
+    Math.abs(skyTop0.g - skyTop1.g),
+    Math.abs(skyTop0.b - skyTop1.b)
+  );
+  assert(skyJump < 0.005, `Sky gradient continuity across reversal: jump ${(skyJump * 255).toFixed(2)}/255 <= 1.0/255`);
+
+  // Run to completion towards dry
+  for (let i = 0; i < 120; i++) {
+    bTheme.update(0.02, 0.5 + i * 0.02, { ...beachBaseState, season: 'dry' });
+  }
+  assert(bTheme.getRainIntensity() === 0.0, 'Beach smoothly finishes transition and settles at 0.0 rain intensity');
+
+  // 5.2 Unified Effective Wind Consistency
+  const baseWind = 0.35;
+  const effectiveWindDry = bTheme.getEffectiveWind();
+  assert(Math.abs(effectiveWindDry - baseWind) < 0.001, `In dry season, effective wind (${effectiveWindDry.toFixed(3)}) equals base wind (${baseWind})`);
+
+  bTheme.applyState({ ...beachBaseState, season: 'rainy' });
+  for (let i = 0; i < 120; i++) {
+    bTheme.update(0.02, 3.0 + i * 0.02, { ...beachBaseState, season: 'rainy' });
+  }
+  const effectiveWindRainy = bTheme.getEffectiveWind();
+  const expectedRainyWind = THREE.MathUtils.clamp(baseWind * 1.5 + 0.15, 0.1, 1.2);
+  assert(
+    Math.abs(effectiveWindRainy - expectedRainyWind) < 0.001,
+    `In full rainy season, effective wind (${effectiveWindRainy.toFixed(3)}) matches harmonized formula (${expectedRainyWind.toFixed(3)})`
+  );
+
+  bTheme.dispose();
+
+  // Summary
+  const totalPassed = results.filter((r) => r.passed).length;
+  console.log('----------------------------------------------------');
+  console.log(`TOTAL TESTS: ${results.length} | PASSED: ${totalPassed} | FAILED: ${results.length - totalPassed}`);
+  if (totalPassed === results.length) {
+    console.log('>>> ALL PHU QUOC & MULTI-THEME VALIDATION TESTS PASSED! <<<');
+    process.exit(0);
+  } else {
+    console.error('>>> SOME VALIDATION TESTS FAILED! <<<');
+    process.exit(1);
+  }
+})().catch((err) => {
+  console.error(err);
   process.exit(1);
-}
+});

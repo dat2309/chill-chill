@@ -77,15 +77,19 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 
 /**
  * Pure evaluation of the 3-stop Beach sky gradient across 24h.
+ * Smoothly interpolates with continuous rain intensity in [0, 1] or BeachSeason.
  */
 export function getBeachSkyGradient(
   timeOfDay: number,
-  season: BeachSeason,
+  seasonOrIntensity: BeachSeason | number,
   outTop: THREE.Color,
   outMid: THREE.Color,
   outBot: THREE.Color
 ): { top: THREE.Color; mid: THREE.Color; bot: THREE.Color } {
   const tod = ((timeOfDay % 24) + 24) % 24;
+  const intensity = typeof seasonOrIntensity === 'number'
+    ? THREE.MathUtils.clamp(seasonOrIntensity, 0.0, 1.0)
+    : (seasonOrIntensity === 'rainy' ? 1.0 : 0.0);
 
   // 1. Base dry sky continuous timeline
   if (tod < 4.8) {
@@ -136,7 +140,7 @@ export function getBeachSkyGradient(
 
   // Monsoon Rainy Season Adjustments:
   // Multiply rain blend by daylightFactor so night sky is NEVER pulled towards bright daytime gray
-  if (season === 'rainy') {
+  if (intensity > 0.0001) {
     const daylightFactor = smoothstep(4.8, 7.5, tod) * (1.0 - smoothstep(16.2, 20.0, tod));
     const sunsetFactor = smoothstep(16.5, 17.6, tod) * (1.0 - smoothstep(18.25, 19.4, tod));
 
@@ -144,12 +148,12 @@ export function getBeachSkyGradient(
     tmpRainTargetMid.copy(cRainyDayMid).lerp(cRainySunsetMid, sunsetFactor);
     tmpRainTargetBot.copy(cRainyDayBot).lerp(cRainySunsetBot, sunsetFactor);
 
-    const rainBlend = (0.45 + 0.10 * sunsetFactor) * daylightFactor;
+    const rainBlend = (0.45 + 0.10 * sunsetFactor) * daylightFactor * intensity;
     outTop.lerp(tmpRainTargetTop, rainBlend);
     outMid.lerp(tmpRainTargetMid, rainBlend);
     outBot.lerp(tmpRainTargetBot, rainBlend);
 
-    const nightDarken = (1.0 - daylightFactor) * 0.12;
+    const nightDarken = (1.0 - daylightFactor) * 0.12 * intensity;
     outTop.multiplyScalar(1.0 - nightDarken);
     outMid.multiplyScalar(1.0 - nightDarken);
     outBot.multiplyScalar(1.0 - nightDarken);
@@ -167,7 +171,7 @@ export interface BeachLightingSystem {
   sunDirection: THREE.Vector3;
   sunColor: THREE.Color;
   skyColor: THREE.Color;
-  update(state: BeachState, scene?: THREE.Scene): void;
+  update(state: BeachState, scene?: THREE.Scene, rainIntensity?: number): void;
   dispose(): void;
 }
 export type PhuQuocLightingSystem = BeachLightingSystem;
@@ -234,7 +238,7 @@ export function createBeachLighting(
     sunDirection: sunDir,
     sunColor: sunCol,
     skyColor: skyCol,
-    update(state: BeachState, activeScene?: THREE.Scene) {
+    update(state: BeachState, activeScene?: THREE.Scene, rainIntensity?: number) {
       if (activeScene) {
         boundScene = activeScene;
       }
@@ -315,12 +319,16 @@ export function createBeachLighting(
 
       dirLight.color.copy(sunCol);
 
-      if (state.season === 'rainy') {
+      const rainFactor = rainIntensity !== undefined
+        ? THREE.MathUtils.clamp(rainIntensity, 0.0, 1.0)
+        : (state.season === 'rainy' ? 1.0 : 0.0);
+
+      if (rainFactor > 0.0001) {
         const daylightFactor = smoothstep(4.8, 7.5, tod) * (1.0 - smoothstep(16.5, 19.8, tod));
-        dirLight.intensity *= (1.0 - 0.35 * daylightFactor);
+        dirLight.intensity *= (1.0 - 0.35 * daylightFactor * rainFactor);
       }
 
-      getBeachSkyGradient(tod, state.season, tmpTop, tmpMid, tmpBot);
+      getBeachSkyGradient(tod, rainFactor, tmpTop, tmpMid, tmpBot);
 
       skyCol.copy(tmpMid).lerp(tmpBot, 0.45);
 

@@ -7,7 +7,7 @@ import { SeededRandom } from '../../core/noise';
 export interface BeachVegetationSystem {
   group: THREE.Group;
   update(dt: number, elapsed: number, windStrength: number): void;
-  updateSeason(season: BeachSeason, t: number): void;
+  updateSeason(season: BeachSeason | number, t?: number): void;
   dispose(): void;
 }
 export type PhuQuocVegetationSystem = BeachVegetationSystem;
@@ -275,8 +275,16 @@ export function createBeachVegetation(
         item.mesh.rotation.x = item.baseRotation.x + Math.cos(timeOffset * 0.8) * item.swayScale * 0.5 * windStrength;
       });
     },
-    updateSeason(season: BeachSeason, t: number) {
-      palmFrondMat.color.lerpColors(dryGreen, lushGreen, season === 'rainy' ? t : 1 - t);
+    updateSeason(seasonOrFactor: BeachSeason | number, t?: number) {
+      let rainFactor: number;
+      if (typeof seasonOrFactor === 'number') {
+        rainFactor = THREE.MathUtils.clamp(seasonOrFactor, 0.0, 1.0);
+      } else if (t !== undefined) {
+        rainFactor = seasonOrFactor === 'rainy' ? t : (1.0 - t);
+      } else {
+        rainFactor = seasonOrFactor === 'rainy' ? 1.0 : 0.0;
+      }
+      palmFrondMat.color.lerpColors(dryGreen, lushGreen, rainFactor);
     },
     dispose() {
       geometriesToDispose.forEach((g) => g.dispose());

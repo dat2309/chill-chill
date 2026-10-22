@@ -58,6 +58,9 @@ export function checkRenderTargetSupport(
   renderer: THREE.WebGLRenderer,
   type: THREE.TextureDataType
 ): boolean {
+  if (!renderer || typeof renderer.getRenderTarget !== 'function' || typeof renderer.getContext !== 'function') {
+    return false;
+  }
   let testTarget: THREE.WebGLRenderTarget | null = null;
   const prevRT = renderer.getRenderTarget();
   try {

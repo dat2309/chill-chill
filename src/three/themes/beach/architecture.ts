@@ -7,7 +7,7 @@ export interface BeachArchitectureSystem {
   emissiveMeshes: THREE.Mesh[];
   lanternLights: THREE.PointLight[];
   update(dt: number, elapsed: number, timeOfDay: number): void;
-  updateSeason(season: BeachSeason, t: number): void;
+  updateSeason(season: BeachSeason | number, t?: number): void;
   isUnderRoof(x: number, z: number): boolean;
   dispose(): void;
 }
@@ -340,10 +340,17 @@ export function createBeachArchitecture(
         light.intensity = lanternFactor * 0.9;
       });
     },
-    updateSeason(season: BeachSeason, t: number) {
+    updateSeason(seasonOrFactor: BeachSeason | number, t?: number) {
       // In rainy season, thatch roof absorbs moisture and darkens slightly
-      const targetColor = season === 'rainy' ? BEACH_COLORS.wood.thatchWet : BEACH_COLORS.wood.thatch;
-      thatchMatDry.color.lerp(targetColor, t);
+      let rainFactor: number;
+      if (typeof seasonOrFactor === 'number') {
+        rainFactor = THREE.MathUtils.clamp(seasonOrFactor, 0.0, 1.0);
+      } else if (t !== undefined) {
+        rainFactor = seasonOrFactor === 'rainy' ? t : (1.0 - t);
+      } else {
+        rainFactor = seasonOrFactor === 'rainy' ? 1.0 : 0.0;
+      }
+      thatchMatDry.color.copy(BEACH_COLORS.wood.thatch).lerp(BEACH_COLORS.wood.thatchWet, rainFactor);
     },
     isUnderRoof(x: number, z: number): boolean {
       for (const spot of BUNGALOW_SPOTS) {

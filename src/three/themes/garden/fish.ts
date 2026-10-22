@@ -510,9 +510,9 @@ export function createFish(
     },
 
     reactToRipple(x: number, z: number): void {
-      if (currentFreezeProgress > 0.95) return; // Fish under solid ice ignore surface disturbance
       const RIPPLE_RADIUS = 2.4;
-      const fleeSuppression = 1.0 - currentFreezeProgress * 0.75;
+      // In winter, fish are more sluggish under cold water, but still respond to disturbances in open water
+      const fleeSuppression = 1.0 - currentFreezeProgress * 0.55;
       for (let i = 0; i < NUM_FISH; i++) {
         const fish = fishes[i];
         const dx = fish.position.x - x;

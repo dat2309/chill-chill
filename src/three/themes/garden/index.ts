@@ -37,9 +37,12 @@ export class GardenTheme implements ThemeInstance<'garden'> {
   }
 
   async init(): Promise<void> {
+    const nextFrame = () =>
+      new Promise((r) => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(r) : setTimeout(r, 0)));
+
     // 1. Terrain
     this.terrain = createTerrain(this.group as any);
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 2. Water
     this.water = createWater(
@@ -47,14 +50,14 @@ export class GardenTheme implements ThemeInstance<'garden'> {
       this.group as any,
       this.terrain.getHeightAt
     );
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 3. Architecture
     this.architecture = createArchitecture(
       this.group as any,
       this.terrain.getHeightAt
     );
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 4. Vegetation
     this.vegetation = createVegetation(
@@ -64,7 +67,7 @@ export class GardenTheme implements ThemeInstance<'garden'> {
       this.terrain.isInStream,
       this.terrain.isOnPlateau
     );
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 5. Fish
     this.fish = createFish(
@@ -72,7 +75,7 @@ export class GardenTheme implements ThemeInstance<'garden'> {
       this.terrain.getHeightAt,
       this.terrain.isInStream
     );
-    await new Promise((r) => requestAnimationFrame(r));
+    await nextFrame();
 
     // 6. Lighting & Emissive Cache
     this.lighting = createLighting(this.group as any);
@@ -167,6 +170,8 @@ export class GardenTheme implements ThemeInstance<'garden'> {
   }
 
   reactToSplash(worldX: number, worldZ: number): void {
+    // Solid ice suppresses surface splashes and prevents disturbing fish underneath
+    if (this.water?.isFrozen(worldX, worldZ)) return;
     this.fish?.reactToRipple(worldX, worldZ);
   }
 

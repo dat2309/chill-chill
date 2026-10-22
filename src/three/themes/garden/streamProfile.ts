@@ -300,20 +300,25 @@ export function isInWater(x: number, z: number, tideOffset: number = 0): boolean
  * Computes normalized ice potential P_ice in [0, 1] for Garden stream:
  * - Shallow banks & calm margins freeze first (P_ice closer to 1.0)
  * - Deep, central flowing channel retains lower freeze tendency (P_ice closer to 0.0)
+ * Uses the exact local water surface height along Z and current tide offset,
+ * preventing upper mountain gorge points from being measured against foreground lake elevation.
  */
 export function getGardenIcePotential(
   x: number,
   z: number,
-  waterLevel: number = BASE_WATER_LEVEL,
+  waterLevel?: number,
   terrainH?: number
 ): number {
   const center = getStreamCenter(z);
   const halfW = Math.max(0.3, getStreamHalfWidth(z));
   const distNorm = Math.min(1.0, Math.abs(x - center) / halfW);
 
+  // Local water surface height at coordinate z (with optional tide offset if provided)
+  const localWaterLevel = waterLevel !== undefined ? waterLevel : getWaterSurfaceHeight(z);
+
   const depth = terrainH !== undefined
-    ? Math.max(0.0, waterLevel - terrainH)
-    : getWaterDepth(x, z);
+    ? Math.max(0.0, localWaterLevel - terrainH)
+    : Math.max(0.0, localWaterLevel - getStreamBedHeight(x, z));
 
   const depthNorm = Math.min(1.0, depth / 0.22);
 
@@ -323,20 +328,42 @@ export function getGardenIcePotential(
 }
 
 /**
- * Checks whether water is frozen at (x, z) given current freezeProgress in [0, 1].
+ * Computes local ice factor [0, 1] matching the water vertex shader:
+ * smoothstep(threshold - 0.08, threshold + 0.08, aIcePotential) * step(0.01, uFreezeProgress).
+ * - 0.0: open liquid water
+ * - (0.0, 0.5): transitional frost / slush
+ * - >= 0.5: solid ice covering the surface
+ */
+export function getGardenLocalIce(
+  x: number,
+  z: number,
+  freezeProgress: number,
+  waterLevel?: number,
+  terrainH?: number
+): number {
+  if (freezeProgress <= 0.001) return 0.0;
+  const pIce = getGardenIcePotential(x, z, waterLevel, terrainH);
+  const threshold = 1.0 - 0.75 * freezeProgress;
+  const edge0 = threshold - 0.08;
+  const edge1 = threshold + 0.08;
+  const t = THREE.MathUtils.clamp((pIce - edge0) / (edge1 - edge0), 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
+/**
+ * Checks whether water is frozen solid at (x, z) given current freezeProgress in [0, 1].
+ * Distinguishes transitional ice (localIce < 0.5) from solid ice (localIce >= 0.5)
+ * that blocks surface ripples and fish disturbance reactions.
  * Even at full winter (freezeProgress = 1.0), the deepest central flowing channel
- * (P_ice < 0.25) can stay open as liquid water.
+ * (P_ice < 0.25, localIce = 0) remains open as liquid water.
  */
 export function isGardenWaterFrozen(
   x: number,
   z: number,
   freezeProgress: number,
-  waterLevel: number = BASE_WATER_LEVEL,
+  waterLevel?: number,
   terrainH?: number
 ): boolean {
   if (freezeProgress <= 0.001) return false;
-  const pIce = getGardenIcePotential(x, z, waterLevel, terrainH);
-  // Freezing threshold drops as freezeProgress increases
-  const threshold = 1.0 - 0.75 * freezeProgress;
-  return pIce >= threshold;
+  return getGardenLocalIce(x, z, freezeProgress, waterLevel, terrainH) >= 0.5;
 }
