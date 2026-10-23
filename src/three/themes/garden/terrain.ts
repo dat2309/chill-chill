@@ -690,7 +690,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
 
   // 7. Small Riverbed Pebbles (scattered across wide crystal stream & lake basin)
   const pebbleCount = 480;
-  const pebbleGeom = new THREE.DodecahedronGeometry(0.15, 1);
+  const pebbleGeom = new THREE.DodecahedronGeometry(0.15, 0);
   pebbleGeom.scale(1.15, 0.48, 0.95);
   pebbleGeom.computeVertexNormals();
 

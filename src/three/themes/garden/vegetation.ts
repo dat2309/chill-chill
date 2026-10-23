@@ -185,17 +185,17 @@ export function createVegetation(
 
   // Individual folded leaf blades on an open, elongated cluster, not a solid cloud sphere.
   const leafRng=new SeededRandom(2411),leafPositions:number[]=[],leafIndices:number[]=[];
-  for(let leaf=0;leaf<28;leaf++){
+  for(let leaf=0;leaf<16;leaf++){
     const center=new THREE.Vector3(leafRng.range(-.65,.65),leafRng.range(-.55,.55),leafRng.range(-.80,.80));
     const yaw=leafRng.range(0,Math.PI*2),pitch=leafRng.range(-.8,.8);
     const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,leafRng.range(-.5,.5)));
-    const length=leafRng.range(.25,.43),width=leafRng.range(.09,.16),start=leafPositions.length/3;
+    const length=leafRng.range(.26,.45),width=leafRng.range(.10,.18),start=leafPositions.length/3;
     for(const v of [new THREE.Vector3(0,0,-length/2),new THREE.Vector3(-width/2,0,0),new THREE.Vector3(0,.025,0),new THREE.Vector3(width/2,0,0),new THREE.Vector3(0,0,length/2)]){
       v.applyQuaternion(q).add(center);leafPositions.push(v.x,v.y,v.z);
     }
     leafIndices.push(start,start+1,start+2,start,start+2,start+3,start+1,start+4,start+2,start+2,start+4,start+3);
     const leafBase=new THREE.Vector3(0,0,-length/2).applyQuaternion(q).add(center);
-    const petiole=new THREE.CylinderGeometry(.006,.007,leafBase.length(),4);
+    const petiole=new THREE.CylinderGeometry(.006,.007,leafBase.length(),3,1);
     petiole.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),leafBase.clone().normalize()));petiole.translate(leafBase.x/2,leafBase.y/2,leafBase.z/2);
     const pp=petiole.getAttribute('position'),pi=petiole.index!,offset=leafPositions.length/3;
     leafPositions.push(...pp.array);for(let j=0;j<pi.count;j++)leafIndices.push(offset+pi.getX(j));petiole.dispose();
