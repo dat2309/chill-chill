@@ -74,3 +74,8 @@ Prompt review có thể sao chép:
 > Mở hai chủ đề Chillax Garden và Sunset Beach ở các góc nhìn mặc định, trên xuống, mặt bên và mobile (390px); đối chiếu với artifacts/visual-review.
 > Kiểm tra: hồ nước mở rộng ở tiền cảnh Garden cùng sỏi đáy đa sắc; lối đi lót đá tự nhiên men theo bờ suối; tuyết mùa đông phủ trắng đỉnh và sườn cao; bờ cát Sunset Beach cong tự nhiên; mặt cắt nước sẫm màu có chiều sâu; biển ban đêm tối hơn đất liền; không còn khối bụi tròn giống nấm.
 > Chạy `npm test` và `npm run build`. Tạo local commit riêng, không push/deploy.
+
+
+## Bổ sung Hội An đêm — 2026-10-23
+
+Code commit `c01f7fc`: thêm theme `lantern`, storage v5 (giữ state và camera v4), hai trạng thái đêm thường/đêm rằm và mưa nhẹ độc lập. [Bộ ảnh, số đo, phạm vi kiểm chứng và giới hạn](lantern/README.md) được ghi riêng để giữ nguyên lịch sử review Garden/Beach phía trên.

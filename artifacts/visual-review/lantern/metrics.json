@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "errors": [],
+  "night": {
+    "calls": 55,
+    "triangles": 110874
+  },
+  "festival": {
+    "calls": 55,
+    "triangles": 110874
+  },
+  "changedChannels": 157897,
+  "before": 54,
+  "after": 0,
+  "domCleared": true,
+  "beforeTextures": 1,
+  "afterTextures": 0,
+  "manualClick": true,
+  "portrait": true,
+  "codeCommit": "c01f7fc",
+  "date": "2026-10-23",
+  "newLogicChecks": 185,
+  "lifecycleChecks": 113,
+  "renderer": "Chrome headless / ANGLE SwiftShader WebGL",
+  "viewportLandscape": [
+    1200,
+    900
+  ],
+  "viewportPortrait": [
+    600,
+    1000
+  ]
+}
