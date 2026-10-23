@@ -1,6 +1,6 @@
 # Cyberpunk — visual review
 
-Ngày 2026-10-23. Code/ảnh thuộc commit thêm Cyber (`git log -- src/three/themes/cyber`).
+Ngày 2026-10-23. Commit theme: `081617d`.
 
 - Build: `npm run build` đạt; cảnh báo chunk Three.js >500 kB có sẵn.
 - Logic: toàn bộ `npm test` đạt (17 suite). Cyber 18 kiểm tra: tích lũy/giữ/rút vũng và độ ẩm, reversal, FPS, actual rain vertices trên mái, vị trí vũng, nhịp emissive đo từ material, halo auto-off ở20FPS/quality low, migration và dispose.

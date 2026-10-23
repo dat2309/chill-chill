@@ -8,7 +8,7 @@ export function createArchitecture(parent: T.Group) {
         box(parent, 'stilt-floor', x, 1.0, z, 3.2, .16, 2, wood);
         for (const dx of [-1.4, 1.4])
             for (const dz of [-.8, .8])
-                supports.push(box(parent, 'stilt-foundation', x + dx, .31, z + dz, .12, 1.22, .12, wood));
+                supports.push(box(parent, 'stilt-foundation', x + dx, .205, z + dz, .12, 1.43, .12, wood));
         box(parent, 'river-house', x, 1.08 + h / 2, z, 2.9, h, 1.8, wall);
         roof(parent, x, 1.08 + h, z, 3.4, 2.4, .66, roofMat);
         box(parent, 'open-door', x, 1.65, z + .913, .55, 1.15, .03, dark);

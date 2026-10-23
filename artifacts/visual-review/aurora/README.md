@@ -1,6 +1,6 @@
 # Cabin cực quang — visual review
 
-Ngày 2026-10-23. Code/ảnh thuộc commit thêm Aurora (`git log -- src/three/themes/aurora`).
+Ngày 2026-10-23. Commit theme: `ee31fd8`.
 
 - Build: `npm run build` đạt; cảnh báo chunk Three.js >500 kB có sẵn.
 - Logic: toàn bộ `npm test` đạt (18 suite). Aurora 23 kiểm tra: ray mesh world từ hai mặt mái tới đáy tuyết (gap0.0049), chân cabin/lều, lớp tuyết đất ngoài hồ250.70 đơn vị diện tích, 77.73% đỉnh lá hướng lên mang snow exposure cao, băng kín ở hai tide, không tương tác nước lỏng, reversal/FPS, migration/dispose. 149,618 tam giác.

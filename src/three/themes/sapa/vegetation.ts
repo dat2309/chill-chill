@@ -65,7 +65,9 @@ export function createVegetation(parent: T.Group) {
     const plants = new T.Group();
     parent.add(plants);
     batch.finish(plants);
-    plants.traverse(o => { if (o instanceof T.Mesh)
-        weather.attach(o, o.name.includes('stems') ? .012 : .045); });
+    plants.traverse(o => {
+        if (o instanceof T.Mesh)
+            weather.attach(o, o.name.includes('stems') ? .012 : .045);
+    });
     return { rice, uniforms, get color() { return mat.color; }, update(dt: number, time: number, wind: number, ripe: number) { uniforms.uRipe.value = ripe; uniforms.uTime.value = time; uniforms.uWind.value = wind; mat.color.copy(green).lerp(gold, ripe); weather.update(dt, time, wind, 0); }, dispose() { weather.dispose(); depth.dispose(); } };
 }

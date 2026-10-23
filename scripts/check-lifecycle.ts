@@ -920,6 +920,14 @@ async function runLifecycleTests() {
     'SceneManager terminates water interaction when intersectWater() returns null, without falling back to CPU waterMesh'
   );
 
+  let objectClicks=0;
+  testRaycastTheme.handleClick=()=>{objectClicks++;return true;};
+  (raycastSceneManager as any).raycastAndRipple(.65,true);
+  assert(objectClicks===1&&rippleCount===0,'Object click proxy runs even when authoritative water is absent');
+  (raycastSceneManager as any).raycastAndRipple(.18,false);
+  assert(objectClicks===1,'Pointermove never runs object click proxies');
+  testRaycastTheme.handleClick=undefined;
+
   // Case 2: intersectWater returns a valid hit point
   mockIntersectWaterReturn = {
     point: new THREE.Vector3(1.5, 0.3, 2.5),

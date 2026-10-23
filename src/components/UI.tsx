@@ -304,7 +304,7 @@ export default function UI({
         </div>
         <div className="eyebrow">{activeMetadata.eyebrow}</div>
         <h1 className="hero-title">
-          {activeThemeId !== 'garden' && activeThemeId !== 'beach' ? <>{activeMetadata.tagline}</> : activeThemeId === 'garden' ? <>Where the garden<br/>meets the <em>stream.</em></> : <>Where the palms<br/>meet the <em>sunset beach.</em></>}
+          {activeThemeId === 'lantern' ? <>Đèn phố<br/>soi dòng <em>Hoài.</em></> : activeThemeId !== 'garden' && activeThemeId !== 'beach' ? <>{activeMetadata.tagline}</> : activeThemeId === 'garden' ? <>Where the garden<br/>meets the <em>stream.</em></> : <>Where the palms<br/>meet the <em>sunset beach.</em></>}
         </h1>
         <div className="top-action-row">
           <button
@@ -537,7 +537,7 @@ export default function UI({
                     aria-label={`Chọn chủ đề: ${theme.name}`}
                   >
                     <div className="theme-card-preview">
-                      {theme.id !== 'garden' && theme.id !== 'beach'?<div style={{height:120,background:theme.previewGradient,display:'grid',placeItems:'center',fontSize:48}}>{theme.seasons[0].icon}</div>:theme.id === 'garden' ? <GardenCardPreview /> : <BeachCardPreview />}
+                      {theme.id !== 'garden' && theme.id !== 'beach'?<div style={{height:120,background:theme.previewGradient,display:'grid',placeItems:'center',fontSize:48}}>{theme.id==='lantern'?'🏮':theme.seasons[0].icon}</div>:theme.id === 'garden' ? <GardenCardPreview /> : <BeachCardPreview />}
                     </div>
                     <div className="theme-card-info">
                       <div className="theme-card-title">{theme.name}</div>

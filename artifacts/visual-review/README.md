@@ -95,3 +95,7 @@ Xem [Cyber review](cyber/README.md): 17 suite, 18 kiểm tra riêng; ảnh mưa/
 ## Cabin cực quang — 2026-10-23
 
 Xem [Aurora review](aurora/README.md): 18 suite, 23 kiểm tra riêng, ribbon1 draw call; ảnh clear/blizzard, tuyết/băng và hồi quy WebGL Garden/Beach8/8.
+
+## Tổng kiểm tra bốn theme mới — 2026-10-23
+
+[Review tích hợp và commit/số đo](integration-review.md):18 suite,89 kiểm tra riêng, lifecycle115/115; build và WebGL cả4 theme đạt. Các số đo trong review tích hợp và `metrics.json` từng theme là kết quả cuối, thay cho số đo ở mốc triển khai ban đầu.

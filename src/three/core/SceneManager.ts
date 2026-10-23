@@ -612,6 +612,7 @@ export class SceneManager {
     if (!activeTheme || !activeState || this.isDragging) return;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
+    if (isSplash && activeTheme.handleClick?.(this.raycaster.ray)) return;
 
     let hitX: number | null = null;
     let hitZ: number | null = null;
@@ -655,8 +656,6 @@ export class SceneManager {
         }
       }
     }
-
-    if (isSplash && activeTheme.handleClick?.(this.raycaster.ray)) return;
 
     if (hitX !== null && hitZ !== null && activeTheme.isInWater(hitX, hitZ)) {
       // Fast analytical / AABB occlusion check

@@ -30,16 +30,21 @@ export class SapaTheme implements ThemeInstance<'sapa'> {
     getContentBounds() { return new T.Box3(new T.Vector3(-10, -.575, -8), new T.Vector3(10, 7.8, 8)); }
     isInWater(x: number, z: number) { return Math.abs(x) < 10 && terraceAt(x, z) >= 0 && this.ripe < .7; }
     getWaterMesh() { return this.water.fields[0]; }
-    intersectWater(ray: T.Ray) { let closest = Infinity; let found: T.Vector3 | null = null; for (const t of TERRACES) {
-        this.plane.constant = -t.water;
-        if (ray.intersectPlane(this.plane, this.point) && Math.abs(this.point.x) < 10 && terraceAt(this.point.x, this.point.z) === t.id && this.ripe < .7) {
-            const d = ray.origin.distanceTo(this.point);
-            if (d < closest) {
-                closest = d;
-                found = this.point.clone();
+    intersectWater(ray: T.Ray) {
+        let closest = Infinity;
+        let found: T.Vector3 | null = null;
+        for (const t of TERRACES) {
+            this.plane.constant = -t.water;
+            if (ray.intersectPlane(this.plane, this.point) && Math.abs(this.point.x) < 10 && terraceAt(this.point.x, this.point.z) === t.id && this.ripe < .7) {
+                const d = ray.origin.distanceTo(this.point);
+                if (d < closest) {
+                    closest = d;
+                    found = this.point.clone();
+                }
             }
         }
-    } return found ? { point: found, distance: closest } : null; }
+        return found ? { point: found, distance: closest } : null;
+    }
     addRipple() { }
     reactToSplash() { }
     dispose() { this.vegetation.dispose(); this.lighting.dispose(); disposeTree(this.group); }

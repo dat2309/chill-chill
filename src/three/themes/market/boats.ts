@@ -48,31 +48,41 @@ export function createBoats(parent: T.Group) {
     bubble.visible = false;
     let remaining = 0, selected = -1;
     const up = new T.Vector3(), forward = new T.Vector3(), right = new T.Vector3(), basis = new T.Matrix4(), hit = new T.Vector3(), local = new T.Vector3();
+    const selectionRay = new T.Ray(), selectionBoxes = [new T.Box3(new T.Vector3(-.36, -.18, -1.21), new T.Vector3(.36, .25, 1.21)), new T.Box3(new T.Vector3(-.40, 1.1175, -.405), new T.Vector3(.40, 1.1625, .845)), new T.Box3(new T.Vector3(.235, .065, -.875), new T.Vector3(.285, 2.015, -.825))];
     const plane = new T.Plane(new T.Vector3(0, 1, 0), 0);
-    return { boats, cargo, inverse, positions, bubble, get remaining() { return remaining; }, selectRay(ray: T.Ray) { if (!ray.intersectPlane(plane, hit))
-            return false; for (let i = 0; i < BOAT_COUNT; i++) {
-            local.copy(hit).applyMatrix4(inverse[i]);
-            if (Math.abs(local.z) < 1.2 && Math.abs(local.x) < .42) {
-                selected = i;
-                remaining = 2;
-                symbol.material.color.setHex(i % 3 === 0 ? 0x365d39 : i % 3 === 1 ? 0xb9a139 : 0xdd803f);
-                return true;
+    return { boats, cargo, inverse, positions, bubble, get remaining() { return remaining; }, selectRay(ray: T.Ray) { let nearest = Infinity, index = -1; for (let i = 0; i < BOAT_COUNT; i++) {
+            selectionRay.copy(ray).applyMatrix4(inverse[i]);
+            for (const selectionBox of selectionBoxes)
+                if (selectionRay.intersectBox(selectionBox, local)) {
+                    hit.copy(local).applyMatrix4(boats[i].matrixWorld);
+                    const distance = hit.distanceToSquared(ray.origin);
+                    if (distance < nearest) {
+                        nearest = distance;
+                        index = i;
+                    }
+                }
+        } if (index < 0)
+            return false; selected = index; remaining = 2; symbol.material.color.setHex(index % 3 === 0 ? 0x365d39 : index % 3 === 1 ? 0xb9a139 : 0xdd803f); return true; }, update(dt: number, time: number, wind: number, level: number, activity: number) {
+            for (let i = 0; i < BOAT_COUNT; i++) {
+                const p = boatPosition(i, time, positions[i]), e = .001, dx = (getOceanWaveElevation(p.x + e, p.z, time, wind) - getOceanWaveElevation(p.x - e, p.z, time, wind)) / (2 * e), dz = (getOceanWaveElevation(p.x, p.z + e, time, wind) - getOceanWaveElevation(p.x, p.z - e, time, wind)) / (2 * e);
+                up.set(-dx, 1, -dz).normalize();
+                const lane = Math.floor(i / 5), a = i % 5 * Math.PI * 2 / 5 + lane * .41 + time * .011;
+                forward.set(-(3.3 + lane * 2.05) * Math.sin(a), 0, (1.35 + lane * 1.32) * Math.cos(a)).normalize();
+                forward.addScaledVector(up, -forward.dot(up)).normalize();
+                right.crossVectors(up, forward);
+                basis.makeBasis(right, up, forward);
+                boats[i].quaternion.setFromRotationMatrix(basis);
+                boats[i].position.set(p.x, level + getOceanWaveElevation(p.x, p.z, time, wind), p.z);
+                boats[i].updateMatrixWorld(true);
+                inverse[i].copy(boats[i].matrixWorld).invert();
             }
-        } return false; }, update(dt: number, time: number, wind: number, level: number, activity: number) { for (let i = 0; i < BOAT_COUNT; i++) {
-            const p = boatPosition(i, time, positions[i]), e = .001, dx = (getOceanWaveElevation(p.x + e, p.z, time, wind) - getOceanWaveElevation(p.x - e, p.z, time, wind)) / (2 * e), dz = (getOceanWaveElevation(p.x, p.z + e, time, wind) - getOceanWaveElevation(p.x, p.z - e, time, wind)) / (2 * e);
-            up.set(-dx, 1, -dz).normalize();
-            const lane = Math.floor(i / 5), a = i % 5 * Math.PI * 2 / 5 + lane * .41 + time * .011;
-            forward.set(-(3.3 + lane * 2.05) * Math.sin(a), 0, (1.35 + lane * 1.32) * Math.cos(a)).normalize();
-            forward.addScaledVector(up, -forward.dot(up)).normalize();
-            right.crossVectors(up, forward);
-            basis.makeBasis(right, up, forward);
-            boats[i].quaternion.setFromRotationMatrix(basis);
-            boats[i].position.set(p.x, level + getOceanWaveElevation(p.x, p.z, time, wind), p.z);
-            boats[i].updateMatrixWorld(true);
-            inverse[i].copy(boats[i].matrixWorld).invert();
-        } remaining = Math.max(0, remaining - dt); bubble.visible = remaining > 0; if (selected >= 0) {
-            bubble.position.copy(boats[selected].position);
-            bubble.position.y += 2.45;
-            bubble.rotation.y = .55;
-        } plane.constant = -level; } };
+            remaining = Math.max(0, remaining - dt);
+            bubble.visible = remaining > 0;
+            if (selected >= 0) {
+                bubble.position.copy(boats[selected].position);
+                bubble.position.y += 2.45;
+                bubble.rotation.y = .55;
+            }
+            plane.constant = -level;
+        } };
 }

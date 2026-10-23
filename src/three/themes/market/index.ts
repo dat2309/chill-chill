@@ -35,8 +35,11 @@ export class MarketTheme implements ThemeInstance<'market'> {
     isInWater(x: number, z: number) { return isRiver(x, z); }
     getWaterLevel() { return this.level; }
     getWaterMesh() { return this.water.mesh; }
-    intersectWater(ray: T.Ray) { if (!ray.intersectPlane(this.plane, this.hit) || !this.isInWater(this.hit.x, this.hit.z))
-        return null; return { point: this.hit.clone(), distance: ray.origin.distanceTo(this.hit) }; }
+    intersectWater(ray: T.Ray) {
+        if (!ray.intersectPlane(this.plane, this.hit) || !this.isInWater(this.hit.x, this.hit.z))
+            return null;
+        return { point: this.hit.clone(), distance: ray.origin.distanceTo(this.hit) };
+    }
     handleClick(ray: T.Ray) { return this.boats.selectRay(ray); }
     addRipple(x: number, z: number) { this.water.ripple(x, z); }
     reactToSplash() { }

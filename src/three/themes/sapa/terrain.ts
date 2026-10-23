@@ -1,14 +1,22 @@
 import * as T from 'three';
 import { box, material } from '../../core/miniature';
 import { contour, TERRACES } from './config';
-export function ribbon(y: number, i: number, start: number, end: number) { const p: number[] = [], index: number[] = []; for (let n = 0; n <= 100; n++) {
-    const x = -10 + n * .2, z = contour(x, i);
-    p.push(x, y, z + start, x, y, z + end);
-    if (n < 100) {
-        const k = n * 2;
-        index.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
+export function ribbon(y: number, i: number, start: number, end: number) {
+    const p: number[] = [], index: number[] = [];
+    for (let n = 0; n <= 100; n++) {
+        const x = -10 + n * .2, z = contour(x, i);
+        p.push(x, y, z + start, x, y, z + end);
+        if (n < 100) {
+            const k = n * 2;
+            index.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
+        }
     }
-} const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(p, 3)); g.setIndex(index); g.computeVertexNormals(); return g; }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(p, 3));
+    g.setIndex(index);
+    g.computeVertexNormals();
+    return g;
+}
 export function createTerrain(parent: T.Group) {
     box(parent, 'sapa-display-base', 0, -.35, 0, 20, .45, 16, material(0xb0916e));
     const earth = material(0x9a8451), green = material(0x6f8644), surfaces: T.Mesh[] = [], berms: T.Mesh[] = [];
@@ -91,6 +99,10 @@ export function createTerrain(parent: T.Group) {
     sg.setIndex(si);
     sg.computeVertexNormals();
     parent.add(new T.Mesh(sg, green));
-    box(parent, 'rear-earth-cut', 0, 2.37, -7.5, 20, 5, 1, earth);
+    const rear = new T.Mesh(new T.PlaneGeometry(20, 4.995), earth);
+    rear.name = 'rear-earth-cut';
+    rear.rotation.y = Math.PI;
+    rear.position.set(0, 2.3725, -8);
+    parent.add(rear);
     return { surfaces, berms };
 }

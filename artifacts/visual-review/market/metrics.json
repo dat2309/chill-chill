@@ -1,46 +1,46 @@
 {
   "status": "PASS",
   "errors": [],
-  "changed": 829526,
+  "changed": 829780,
   "portrait": true,
-  "before": 214,
+  "before": 219,
   "after": 0,
   "metrics": {
     "first": {
-      "triangles": 97726,
-      "calls": 233
+      "triangles": 77742,
+      "calls": 238
     },
     "second": {
-      "triangles": 97726,
-      "calls": 233
+      "triangles": 77742,
+      "calls": 238
     },
     "reversal": {
-      "triangles": 97726,
-      "calls": 233
+      "triangles": 77742,
+      "calls": 238
     },
     "strong-wind": {
-      "triangles": 97726,
-      "calls": 233
+      "triangles": 77742,
+      "calls": 238
     },
     "low-wind": {
-      "triangles": 97726,
-      "calls": 233
+      "triangles": 77742,
+      "calls": 238
     },
     "portrait": {
-      "triangles": 97726,
-      "calls": 233
+      "triangles": 77742,
+      "calls": 238
     },
     "top": {
-      "triangles": 97726,
-      "calls": 233
+      "triangles": 77742,
+      "calls": 238
     },
     "side": {
-      "triangles": 97726,
-      "calls": 233
+      "triangles": 77742,
+      "calls": 238
     },
     "close": {
-      "triangles": 97666,
-      "calls": 228
+      "triangles": 77670,
+      "calls": 232
     }
   }
 }
