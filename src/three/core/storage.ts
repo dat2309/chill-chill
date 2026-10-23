@@ -8,7 +8,7 @@ import {
   CameraState,
 } from './types';
 
-export const CURRENT_STORAGE_VERSION = 6;
+export const CURRENT_STORAGE_VERSION = 7;
 export const STORAGE_KEY = 'chillax_diorama_state_v2';
 
 export const DEFAULT_GARDEN_STATE: ThemeState<'garden'> = {
@@ -45,7 +45,9 @@ export function sanitizeLanternState(raw:any):ThemeState<'lantern'> {
 }
 export const DEFAULT_MARKET_STATE: ThemeState<'market'> = {...DEFAULT_BEACH_STATE,themeId:'market',season:'dawn',timeOfDay:6.5};
 export function sanitizeMarketState(raw:any):ThemeState<'market'>{return {...sanitizeBeachState(raw),themeId:'market',season:raw?.season==='noon'?'noon':'dawn',timeOfDay:Number.isFinite(raw?.timeOfDay)?Math.max(0,Math.min(24,raw.timeOfDay)):DEFAULT_MARKET_STATE.timeOfDay};}
-export const THEME_STATE_KEYS={market:'marketState',garden:'gardenState',beach:'beachState',lantern:'lanternState'}as const;
+export const DEFAULT_SAPA_STATE: ThemeState<'sapa'> = {...DEFAULT_BEACH_STATE,themeId:'sapa',season:'flooded',timeOfDay:16};
+export function sanitizeSapaState(raw:any):ThemeState<'sapa'>{return {...sanitizeBeachState(raw),themeId:'sapa',season:raw?.season==='ripe'?'ripe':'flooded',timeOfDay:Number.isFinite(raw?.timeOfDay)?Math.max(0,Math.min(24,raw.timeOfDay)):DEFAULT_SAPA_STATE.timeOfDay};}
+export const THEME_STATE_KEYS={sapa:'sapaState',market:'marketState',garden:'gardenState',beach:'beachState',lantern:'lanternState'}as const;
 export function getPersistedThemeState(state:PersistedAppState,id:ThemeId){return state[THEME_STATE_KEYS[id]];}
 
 export const DEFAULT_SHARED_OPTIONS: SharedOptions = {
@@ -165,6 +167,7 @@ export function loadPersistedAppState(): PersistedAppState {
     beachState: { ...DEFAULT_BEACH_STATE },
     lanternState: {...DEFAULT_LANTERN_STATE},
     marketState: {...DEFAULT_MARKET_STATE},
+    sapaState: {...DEFAULT_SAPA_STATE},
     shared: { ...DEFAULT_SHARED_OPTIONS },
   };
 
@@ -179,11 +182,12 @@ export function loadPersistedAppState(): PersistedAppState {
     const data = JSON.parse(rawStr);
     if (!data || typeof data !== 'object') return fallback;
 
-    const activeThemeId: ThemeId = data.activeThemeId==='market'?'market':data.activeThemeId==='lantern'?'lantern':(data.activeThemeId === 'beach' || data.activeThemeId === 'phuquoc') ? 'beach' : 'garden';
+    const activeThemeId: ThemeId = data.activeThemeId==='sapa'?'sapa':data.activeThemeId==='market'?'market':data.activeThemeId==='lantern'?'lantern':(data.activeThemeId === 'beach' || data.activeThemeId === 'phuquoc') ? 'beach' : 'garden';
     const gardenState = sanitizeGardenState(data.gardenState);
     const beachState = sanitizeBeachState(data.beachState ?? data.phuquocState);
     const lanternState=sanitizeLanternState(data.lanternState);
     const marketState=sanitizeMarketState(data.marketState);
+    const sapaState=sanitizeSapaState(data.sapaState);
     const shared: SharedOptions = {
       quality: ['low', 'medium', 'high'].includes(data.shared?.quality) ? data.shared.quality : 'high',
       debugTerrain: Boolean(data.shared?.debugTerrain),
@@ -202,8 +206,11 @@ export function loadPersistedAppState(): PersistedAppState {
     const lanternCam=sanitizeCameraState(data.camera?.lantern??data.lanternState?.cameraState);
     if(data.version>=5&&data.version<=CURRENT_STORAGE_VERSION&&lanternCam)camera.lantern=lanternCam;
     const marketCam=sanitizeCameraState(data.camera?.market??data.marketState?.cameraState);
-    if(data.version>=CURRENT_STORAGE_VERSION&&marketCam)camera.market=marketCam;
+    if(data.version>=6&&marketCam)camera.market=marketCam;
+    const sapaCam=sanitizeCameraState(data.camera?.sapa??data.sapaState?.cameraState);
+    if(data.version>=7&&data.version<=CURRENT_STORAGE_VERSION&&sapaCam)camera.sapa=sapaCam;
     return {
+      sapaState,
       marketState,
       version: CURRENT_STORAGE_VERSION,
       activeThemeId,
@@ -229,6 +236,7 @@ export function savePersistedAppState(state: PersistedAppState): void {
       beachState: state.beachState,
       lanternState: state.lanternState,
       marketState: state.marketState,
+      sapaState: state.sapaState,
       shared: state.shared,
       camera: state.camera,
     });
@@ -240,5 +248,6 @@ export function savePersistedAppState(state: PersistedAppState): void {
 
 export function getThemeDefaultState(themeId: ThemeId): import('./types').AnyThemeState {
   if(themeId==='market')return {...DEFAULT_MARKET_STATE};
+  if(themeId==='sapa')return {...DEFAULT_SAPA_STATE};
   return themeId==='lantern'?{...DEFAULT_LANTERN_STATE}:themeId === 'garden' ? { ...DEFAULT_GARDEN_STATE } : { ...DEFAULT_BEACH_STATE };
 }

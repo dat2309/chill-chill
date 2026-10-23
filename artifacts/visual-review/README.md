@@ -83,3 +83,7 @@ Code commit `c01f7fc`: thêm theme `lantern`, storage v5 (giữ state và camera
 ## Chợ nổi — 2026-10-23
 
 Xem [Market review](market/README.md): 15 suite đạt, 13 kiểm tra Market; ảnh WebGL và ứng dụng desktop/mobile, số đo và giới hạn trong thư mục.
+
+## Sapa — 2026-10-23
+
+Xem [Sapa review](sapa/README.md): 16 suite, 29 kiểm tra Sapa; ảnh hai mùa, side/top/close, reversal, gió và giao diện mobile.
