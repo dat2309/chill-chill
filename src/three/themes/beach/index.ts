@@ -178,7 +178,9 @@ export class BeachTheme implements ThemeInstance<'beach'> {
     const scene = (this.group.parent as THREE.Scene) || undefined;
     this.lighting?.update(beachThemeState, scene, rainIntensity);
     if (this.lighting && this.water) {
-      this.water.setSunLighting(this.lighting.sunDirection, this.lighting.sunColor, this.lighting.skyColor);
+      const tod = ((state.timeOfDay % 24) + 24) % 24;
+      const dayFactor = THREE.MathUtils.smoothstep(tod, 4.8, 7.5) * (1.0 - THREE.MathUtils.smoothstep(tod, 16.5, 19.5));
+      this.water.setSunLighting(this.lighting.sunDirection, this.lighting.sunColor, this.lighting.skyColor, dayFactor);
     }
 
     this.water?.update(dt, elapsed, effectiveWind, state.flowSpeed, rainIntensity);

@@ -33,7 +33,7 @@ export interface BeachWaterSystem {
   setTide(tide: TideLevel, smooth?: boolean): void;
   getWaterLevel(): number;
   getTideOffset(): number;
-  setSunLighting(sunDir: THREE.Vector3, sunCol: THREE.Color, skyCol: THREE.Color): void;
+  setSunLighting(sunDir: THREE.Vector3, sunCol: THREE.Color, skyCol: THREE.Color, dayFactor?: number): void;
   updateBoatCavities?(cavities: {
     thungInvMatrix: THREE.Matrix4;
     gheInvMatrix: THREE.Matrix4;
@@ -457,6 +457,7 @@ export function createBeachWater(
       uFlowSpeed: { value: 0.45 },
       uWindStrength: { value: 0.35 },
       uRainIntensity: { value: 0.0 },
+      uDayFactor: { value: 1.0 },
       uUseGpu: { value: useGpuSimulation ? 1.0 : 0.0 },
       uAnalyticalCount: { value: 0 },
       uAnalyticalRipples: { value: analyticalBuffer },
@@ -535,6 +536,7 @@ export function createBeachWater(
       uniform float uWaterLevel;
       uniform float uWindStrength;
       uniform float uRainIntensity;
+      uniform float uDayFactor;
       uniform vec3 uShallowColor;
       uniform vec3 uDeepColor;
       uniform vec3 uSunsetSkyColor;
@@ -557,7 +559,10 @@ export function createBeachWater(
       void main() {
         // Natural boundary cut cross-section styling
         if (vIsSkirt > 0.5) {
-          gl_FragColor = vec4(uDeepColor * 0.72, 0.88);
+          float depthFade = mix(0.48, 0.28, vIsSkirtBottom);
+          vec3 skirtColor = uDeepColor * depthFade;
+          skirtColor *= mix(0.38, 1.0, uDayFactor);
+          gl_FragColor = vec4(skirtColor, 0.90);
           return;
         }
 
@@ -604,6 +609,10 @@ ${generateGheCavityShaderGlsl()}
         // Slightly churning coastal turquoise / sediment hue under rain
         vec3 turbidWaterColor = vec3(0.30, 0.56, 0.52);
         vec3 waterColor = mix(clearWaterColor, turbidWaterColor, turbidity * 0.62);
+
+        // Modulate water body color by daylight factor so night water dims naturally below land luminance
+        vec3 nightWaterColor = uDeepColor * (0.16 + 0.12 * absorption.b);
+        vec3 effWaterColor = mix(nightWaterColor, waterColor, mix(0.12, 1.0, uDayFactor));
 
         // 2. Ripple and Wave Normal Perturbation
         vec3 N = vec3(0.0, 1.0, 0.0);
@@ -682,11 +691,13 @@ ${generateGheCavityShaderGlsl()}
                         * uRainIntensity * (0.32 + 0.45 * uWindStrength);
 
         float foamFactor = clamp(breakerFoam + shoreSwash + whitecaps, 0.0, 1.0);
-        vec3 foamColor = vec3(0.96, 0.99, 1.0);
+        vec3 dayFoamColor = vec3(0.96, 0.99, 1.0);
+        vec3 nightFoamColor = vec3(0.18, 0.24, 0.32);
+        vec3 foamColor = mix(nightFoamColor, dayFoamColor, uDayFactor);
 
         // Combine: refracted absorption color + sky reflection + specular + surf foam
-        vec3 finalColor = mix(waterColor, uSunsetSkyColor, fresnel * 0.65);
-        finalColor += uSunColor * specular;
+        vec3 finalColor = mix(effWaterColor, uSunsetSkyColor, fresnel * 0.65);
+        finalColor += uSunColor * specular * mix(0.40, 1.0, uDayFactor);
         finalColor = mix(finalColor, foamColor, foamFactor * 0.75);
 
         float alpha = clamp(0.18 + depth * 0.32 + turbidity * 0.14, 0.0, 0.78);
@@ -834,10 +845,11 @@ ${generateGheCavityShaderGlsl()}
     getTideOffset() {
       return tideOffset;
     },
-    setSunLighting(sunDir: THREE.Vector3, sunCol: THREE.Color, skyCol: THREE.Color) {
+    setSunLighting(sunDir: THREE.Vector3, sunCol: THREE.Color, skyCol: THREE.Color, dayFactor: number = 1.0) {
       waterMaterial.uniforms.uSunDirection.value.copy(sunDir);
       waterMaterial.uniforms.uSunColor.value.copy(sunCol);
       waterMaterial.uniforms.uSunsetSkyColor.value.copy(skyCol);
+      waterMaterial.uniforms.uDayFactor.value = dayFactor;
     },
     updateBoatCavities(cavities) {
       waterMaterial.uniforms.uThungInvMatrix.value.copy(cavities.thungInvMatrix);
