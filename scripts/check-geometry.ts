@@ -1,14 +1,14 @@
 import { createStreamGeometry } from '../src/three/themes/garden/water';
 import * as THREE from 'three';
 import { createTerrain } from '../src/three/themes/garden/terrain';
-import { createPhuQuocTerrain } from '../src/three/themes/beach/terrain';
+import { createBeachTerrain } from '../src/three/themes/beach/terrain';
 import { GARDEN_BOUNDARY_POINTS } from '../src/three/themes/garden/footprint';
-import { PHUQUOC_BOUNDARY_POINTS } from '../src/three/themes/beach/footprint';
+import { BEACH_BOUNDARY_POINTS } from '../src/three/themes/beach/footprint';
 
 // Check actual generated triangles, rather than normals supplied to the shader.
 for (const [name, system] of [
   ['garden', createTerrain(new THREE.Scene())],
-  ['beach', createPhuQuocTerrain(new THREE.Group())],
+  ['beach', createBeachTerrain(new THREE.Group())],
 ] as const) {
   const mesh = system.group.children.find(o => o instanceof THREE.Mesh) as THREE.Mesh;
   const geometry = mesh.geometry;
@@ -39,7 +39,7 @@ for (const [name, system] of [
   console.log(`${name}: ${top} upward top, ${walls} outward wall/bevel, ${bottom} downward bottom triangles`);
   system.dispose();
 }
-for (const points of [GARDEN_BOUNDARY_POINTS, PHUQUOC_BOUNDARY_POINTS]) {
+for (const points of [GARDEN_BOUNDARY_POINTS, BEACH_BOUNDARY_POINTS]) {
   // Convex display perimeters cannot self-intersect; every turn must agree.
   for (let i = 0; i < points.length; i++) {
     const a = points[i], b = points[(i + 1) % points.length], c = points[(i + 2) % points.length];

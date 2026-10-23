@@ -2,7 +2,6 @@ import * as THREE from 'three';
 
 /** Marine display bounds, independent of the crescent island shoreline. */
 export const BEACH_CENTER = new THREE.Vector2(0.0, 0.2);
-export const PHUQUOC_CENTER = BEACH_CENTER;
 
 // A broad rectangular sea section with softly rounded corners. The island
 // shape is defined separately by shoreline.ts, never by this display border.
@@ -15,7 +14,6 @@ export function getBeachFootprintRadius(theta: number): number {
   const projection = dx * 8 + dz * 6.4;
   return projection + Math.sqrt(Math.max(0, projection * projection - 8 ** 2 - 6.4 ** 2 + radius ** 2));
 }
-export const getPhuQuocFootprintRadius = getBeachFootprintRadius;
 
 export function getBeachBoundaryPoint(theta: number): THREE.Vector2 {
   const r = getBeachFootprintRadius(theta);
@@ -24,7 +22,6 @@ export function getBeachBoundaryPoint(theta: number): THREE.Vector2 {
     BEACH_CENTER.y + r * Math.sin(theta)
   );
 }
-export const getPhuQuocBoundaryPoint = getBeachBoundaryPoint;
 
 export function isInsideBeachFootprint(x: number, z: number, margin = 0): boolean {
   const dx = x - BEACH_CENTER.x;
@@ -34,7 +31,6 @@ export function isInsideBeachFootprint(x: number, z: number, margin = 0): boolea
   const maxR = getBeachFootprintRadius(theta) - margin;
   return dist <= maxR;
 }
-export const isInsidePhuQuocFootprint = isInsideBeachFootprint;
 
 export function getBeachFootprintDistance(x: number, z: number): number {
   const dx = x - BEACH_CENTER.x;
@@ -44,18 +40,15 @@ export function getBeachFootprintDistance(x: number, z: number): number {
   const maxR = getBeachFootprintRadius(theta);
   return dist - maxR; // negative inside, positive outside
 }
-export const getPhuQuocFootprintDistance = getBeachFootprintDistance;
 
 // Precomputed boundary polygon (256 samples) for dense tessellation, walls, base, and bounds
 export const BEACH_BOUNDARY_SAMPLES = 256;
-export const PHUQUOC_BOUNDARY_SAMPLES = BEACH_BOUNDARY_SAMPLES;
 export const BEACH_BOUNDARY_POINTS: THREE.Vector2[] = [];
 
 for (let i = 0; i < BEACH_BOUNDARY_SAMPLES; i++) {
   const theta = (i / BEACH_BOUNDARY_SAMPLES) * Math.PI * 2;
   BEACH_BOUNDARY_POINTS.push(getBeachBoundaryPoint(theta));
 }
-export const PHUQUOC_BOUNDARY_POINTS = BEACH_BOUNDARY_POINTS;
 
 // Precomputed 2D outward boundary normals
 export const BEACH_BOUNDARY_NORMALS: THREE.Vector2[] = [];
@@ -66,7 +59,6 @@ for (let it = 0; it < BEACH_BOUNDARY_SAMPLES; it++) {
   const norm = new THREE.Vector2(tangent.y, -tangent.x).normalize();
   BEACH_BOUNDARY_NORMALS.push(norm);
 }
-export const PHUQUOC_BOUNDARY_NORMALS = BEACH_BOUNDARY_NORMALS;
 
 // Bounding box of the footprint
 let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -85,4 +77,3 @@ export const BEACH_FOOTPRINT_BOUNDS = {
   width: maxX - minX,
   depth: maxZ - minZ,
 };
-export const PHUQUOC_FOOTPRINT_BOUNDS = BEACH_FOOTPRINT_BOUNDS;

@@ -9,7 +9,6 @@ export interface BeachFishSystem {
   reactToRipple(x: number, z: number): void;
   dispose(): void;
 }
-export type PhuQuocFishSystem = BeachFishSystem;
 
 interface FishAgent {
   mesh: THREE.Mesh;
@@ -185,5 +184,3 @@ export function createBeachFish(
     },
   };
 }
-
-export const createPhuQuocFish = createBeachFish;

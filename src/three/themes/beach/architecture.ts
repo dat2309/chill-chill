@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getBeachCoverHeight, getBungalowFloorHeight, getBungalowAccess } from './rainExposure';
-import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason } from './constants';
+import { BEACH_COLORS, BeachSeason } from './constants';
 import { BUNGALOW_SPOTS, PIER_CONFIG } from './shoreline';
 
 export interface BeachArchitectureSystem {
@@ -12,7 +12,6 @@ export interface BeachArchitectureSystem {
   isUnderRoof(x: number, z: number): boolean;
   dispose(): void;
 }
-export type PhuQuocArchitectureSystem = BeachArchitectureSystem;
 
 export function createBeachArchitecture(
   parentGroup: THREE.Group,
@@ -28,15 +27,15 @@ export function createBeachArchitecture(
   const materialsToDispose: THREE.Material[] = [];
 
   // Materials
-  const deckMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.wood.deck });
-  const postMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.wood.weathered });
-  const wallMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.wood.bamboo });
-  const thatchMatDry = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.wood.thatch });
+  const deckMat = new THREE.MeshStandardMaterial({ color: BEACH_COLORS.wood.deck });
+  const postMat = new THREE.MeshStandardMaterial({ color: BEACH_COLORS.wood.weathered });
+  const wallMat = new THREE.MeshStandardMaterial({ color: BEACH_COLORS.wood.bamboo });
+  const thatchMatDry = new THREE.MeshStandardMaterial({ color: BEACH_COLORS.wood.thatch });
   materialsToDispose.push(deckMat, postMat, wallMat, thatchMatDry);
 
   const lanternMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.architecture.lanternWarm,
-    emissive: PHUQUOC_COLORS.architecture.lanternGlow,
+    color: BEACH_COLORS.architecture.lanternWarm,
+    emissive: BEACH_COLORS.architecture.lanternGlow,
     emissiveIntensity: 0.8,
     roughness: 0.3,
   });
@@ -280,7 +279,7 @@ export function createBeachArchitecture(
   const canopyGeo = new THREE.ConeGeometry(0.85, 0.4, 8);
   geometriesToDispose.push(canopyGeo);
   const canopyMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.architecture.umbrellaStripe1,
+    color: BEACH_COLORS.architecture.umbrellaStripe1,
   });
   materialsToDispose.push(canopyMat);
   const canopy = new THREE.Mesh(canopyGeo, canopyMat);
@@ -295,7 +294,7 @@ export function createBeachArchitecture(
   supGeo.rotateX(Math.PI / 2);
 
   const supMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.architecture.supBoard,
+    color: BEACH_COLORS.architecture.supBoard,
   });
   materialsToDispose.push(supMat);
 
@@ -388,5 +387,3 @@ export function createBeachArchitecture(
     },
   };
 }
-
-export const createPhuQuocArchitecture = createBeachArchitecture;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BeachSeason, PhuQuocSeason, BeachState, PhuQuocState } from './constants';
+import { BeachSeason, BeachState } from './constants';
 
 export interface BeachSunPosition {
   x: number;
@@ -9,7 +9,6 @@ export interface BeachSunPosition {
   isDay: boolean;
   isSunset: boolean;
 }
-export type PhuQuocSunPosition = BeachSunPosition;
 
 /**
  * Pure calculation for Beach solar trajectory across sky and sea.
@@ -39,7 +38,6 @@ export function calculateBeachSunPosition(timeOfDay: number): BeachSunPosition {
     return { x, y, z, sunProgress: 0, isDay: false, isSunset: false };
   }
 }
-export const calculatePhuQuocSunPosition = calculateBeachSunPosition;
 
 // Reusable Color palettes (allocated once, never in update)
 const cSkyDayTop = new THREE.Color(0x82b2db);
@@ -161,7 +159,6 @@ export function getBeachSkyGradient(
 
   return { top: outTop, mid: outMid, bot: outBot };
 }
-export const getPhuQuocSkyGradient = getBeachSkyGradient;
 
 export interface BeachLightingSystem {
   group: THREE.Group;
@@ -174,7 +171,6 @@ export interface BeachLightingSystem {
   update(state: BeachState, scene?: THREE.Scene, rainIntensity?: number): void;
   dispose(): void;
 }
-export type PhuQuocLightingSystem = BeachLightingSystem;
 
 export function createBeachLighting(
   parentGroup: THREE.Group,
@@ -357,7 +353,6 @@ export function createBeachLighting(
       if (cachedContainer) {
         cachedContainer.style.background = '';
         cachedContainer.classList.remove('theme-beach');
-        cachedContainer.classList.remove('theme-phuquoc');
         cachedContainer = null;
       }
       lastGradientCss = '';
@@ -366,5 +361,3 @@ export function createBeachLighting(
     },
   };
 }
-
-export const createPhuQuocLighting = createBeachLighting;

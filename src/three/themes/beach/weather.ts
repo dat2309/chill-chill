@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DIORAMA_WIDTH, DIORAMA_DEPTH, BeachSeason, PhuQuocSeason } from './constants';
+import { DIORAMA_WIDTH, DIORAMA_DEPTH, BeachSeason } from './constants';
 import { Quality } from '../../core/types';
 
 export interface BeachWeatherSystem {
@@ -12,7 +12,6 @@ export interface BeachWeatherSystem {
   getRainIntensity(): number;
   dispose(): void;
 }
-export type PhuQuocWeatherSystem = BeachWeatherSystem;
 
 export function createBeachWeather(
   parentGroup: THREE.Group,
@@ -222,5 +221,3 @@ export function createBeachWeather(
     },
   };
 }
-
-export const createPhuQuocWeather = createBeachWeather;

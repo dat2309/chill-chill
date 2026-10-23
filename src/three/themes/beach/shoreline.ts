@@ -6,7 +6,7 @@ import {
   SEA_LEVEL_LOW,
   SEA_LEVEL_HIGH,
 } from './constants';
-import { isInsideBeachFootprint, isInsidePhuQuocFootprint } from './footprint';
+import { isInsideBeachFootprint } from './footprint';
 import { fbm2D, SimplexNoise2D } from '../../core/noise';
 
 export const SHORELINE_BOUNDS = {
@@ -260,4 +260,3 @@ export function intersectBeachWater(
   }
   return null;
 }
-export const intersectPhuQuocWater = intersectBeachWater;

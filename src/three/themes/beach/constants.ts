@@ -17,7 +17,6 @@ export const SEA_LEVEL_LOW = 0.16;
 export const SEA_LEVEL_HIGH = 0.44;
 
 export type BeachSeason = 'dry' | 'rainy';
-export type PhuQuocSeason = BeachSeason;
 
 export interface BeachState {
   timeOfDay: number; // 0-24, default 17:45 (17.75)
@@ -29,7 +28,6 @@ export interface BeachState {
   autoRotate: boolean;
   quality: Quality;
 }
-export type PhuQuocState = BeachState;
 
 export const DEFAULT_BEACH_STATE: BeachState = {
   timeOfDay: 17.75, // 17:45 sunset
@@ -41,7 +39,6 @@ export const DEFAULT_BEACH_STATE: BeachState = {
   autoRotate: false,
   quality: 'high',
 };
-export const DEFAULT_PHUQUOC_STATE = DEFAULT_BEACH_STATE;
 
 // Tropical Bay Color Palette
 export const BEACH_COLORS = {
@@ -91,4 +88,3 @@ export const BEACH_COLORS = {
   },
   base: new THREE.Color(0xf5ede0), // Elegant diorama slab pedestal
 };
-export const PHUQUOC_COLORS = BEACH_COLORS;

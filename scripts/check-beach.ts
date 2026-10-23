@@ -18,31 +18,21 @@ import {
   SEA_LEVEL_LOW,
   SEA_LEVEL_HIGH,
   DEFAULT_BEACH_STATE,
-  DEFAULT_PHUQUOC_STATE,
 } from '../src/three/themes/beach/constants';
 import {
   calculateBeachSunPosition,
-  calculatePhuQuocSunPosition,
   getBeachSkyGradient,
-  getPhuQuocSkyGradient,
 } from '../src/three/themes/beach/lighting';
 import {
   BEACH_CENTER,
-  PHUQUOC_CENTER,
   BEACH_BOUNDARY_POINTS,
-  PHUQUOC_BOUNDARY_POINTS,
   BEACH_BOUNDARY_SAMPLES,
-  PHUQUOC_BOUNDARY_SAMPLES,
   isInsideBeachFootprint,
-  isInsidePhuQuocFootprint,
   getBeachFootprintRadius,
-  getPhuQuocFootprintRadius,
   BEACH_FOOTPRINT_BOUNDS,
-  PHUQUOC_FOOTPRINT_BOUNDS,
 } from '../src/three/themes/beach/footprint';
 import {
   createBeachBoats,
-  createPhuQuocBoats,
   BOAT_SPECS,
   getOceanWaveElevation,
   getOceanWaveSlopes,
@@ -55,7 +45,6 @@ import { createBeachWeather } from '../src/three/themes/beach/weather';
 import {
   sanitizeGardenState,
   sanitizeBeachState,
-  sanitizePhuQuocState,
   sanitizeCameraState,
   loadPersistedAppState,
   savePersistedAppState,
@@ -82,10 +71,10 @@ function assert(condition: boolean, name: string, details?: string) {
 
 // 1. Shoreline Continuity & Bounds
 let allRaysCrossShore = true;
-const cX = PHUQUOC_CENTER.x;
-const cZ = PHUQUOC_CENTER.y;
+const cX = BEACH_CENTER.x;
+const cZ = BEACH_CENTER.y;
 for (let i = 15; i <= 118; i++) {
-  const pt = PHUQUOC_BOUNDARY_POINTS[i];
+  const pt = BEACH_BOUNDARY_POINTS[i];
   const dStart = getDistanceToShore(cX, cZ);
   const dEnd = getDistanceToShore(pt.x, pt.y);
   if (dStart <= 0 || dEnd >= 0) {
@@ -251,7 +240,7 @@ assert(gheLowDepth > ghe.draft + 0.02, 'Ghe Nhỏ retains positive draft clearan
 
 // 6b. Real Mesh Geometry Measurements (Freeboard, Seat Elevation, Open Cockpit, Wave Alignment)
 const boatTestParent = new THREE.Group();
-const boatSys = createPhuQuocBoats(boatTestParent);
+const boatSys = createBeachBoats(boatTestParent);
 
 const thungObj = boatSys.group.getObjectByName('ThuyenThung') as THREE.Group;
 const gheObj = boatSys.group.getObjectByName('GheNho') as THREE.Group;
@@ -776,11 +765,11 @@ for (const tideLvl of [SEA_LEVEL_LOW, SEA_LEVEL_BASE, SEA_LEVEL_HIGH]) {
 boatSys.dispose();
 
 // 7. State & Season Isolation (Discriminated Unions & Sanitization)
-// A. Invalid season on Phu Quoc (e.g. 'winter' passed to phuquoc) must fallback to 'dry'
-const corruptPQ = sanitizePhuQuocState({ season: 'winter', timeOfDay: 99 });
+// A. Invalid season on Beach (e.g. 'winter' passed to beach) must fallback to 'dry'
+const corruptPQ = sanitizeBeachState({ season: 'winter' as any, timeOfDay: 99 });
 assert(
   corruptPQ.season === 'dry' && corruptPQ.timeOfDay === 24,
-  'Phu Quoc state sanitization rejects invalid seasons and clamps time of day'
+  'Beach state sanitization rejects invalid seasons and clamps time of day'
 );
 
 // B. Invalid season on Garden (e.g. 'rainy' passed to garden) must fallback to 'spring'
@@ -796,24 +785,24 @@ assert(
   'Garden preserves default Spring 16:30 state'
 );
 assert(
-  DEFAULT_PHUQUOC_STATE.timeOfDay === 17.75 && DEFAULT_PHUQUOC_STATE.season === 'dry',
-  'Phu Quoc preserves default Dry Season 17:45 sunset state'
+  DEFAULT_BEACH_STATE.timeOfDay === 17.75 && DEFAULT_BEACH_STATE.season === 'dry',
+  'Sunset Beach preserves default Dry Season 17:45 sunset state'
 );
 
-// 8. Phu Quoc Solar Trajectory & Coordinate Convention (+X East, -X West)
-const sun06 = calculatePhuQuocSunPosition(6.0);
+// 8. Beach Solar Trajectory & Coordinate Convention (+X East, -X West)
+const sun06 = calculateBeachSunPosition(6.0);
 assert(sun06.x > 0 && sun06.isDay, 'Sun rises in the East (+X > 0) around 06:00');
 
-const sun12 = calculatePhuQuocSunPosition(12.0);
+const sun12 = calculateBeachSunPosition(12.0);
 assert(
   Math.abs(sun12.x) < 2.0 && sun12.y > 10.0,
   'Sun reaches zenith overhead around 12:00 (|X| < 2.0, Y high > 10.0)'
 );
 
-const sun18 = calculatePhuQuocSunPosition(18.0);
+const sun18 = calculateBeachSunPosition(18.0);
 assert(sun18.x < 0, 'Sun sets in the West (-X < 0) around 18:00');
 
-const sun1745 = calculatePhuQuocSunPosition(17.75);
+const sun1745 = calculateBeachSunPosition(17.75);
 assert(
   sun1745.x < -14.0 && sun1745.y > 0.0 && sun1745.y < 3.0 && sun1745.isSunset,
   'Artistic preset 17:45 positions sun low over western sea for golden hour'
@@ -821,7 +810,7 @@ assert(
 
 let allSunCoordinatesFinite = true;
 for (let t = 0; t <= 24; t += 0.25) {
-  const p = calculatePhuQuocSunPosition(t);
+  const p = calculateBeachSunPosition(t);
   if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
     allSunCoordinatesFinite = false;
     break;
@@ -859,40 +848,40 @@ assert(
 // 10. Phu Quoc Natural Asymmetric Footprint & Boundary Verification
 
 assert(
-  PHUQUOC_BOUNDARY_POINTS.length === PHUQUOC_BOUNDARY_SAMPLES && PHUQUOC_BOUNDARY_SAMPLES === 256,
-  `Phu Quoc boundary polygon has exactly ${PHUQUOC_BOUNDARY_SAMPLES} samples`
+  BEACH_BOUNDARY_POINTS.length === BEACH_BOUNDARY_SAMPLES && BEACH_BOUNDARY_SAMPLES === 256,
+  `Beach boundary polygon has exactly ${BEACH_BOUNDARY_SAMPLES} samples`
 );
 
 // Verify closed contour
-const pqStart = PHUQUOC_BOUNDARY_POINTS[0];
-const pqEnd = PHUQUOC_BOUNDARY_POINTS[PHUQUOC_BOUNDARY_POINTS.length - 1];
+const pqStart = BEACH_BOUNDARY_POINTS[0];
+const pqEnd = BEACH_BOUNDARY_POINTS[BEACH_BOUNDARY_POINTS.length - 1];
 const pqCloseGap = Math.hypot(pqStart.x - pqEnd.x, pqStart.y - pqEnd.y);
-assert(pqCloseGap < 0.65, `Phu Quoc boundary polygon forms a closed contour (gap = ${pqCloseGap.toFixed(3)})`);
+assert(pqCloseGap < 0.65, `Beach boundary polygon forms a closed contour (gap = ${pqCloseGap.toFixed(3)})`);
 
 // Verify asymmetric natural coastal silhouette (radius varies meaningfully across orientations)
 let pqMinR = Infinity;
 let pqMaxR = -Infinity;
 for (let i = 0; i < 64; i++) {
   const theta = (i / 64) * Math.PI * 2;
-  const r = getPhuQuocFootprintRadius(theta);
+  const r = getBeachFootprintRadius(theta);
   if (r < pqMinR) pqMinR = r;
   if (r > pqMaxR) pqMaxR = r;
 }
 assert(
   pqMaxR - pqMinR > 1.8,
-  `Phu Quoc marine display has a noncircular perimeter (radius: min=${pqMinR.toFixed(2)}, max=${pqMaxR.toFixed(2)}, span=${(pqMaxR - pqMinR).toFixed(2)})`
+  `Beach marine display has a noncircular perimeter (radius: min=${pqMinR.toFixed(2)}, max=${pqMaxR.toFixed(2)}, span=${(pqMaxR - pqMinR).toFixed(2)})`
 );
 
-// Verify that Garden and Phu Quoc have different, custom footprints (NOT the same oval or circle)
+// Verify that Garden and Beach have different, custom footprints (NOT the same oval or circle)
 import { getGardenFootprintRadius } from '../src/three/themes/garden/footprint';
 let footprintDiffSum = 0;
 for (let i = 0; i < 32; i++) {
   const theta = (i / 32) * Math.PI * 2;
-  footprintDiffSum += Math.abs(getGardenFootprintRadius(theta) - getPhuQuocFootprintRadius(theta));
+  footprintDiffSum += Math.abs(getGardenFootprintRadius(theta) - getBeachFootprintRadius(theta));
 }
 assert(
   footprintDiffSum / 32 > 0.05,
-  'Garden and Phu Quoc footprints are distinctly customized and not identical geometries'
+  'Garden and Beach footprints are distinctly customized and not identical geometries'
 );
 
 // Verify all bungalows, pier, boats, and relaxation spots are within footprint
@@ -910,7 +899,7 @@ const pqStructures = [
 let allPqStructuresInside = true;
 let pqStructFail = '';
 for (const s of pqStructures) {
-  if (!isInsidePhuQuocFootprint(s.x, s.z, 0.2)) {
+  if (!isInsideBeachFootprint(s.x, s.z, 0.2)) {
     allPqStructuresInside = false;
     pqStructFail = `${s.name} at (${s.x}, ${s.z})`;
     break;
@@ -919,18 +908,18 @@ for (const s of pqStructures) {
 assert(allPqStructuresInside, 'All thatched bungalows, pier, boats, and relaxation spots reside safely within natural footprint', pqStructFail);
 
 // 11. Beach Terrain Winding & Face Normal Cross Product Verification
-import { createBeachTerrain, createPhuQuocTerrain } from '../src/three/themes/beach/terrain';
-import { createBeachWater, createPhuQuocWater } from '../src/three/themes/beach/water';
+import { createBeachTerrain } from '../src/three/themes/beach/terrain';
+import { createBeachWater } from '../src/three/themes/beach/water';
 
 const pqMockGroup = new THREE.Group();
 const pqTerrainSystem = createBeachTerrain(pqMockGroup);
 const pqTerrainMesh = pqTerrainSystem.group.children.find(c => c instanceof THREE.Mesh && c.receiveShadow) as THREE.Mesh;
-assert(!!pqTerrainMesh, 'Phu Quoc terrain mesh exists in system');
+assert(!!pqTerrainMesh, 'Beach terrain mesh exists in system');
 
 const pqGeom = pqTerrainMesh.geometry as THREE.BufferGeometry;
 const pqPosAttr = pqGeom.attributes.position;
 const pqIndexAttr = pqGeom.index;
-assert(!!pqPosAttr && !!pqIndexAttr, 'Phu Quoc terrain mesh contains valid position and index buffer attributes');
+assert(!!pqPosAttr && !!pqIndexAttr, 'Beach terrain mesh contains valid position and index buffer attributes');
 
 let pqTopWindingCorrect = true;
 let pqTopTrianglesCount = 0;
@@ -983,8 +972,8 @@ if (pqIndexAttr) {
       pqSideTrianglesCount++;
       const midX = (v0.x + v1.x + v2.x) / 3;
       const midZ = (v0.z + v1.z + v2.z) / 3;
-      const outDirX = midX - PHUQUOC_CENTER.x;
-      const outDirZ = midZ - PHUQUOC_CENTER.y;
+      const outDirX = midX - BEACH_CENTER.x;
+      const outDirZ = midZ - BEACH_CENTER.y;
       const dotOut = faceNormal.x * outDirX + faceNormal.z * outDirZ;
       if (dotOut < -0.1) {
         pqSideWindingCorrect = false;
@@ -993,19 +982,19 @@ if (pqIndexAttr) {
   }
 }
 
-assert(pqTopTrianglesCount > 5000 && pqTopWindingCorrect, `Phu Quoc top surface has verified +Y normal winding across all ${pqTopTrianglesCount} triangles`);
-assert(pqBottomTrianglesCount === 256 && pqBottomWindingCorrect, `Phu Quoc bottom face has verified strictly -Y normal winding across all ${pqBottomTrianglesCount} triangles`);
-assert(pqSideTrianglesCount > 1000 && pqSideWindingCorrect, `Phu Quoc side walls have verified outward-facing normal winding across all ${pqSideTrianglesCount} triangles`);
+assert(pqTopTrianglesCount > 5000 && pqTopWindingCorrect, `Beach top surface has verified +Y normal winding across all ${pqTopTrianglesCount} triangles`);
+assert(pqBottomTrianglesCount === 256 && pqBottomWindingCorrect, `Beach bottom face has verified strictly -Y normal winding across all ${pqBottomTrianglesCount} triangles`);
+assert(pqSideTrianglesCount > 1000 && pqSideWindingCorrect, `Beach side walls have verified outward-facing normal winding across all ${pqSideTrianglesCount} triangles`);
 
 // Verify FrontSide rendering on terrain material
 const pqMat = pqTerrainMesh.material as THREE.MeshStandardMaterial;
-assert(pqMat.side === THREE.FrontSide, 'Phu Quoc terrain material uses FrontSide rendering (no DoubleSide used to mask winding errors)');
+assert(pqMat.side === THREE.FrontSide, 'Beach terrain material uses FrontSide rendering (no DoubleSide used to mask winding errors)');
 
 // 12. Beach Water Surface & Marine Skirt Exact Connectivity Verification
 const pqWaterParent = new THREE.Group();
 const pqWaterSystem = createBeachWater({} as THREE.WebGLRenderer, pqWaterParent, getTerrainHeight, true);
 const pqWaterMesh = pqWaterSystem.mesh;
-assert(!!pqWaterMesh, 'Phu Quoc water mesh exists in system');
+assert(!!pqWaterMesh, 'Beach water mesh exists in system');
 
 const wGeom = pqWaterMesh.geometry as THREE.BufferGeometry;
 const wPos = wGeom.attributes.position;
@@ -1039,7 +1028,7 @@ if (wIdx) {
       // Normal must point outward away from center
       const midX = (v0.x + v1.x + v2.x) / 3;
       const midZ = (v0.z + v1.z + v2.z) / 3;
-      const dotOut = faceNormal.x * (midX - PHUQUOC_CENTER.x) + faceNormal.z * (midZ - PHUQUOC_CENTER.y);
+      const dotOut = faceNormal.x * (midX - BEACH_CENTER.x) + faceNormal.z * (midZ - BEACH_CENTER.y);
       if (dotOut < 0.0) {
         waterSkirtWindingOk = false;
       }
@@ -1096,12 +1085,12 @@ let rainyNightNotBrighter = true;
 let nightLuminanceDetails = '';
 
 const nightHours = [21.0, 22.0, 23.0, 0.0, 1.0, 2.0, 3.0, 4.0];
-const noonSky = getPhuQuocSkyGradient(12.0, 'dry', tTop, tMid, tBot);
+const noonSky = getBeachSkyGradient(12.0, 'dry', tTop, tMid, tBot);
 const noonLum = 0.2126 * noonSky.top.r + 0.7152 * noonSky.top.g + 0.0722 * noonSky.top.b;
 
 for (const nh of nightHours) {
-  const drySky = getPhuQuocSkyGradient(nh, 'dry', new THREE.Color(), new THREE.Color(), new THREE.Color());
-  const rainySky = getPhuQuocSkyGradient(nh, 'rainy', new THREE.Color(), new THREE.Color(), new THREE.Color());
+  const drySky = getBeachSkyGradient(nh, 'dry', new THREE.Color(), new THREE.Color(), new THREE.Color());
+  const rainySky = getBeachSkyGradient(nh, 'rainy', new THREE.Color(), new THREE.Color(), new THREE.Color());
 
   const dryLum = 0.2126 * drySky.top.r + 0.7152 * drySky.top.g + 0.0722 * drySky.top.b;
   const rainyLum = 0.2126 * rainySky.top.r + 0.7152 * rainySky.top.g + 0.0722 * rainySky.top.b;
@@ -1121,7 +1110,7 @@ for (const nh of nightHours) {
 assert(rainyNightNotBrighter, 'Monsoon rainy night sky is not brighter than dry night sky (daylight factor prevents daytime overcast leak into night)', nightLuminanceDetails);
 assert(nightDarkerThanDay, 'Night sky luminance across all night hours is at least 10x darker than noon tropical daylight', nightLuminanceDetails);
 
-// 14. Phu Quoc Sky Continuous Interpolation (Max step jump limit across 24h)
+// 14. Beach Sky Continuous Interpolation (Max step jump limit across 24h)
 let maxStepJump = 0;
 let maxStepDetails = '';
 const maxJumpThreshold = 16.0 / 255.0; // max allowed channel change in 0.05 hr (3 mins)
@@ -1132,7 +1121,7 @@ for (const s of ['dry', 'rainy'] as const) {
     const curTop = new THREE.Color();
     const curMid = new THREE.Color();
     const curBot = new THREE.Color();
-    getPhuQuocSkyGradient(tod, s, curTop, curMid, curBot);
+    getBeachSkyGradient(tod, s, curTop, curMid, curBot);
 
     if (prevGrad) {
       const parts = [
@@ -1158,8 +1147,8 @@ for (const s of ['dry', 'rainy'] as const) {
 assert(maxStepJump <= maxJumpThreshold, `Continuous sky interpolation: max color step jump between adjacent 0.05h samples is ${(maxStepJump * 255).toFixed(1)}/255 (threshold <= 16/255)`, maxStepDetails);
 
 // 15. Coconut Palm Crown Fronds Box3 vs Thatched Bungalow Roof Footprint Clearance
-import { createBeachArchitecture, createPhuQuocArchitecture } from '../src/three/themes/beach/architecture';
-import { createBeachVegetation, createPhuQuocVegetation } from '../src/three/themes/beach/vegetation';
+import { createBeachArchitecture } from '../src/three/themes/beach/architecture';
+import { createBeachVegetation } from '../src/three/themes/beach/vegetation';
 
 const pqVegScene = new THREE.Scene();
 const pqVegParent = new THREE.Group();
@@ -1242,8 +1231,8 @@ try {
   (globalThis as any).window = oldWindow;
 }
 
-// 15. Raycast Water Interaction & Obstacle Verification Tests (Phu Quoc)
-import { intersectPhuQuocWater } from '../src/three/themes/beach/shoreline';
+// 15. Raycast Water Interaction & Obstacle Verification Tests (Beach)
+import { intersectBeachWater } from '../src/three/themes/beach/shoreline';
 
 // A. Oblique camera raycast tests at both HIGH and LOW tides
 const pqCameraPos = new THREE.Vector3(18.0, 16.0, 26.0);
@@ -1267,7 +1256,7 @@ for (const t of pqTides) {
     const rayDir = new THREE.Vector3().subVectors(targetPt, pqCameraPos).normalize();
     const ray = new THREE.Ray(pqCameraPos, rayDir);
 
-    const hit = intersectPhuQuocWater(ray, t.level, t.offset);
+    const hit = intersectBeachWater(ray, t.level, t.offset);
     if (!hit) {
       pqObliqueRaycastPassed = false;
       pqObliqueFailDetails = `Failed to intersect water for ${target.desc} at ${t.name} tide`;
@@ -1297,7 +1286,7 @@ assert(
 // B. Vertical skirt rejection at perimeter
 // Ray aimed horizontally from outside towards the vertical skirt at z = 8.0, y = 0.10
 const pqSkirtRay = new THREE.Ray(new THREE.Vector3(0, 0.10, 10.0), new THREE.Vector3(0, 0, -1));
-const pqSkirtHit = intersectPhuQuocWater(pqSkirtRay, SEA_LEVEL_HIGH, 1.0);
+const pqSkirtHit = intersectBeachWater(pqSkirtRay, SEA_LEVEL_HIGH, 1.0);
 assert(
   pqSkirtHit === null || pqSkirtHit.point.z < 8.0,
   'Ray hitting vertical perimeter skirt does not produce spurious ripple on vertical sea cut'
@@ -1319,7 +1308,7 @@ assert(
 // Test 2: Submerged seabed beneath clear ocean water (x=0, z=5.5)
 // Sea level is at 0.44m, seabed is at y ~ -0.40m
 const rayToSea = new THREE.Ray(new THREE.Vector3(0, 5.0, 5.5), new THREE.Vector3(0, -1, 0));
-const waterHitSea = intersectPhuQuocWater(rayToSea, SEA_LEVEL_HIGH, 1.0);
+const waterHitSea = intersectBeachWater(rayToSea, SEA_LEVEL_HIGH, 1.0);
 const pqRaycasterSea = new THREE.Raycaster(rayToSea.origin, rayToSea.direction);
 const seaObstacleHits = pqRaycasterSea.intersectObjects(pqObstacles, true);
 
@@ -1347,10 +1336,10 @@ for (const corner of cutCorners) {
     );
 
     const rayDown = new THREE.Ray(new THREE.Vector3(corner.x, 5.0, corner.z), new THREE.Vector3(0, -1, 0));
-    const waterHit = intersectPhuQuocWater(rayDown, t.level, t.offset);
+    const waterHit = intersectBeachWater(rayDown, t.level, t.offset);
     assert(
       waterHit === null,
-      `${corner.desc} is rejected by intersectPhuQuocWater at ${t.name} tide`
+      `${corner.desc} is rejected by intersectBeachWater at ${t.name} tide`
     );
   }
 }
@@ -1372,7 +1361,7 @@ for (const pt of inBoundsBorderPoints) {
     );
 
     const rayDown = new THREE.Ray(new THREE.Vector3(pt.x, 5.0, pt.z), new THREE.Vector3(0, -1, 0));
-    const waterHit = intersectPhuQuocWater(rayDown, t.level, t.offset);
+    const waterHit = intersectBeachWater(rayDown, t.level, t.offset);
     assert(
       waterHit !== null && Math.abs(waterHit.point.y - t.level) < 0.001,
       `In-bounds border point ${pt.desc} successfully intersects water at ${t.name} tide`
@@ -1460,7 +1449,7 @@ assert(boatWaterlinesValid, 'Ocean wave swell does not submerge gunwales or swam
 
 // 4. Boat Cockpit Cavity Discard under Rainy Wave Dynamics
 const dummyBoatsGroup = new THREE.Group();
-const boatsSys = createPhuQuocBoats(dummyBoatsGroup);
+const boatsSys = createBeachBoats(dummyBoatsGroup);
 
 // Update boats with rainy effective wind
 boatsSys.update(0.016, 2.5, 0.35, 0.85, 0.5);

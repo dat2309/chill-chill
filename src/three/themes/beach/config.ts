@@ -53,7 +53,6 @@ export const BEACH_METADATA: ThemeMetadata<'beach'> = {
     },
   ],
 };
-export const PHUQUOC_METADATA = BEACH_METADATA;
 
 // Coordinate convention:
 // +X = East (inland low hills), -X = West (sea & sunset)
@@ -65,4 +64,3 @@ export const BEACH_CAMERA_PRESET: ThemeCameraPreset = {
   minPolarAngle: Math.PI * 0.16,
   maxPolarAngle: Math.PI * 0.44,
 };
-export const PHUQUOC_CAMERA_PRESET = BEACH_CAMERA_PRESET;

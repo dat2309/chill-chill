@@ -7,21 +7,15 @@ import {
   SEA_LEVEL_HIGH,
   WATER_RES,
   BEACH_COLORS,
-  PHUQUOC_COLORS,
   TideLevel,
 } from './constants';
 import { getWaterLevel, isInWater, getShoreZ, getDistanceToShore } from './shoreline';
 import {
   BEACH_CENTER,
-  PHUQUOC_CENTER,
   BEACH_BOUNDARY_POINTS,
-  PHUQUOC_BOUNDARY_POINTS,
   BEACH_BOUNDARY_SAMPLES,
-  PHUQUOC_BOUNDARY_SAMPLES,
   isInsideBeachFootprint,
-  isInsidePhuQuocFootprint,
   BEACH_FOOTPRINT_BOUNDS,
-  PHUQUOC_FOOTPRINT_BOUNDS,
 } from './footprint';
 import { generateGheCavityShaderGlsl, THUNG_SLICES } from './boats';
 
@@ -43,7 +37,6 @@ export interface BeachWaterSystem {
   onContextRestored?(): void;
   dispose(): void;
 }
-export type PhuQuocWaterSystem = BeachWaterSystem;
 
 interface AnalyticalRipple {
   x: number;
@@ -142,10 +135,10 @@ export function createBeachWater(
   let currentSimTime = 0;
 
   // --- Water Mesh Conforming Strictly to Natural Diorama Footprint ---
-  const minX = PHUQUOC_FOOTPRINT_BOUNDS.minX;
-  const maxX = PHUQUOC_FOOTPRINT_BOUNDS.maxX;
+  const minX = BEACH_FOOTPRINT_BOUNDS.minX;
+  const maxX = BEACH_FOOTPRINT_BOUNDS.maxX;
   const minZ = -1.5;
-  const maxZ = PHUQUOC_FOOTPRINT_BOUNDS.maxZ;
+  const maxZ = BEACH_FOOTPRINT_BOUNDS.maxZ;
 
   const positions: number[] = [];
   const uvs: number[] = [];
@@ -154,16 +147,16 @@ export function createBeachWater(
   const isSkirt: number[] = [];
   const indices: number[] = [];
 
-  const cX = PHUQUOC_CENTER.x;
-  const cZ = PHUQUOC_CENTER.y;
-  const numSegments = PHUQUOC_BOUNDARY_SAMPLES;
+  const cX = BEACH_CENTER.x;
+  const cZ = BEACH_CENTER.y;
+  const numSegments = BEACH_BOUNDARY_SAMPLES;
 
   // 1. Identify marine boundary segment range
   // Boundary rays crossing the southern sweeping bay
   let itStart = -1;
   let itEnd = -1;
   for (let it = 0; it < numSegments; it++) {
-    const pt = PHUQUOC_BOUNDARY_POINTS[it];
+    const pt = BEACH_BOUNDARY_POINTS[it];
     const shoreZ = getShoreZ(pt.x);
     const isMarine = pt.y >= shoreZ - 0.05 || getHeightAt(pt.x, pt.y) < SEA_LEVEL_HIGH + 0.02;
     if (isMarine) {
@@ -185,7 +178,7 @@ export function createBeachWater(
   // Connects natural shoreline directly to exact boundary points bPt_k
   for (let ik = 0; ik < numRays; ik++) {
     const it = itStart + ik;
-    const bPt = PHUQUOC_BOUNDARY_POINTS[it];
+    const bPt = BEACH_BOUNDARY_POINTS[it];
 
     // Find ray root at shoreline via bisection
     // At t=0 (center), on land (dist > 0). At t=1 (boundary), in sea (dist < 0).
@@ -247,8 +240,8 @@ export function createBeachWater(
   for (let ik = 0; ik < numRays - 1; ik++) {
     const it0 = itStart + ik;
     const it1 = it0 + 1;
-    const bPt0 = PHUQUOC_BOUNDARY_POINTS[it0];
-    const bPt1 = PHUQUOC_BOUNDARY_POINTS[it1];
+    const bPt0 = BEACH_BOUNDARY_POINTS[it0];
+    const bPt1 = BEACH_BOUNDARY_POINTS[it1];
 
     const bedH0 = getHeightAt(bPt0.x, bPt0.y);
     const bedH1 = getHeightAt(bPt1.x, bPt1.y);
@@ -449,8 +442,8 @@ export function createBeachWater(
       uWaterLevel: { value: currentWaterLevel },
       uTideOffset: { value: 1.0 },
       uRippleMap: { value: rtA ? rtA.texture : null },
-      uShallowColor: { value: PHUQUOC_COLORS.water.shallow.clone() },
-      uDeepColor: { value: PHUQUOC_COLORS.water.deep.clone() },
+      uShallowColor: { value: BEACH_COLORS.water.shallow.clone() },
+      uDeepColor: { value: BEACH_COLORS.water.deep.clone() },
       uSunsetSkyColor: { value: new THREE.Color(0xffa785) },
       uSunDirection: { value: new THREE.Vector3(-0.8, 0.35, -0.4).normalize() },
       uSunColor: { value: new THREE.Color(0xff8c42) },
@@ -904,5 +897,3 @@ ${generateGheCavityShaderGlsl()}
     },
   };
 }
-
-export const createPhuQuocWater = createBeachWater;

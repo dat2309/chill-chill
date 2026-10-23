@@ -2,7 +2,6 @@ import {
   ThemeId,
   GardenSeason,
   BeachSeason,
-  PhuQuocSeason,
   ThemeState,
   SharedOptions,
   PersistedAppState,
@@ -33,7 +32,6 @@ export const DEFAULT_BEACH_STATE: ThemeState<'beach'> = {
   windStrength: 0.35,
   autoRotate: false,
 };
-export const DEFAULT_PHUQUOC_STATE = DEFAULT_BEACH_STATE;
 
 export const DEFAULT_SHARED_OPTIONS: SharedOptions = {
   quality: 'high',
@@ -143,7 +141,6 @@ export function sanitizeBeachState(raw: any): ThemeState<'beach'> {
     debugTerrain: Boolean(raw.debugTerrain),
   };
 }
-export const sanitizePhuQuocState = sanitizeBeachState;
 
 export function loadPersistedAppState(): PersistedAppState {
   const fallback: PersistedAppState = {

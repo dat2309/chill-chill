@@ -4,7 +4,6 @@ export type ThemeId = 'garden' | 'beach';
 
 export type GardenSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 export type BeachSeason = 'dry' | 'rainy';
-export type PhuQuocSeason = BeachSeason;
 
 export interface ThemeSeasonMap {
   garden: GardenSeason;
@@ -36,7 +35,7 @@ export interface ThemeState<T extends ThemeId = ThemeId> {
   season: ThemeSeason<T>;
   tide: TideLevel;
   rippleStrength: number;
-  flowSpeed: number; // For stream (garden) or ocean waves (phuquoc)
+  flowSpeed: number; // For stream (garden) or ocean waves (beach)
   windStrength: number;
   autoRotate: boolean;
   quality?: Quality;

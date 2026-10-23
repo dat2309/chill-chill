@@ -2,11 +2,9 @@ import * as THREE from 'three';
 import {
   DEFAULT_GARDEN_STATE,
   DEFAULT_BEACH_STATE,
-  DEFAULT_PHUQUOC_STATE,
   DEFAULT_SHARED_OPTIONS,
   sanitizeGardenState,
   sanitizeBeachState,
-  sanitizePhuQuocState,
   sanitizeCameraState,
 } from '../src/three/core/storage';
 import { ThemeId, ThemeState, ThemeInstance } from '../src/three/core/types';

@@ -8,7 +8,6 @@ import {
   getThemeDefaultState,
   DEFAULT_GARDEN_STATE,
   DEFAULT_BEACH_STATE,
-  DEFAULT_PHUQUOC_STATE,
 } from './three/core/storage';
 import { SceneManager } from './three/core/SceneManager';
 import { THEME_METADATA_MAP } from './three/themes/registry';

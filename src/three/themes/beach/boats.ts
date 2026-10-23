@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BEACH_COLORS, PHUQUOC_COLORS } from './constants';
+import { BEACH_COLORS } from './constants';
 import { BOAT_SPOTS } from './shoreline';
 
 export interface BoatCavityState {
@@ -15,7 +15,6 @@ export interface BeachBoatsSystem {
   update(dt: number, elapsed: number, waterLevel: number, windStrength: number, flowSpeed: number, rainIntensity?: number): void;
   dispose(): void;
 }
-export type PhuQuocBoatsSystem = BeachBoatsSystem;
 
 /**
  * Standardized Boat Design Specifications (local coordinates):
@@ -481,7 +480,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   geometriesToDispose.push(thungHullGeo);
 
   const thungMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.boats.thungPitch,
+    color: BEACH_COLORS.boats.thungPitch,
     side: THREE.FrontSide,
   });
   materialsToDispose.push(thungMat);
@@ -517,7 +516,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   geometriesToDispose.push(thungRimGeo);
 
   const thungRimMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.boats.thungRimBlue,
+    color: BEACH_COLORS.boats.thungRimBlue,
   });
   materialsToDispose.push(thungRimMat);
   const thungRimMesh = new THREE.Mesh(thungRimGeo, thungRimMat);
@@ -530,7 +529,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   geometriesToDispose.push(thungSeatGeo);
 
   const thungSeatMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.boats.thungBamboo,
+    color: BEACH_COLORS.boats.thungBamboo,
   });
   materialsToDispose.push(thungSeatMat);
   const thungSeatMesh = new THREE.Mesh(thungSeatGeo, thungSeatMat);
@@ -678,7 +677,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   geometriesToDispose.push(gheHullGeo);
 
   const gheHullMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.boats.gheHull,
+    color: BEACH_COLORS.boats.gheHull,
     side: THREE.FrontSide,
   });
   materialsToDispose.push(gheHullMat);
@@ -732,7 +731,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   trimSegments.push(bowTrim);
 
   const trimMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.boats.gheRedTrim,
+    color: BEACH_COLORS.boats.gheRedTrim,
   });
   materialsToDispose.push(trimMat);
 
@@ -755,7 +754,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   geometriesToDispose.push(thwartAftGeo);
 
   const thwartMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.boats.gheWood,
+    color: BEACH_COLORS.boats.gheWood,
   });
   materialsToDispose.push(thwartMat);
 
@@ -787,7 +786,7 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   }
 
   // Traditional painted boat eyes on port & starboard bow flare
-  const eyeMatYellow = new THREE.MeshBasicMaterial({ color: PHUQUOC_COLORS.boats.gheYellowEye });
+  const eyeMatYellow = new THREE.MeshBasicMaterial({ color: BEACH_COLORS.boats.gheYellowEye });
   const eyeMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const eyeMatBlack = new THREE.MeshBasicMaterial({ color: 0x111111 });
   materialsToDispose.push(eyeMatYellow, eyeMatWhite, eyeMatBlack);
@@ -867,5 +866,3 @@ export function createBeachBoats(parentGroup: THREE.Group): BeachBoatsSystem {
   };
   return system;
 }
-
-export const createPhuQuocBoats = createBeachBoats;

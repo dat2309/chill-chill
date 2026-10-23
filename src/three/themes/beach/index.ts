@@ -333,10 +333,6 @@ export class BeachTheme implements ThemeInstance<'beach'> {
   }
 }
 
-export const PhuQuocTheme = BeachTheme;
-
 export default function createBeachTheme(renderer: THREE.WebGLRenderer): ThemeInstance<'beach'> {
   return new BeachTheme(renderer);
 }
-
-export const createPhuQuocTheme = createBeachTheme;

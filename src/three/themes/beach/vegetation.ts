@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { createBranchCrown } from '../../core/branchCrown';
 import { createVegetationWeather } from '../../core/vegetationWeather';
-import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason, SEED } from './constants';
+import { BEACH_COLORS, BeachSeason, SEED } from './constants';
 import { getDistanceToShore, isInWater, BUNGALOW_SPOTS } from './shoreline';
-import { isInsideBeachFootprint, isInsidePhuQuocFootprint } from './footprint';
+import { isInsideBeachFootprint } from './footprint';
 import { SeededRandom } from '../../core/noise';
 
 export interface BeachVegetationSystem {
@@ -12,7 +12,6 @@ export interface BeachVegetationSystem {
   updateSeason(season: BeachSeason | number, t?: number): void;
   dispose(): void;
 }
-export type PhuQuocVegetationSystem = BeachVegetationSystem;
 
 
 // Exact world bounding boxes of thatched bungalow roofs (from 3D cone meshes)
@@ -37,12 +36,12 @@ export function createBeachVegetation(
   const rng = new SeededRandom(SEED + 999);
 
   // Materials
-  const palmTrunkMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.vegetation.palmTrunk });
+  const palmTrunkMat = new THREE.MeshStandardMaterial({ color: BEACH_COLORS.vegetation.palmTrunk });
   const palmFrondMat = new THREE.MeshStandardMaterial({
-    color: PHUQUOC_COLORS.vegetation.palmFrond,
+    color: BEACH_COLORS.vegetation.palmFrond,
     side: THREE.DoubleSide,
   });
-  const casuarinaMat = new THREE.MeshStandardMaterial({ color: PHUQUOC_COLORS.vegetation.casuarina });
+  const casuarinaMat = new THREE.MeshStandardMaterial({ color: BEACH_COLORS.vegetation.casuarina });
   materialsToDispose.push(palmTrunkMat, palmFrondMat, casuarinaMat);
 
   // --- Box3-based Bungalow Roof Exclusion ---
@@ -286,5 +285,3 @@ export function createBeachVegetation(
     },
   };
 }
-
-export const createPhuQuocVegetation = createBeachVegetation;

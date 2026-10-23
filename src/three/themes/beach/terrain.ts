@@ -4,9 +4,7 @@ import { getBeachCoverHeight } from './rainExposure';
 import { groundRock } from '../../core/objectGeometry';
 import {
   BEACH_COLORS,
-  PHUQUOC_COLORS,
   BeachSeason,
-  PhuQuocSeason,
   SEED,
 } from './constants';
 import {
@@ -18,17 +16,11 @@ import {
 } from './shoreline';
 import {
   BEACH_CENTER,
-  PHUQUOC_CENTER,
   BEACH_BOUNDARY_POINTS,
-  PHUQUOC_BOUNDARY_POINTS,
   BEACH_BOUNDARY_SAMPLES,
-  PHUQUOC_BOUNDARY_SAMPLES,
   isInsideBeachFootprint,
-  isInsidePhuQuocFootprint,
   getBeachBoundaryPoint,
-  getPhuQuocBoundaryPoint,
   BEACH_FOOTPRINT_BOUNDS,
-  PHUQUOC_FOOTPRINT_BOUNDS,
 } from './footprint';
 import { SeededRandom, SimplexNoise2D } from '../../core/noise';
 
@@ -42,7 +34,6 @@ export interface BeachTerrainSystem {
   updateSeason(season: BeachSeason | number, t?: number): void;
   dispose(): void;
 }
-export type PhuQuocTerrainSystem = BeachTerrainSystem;
 
 export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem {
   const terrainGroup = new THREE.Group();
@@ -74,7 +65,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
 
   // --- Geometry Construction ---
   const numRings = 140;
-  const numSegments = PHUQUOC_BOUNDARY_SAMPLES;
+  const numSegments = BEACH_BOUNDARY_SAMPLES;
   const topVertCount = 1 + numRings * numSegments;
 
   const positions: number[] = [];
@@ -93,25 +84,25 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     // A. Seabed (submerged): clear golden sand in shallows transitioning to deeper sediment
     if (dist < 0) {
       const shallowSand = new THREE.Color(0xd0bfa0);
-      const deepSand = PHUQUOC_COLORS.sand.deep;
+      const deepSand = BEACH_COLORS.sand.deep;
       const shallowBlend = Math.min(1, Math.max(0, 1 + dist * 0.55));
       cDry.copy(deepSand).lerp(shallowSand, shallowBlend);
     }
     // B. Wet swash zone
     else if (dist < 0.8) {
       const t = dist / 0.8;
-      cDry.copy(PHUQUOC_COLORS.sand.wet).lerp(PHUQUOC_COLORS.sand.dry, t);
+      cDry.copy(BEACH_COLORS.sand.wet).lerp(BEACH_COLORS.sand.dry, t);
     }
     // Continuous sand → coastal grass → granite transitions. Hard x/zone
     // thresholds produce visible saw teeth on a densely tessellated mesh.
     else {
       const sandVar = 0.04 * SimplexNoise2D(x * 0.4, z * 0.4);
-      cDry.copy(PHUQUOC_COLORS.sand.dry).offsetHSL(0, 0, sandVar);
+      cDry.copy(BEACH_COLORS.sand.dry).offsetHSL(0, 0, sandVar);
       const grass = new THREE.Color(0x6b8f3e).lerp(
         new THREE.Color(0x4e6b2c), THREE.MathUtils.smoothstep(-z, 3.3, 5.0) * 0.5);
       const weights=getGroundWeights(x,z);
-      const rock = PHUQUOC_COLORS.rock.graniteWarm.clone()
-        .lerp(PHUQUOC_COLORS.rock.graniteLight, 0.35);
+      const rock = BEACH_COLORS.rock.graniteWarm.clone()
+        .lerp(BEACH_COLORS.rock.graniteLight, 0.35);
       cDry.setRGB(cDry.r*weights.sand+grass.r*weights.soil+rock.r*weights.rock,
         cDry.g*weights.sand+grass.g*weights.soil+rock.g*weights.rock,
         cDry.b*weights.sand+grass.b*weights.soil+rock.b*weights.rock);
@@ -120,9 +111,9 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     return cDry;
   }
 
-  // 1. Top Surface (Radial Polar Tessellation from PHUQUOC_CENTER to Boundary)
-  const cX = PHUQUOC_CENTER.x;
-  const cZ = PHUQUOC_CENTER.y;
+  // 1. Top Surface (Radial Polar Tessellation from BEACH_CENTER to Boundary)
+  const cX = BEACH_CENTER.x;
+  const cZ = BEACH_CENTER.y;
   const cY = sampleHeight(cX, cZ);
   const cNorm = sampleNormal(cX, cZ);
 
@@ -134,7 +125,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
   for (let ir = 1; ir <= numRings; ir++) {
     const frac = ir / numRings;
     for (let it = 0; it < numSegments; it++) {
-      const bPt = PHUQUOC_BOUNDARY_POINTS[it];
+      const bPt = BEACH_BOUNDARY_POINTS[it];
       const x = cX + frac * (bPt.x - cX);
       const z = cZ + frac * (bPt.y - cZ);
       const y = sampleHeight(x, z);
@@ -179,12 +170,12 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
   const colSoil = new THREE.Color(0xbfa57d);      // Sand & coastal topsoil
   const colLimestone = new THREE.Color(0x8a7f72); // Marine limestone sediment
   const colBedrock = new THREE.Color(0x524b45);   // Deep granite bedrock
-  const colBase = PHUQUOC_COLORS.base;            // Cream pedestal
+  const colBase = BEACH_COLORS.base;            // Cream pedestal
 
   const boundaryNormals: THREE.Vector2[] = [];
   for (let it = 0; it < numSegments; it++) {
-    const prevPt = PHUQUOC_BOUNDARY_POINTS[(it - 1 + numSegments) % numSegments];
-    const nextPt = PHUQUOC_BOUNDARY_POINTS[(it + 1) % numSegments];
+    const prevPt = BEACH_BOUNDARY_POINTS[(it - 1 + numSegments) % numSegments];
+    const nextPt = BEACH_BOUNDARY_POINTS[(it + 1) % numSegments];
     const tangent = new THREE.Vector2().subVectors(nextPt, prevPt);
     const norm = new THREE.Vector2(tangent.y, -tangent.x).normalize();
     boundaryNormals.push(norm);
@@ -196,7 +187,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
   for (let iy = 0; iy <= nySide; iy++) {
     const ty = iy / nySide;
     for (let it = 0; it < numSegments; it++) {
-      const bPt = PHUQUOC_BOUNDARY_POINTS[it];
+      const bPt = BEACH_BOUNDARY_POINTS[it];
       const norm2d = boundaryNormals[it];
       const yTop = sampleHeight(bPt.x, bPt.y);
       const y = yTop * (1.0 - ty) + wallCutoffY * ty;
@@ -245,7 +236,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     const nOut = Math.sin(phi);
 
     for (let it = 0; it < numSegments; it++) {
-      const bPt = PHUQUOC_BOUNDARY_POINTS[it];
+      const bPt = BEACH_BOUNDARY_POINTS[it];
       const norm2d = boundaryNormals[it];
       const curX = bPt.x + norm2d.x * outward;
       const curZ = bPt.y + norm2d.y * outward;
@@ -321,7 +312,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     const ringAlpha = 0.35 * Math.pow(1.0 - frac, 1.5);
 
     for (let it = 0; it < numSegments; it++) {
-      const bPt = PHUQUOC_BOUNDARY_POINTS[it];
+      const bPt = BEACH_BOUNDARY_POINTS[it];
       const norm2d = boundaryNormals[it];
       const sx = bPt.x + norm2d.x * expand;
       const sz = bPt.y + norm2d.y * expand;
@@ -405,7 +396,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
 
   const boulderMat = new THREE.MeshStandardMaterial({
     roughness: .82,
-    color: PHUQUOC_COLORS.rock.graniteWarm,
+    color: BEACH_COLORS.rock.graniteWarm,
   });
   const boulderMesh = new THREE.InstancedMesh(boulderGeo, boulderMat, boulderCount);
   boulderMesh.name='BeachBoulders';
@@ -433,7 +424,7 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
       bz = rng.range(0.5, 4.5);
     }
 
-    if (!isInsidePhuQuocFootprint(bx, bz, 0.45)) continue;
+    if (!isInsideBeachFootprint(bx, bz, 0.45)) continue;
 
     const by = sampleHeight(bx, bz);
     const scale = rng.range(0.6, 1.7);
@@ -454,8 +445,8 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     }
     boulderMesh.setMatrixAt(placedBoulders, dummy.matrix);
 
-    const bColor = PHUQUOC_COLORS.rock.graniteLight.clone().lerp(
-      PHUQUOC_COLORS.rock.graniteDark,
+    const bColor = BEACH_COLORS.rock.graniteLight.clone().lerp(
+      BEACH_COLORS.rock.graniteDark,
       rng.range(0, 0.5)
     );
     boulderMesh.setColorAt(placedBoulders, bColor);
@@ -488,5 +479,3 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
     },
   };
 }
-
-export const createPhuQuocTerrain = createBeachTerrain;
