@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {getGroundWeights} from './groundMaterial';
 import { getBeachCoverHeight } from './rainExposure';
 import { groundRock } from '../../core/objectGeometry';
 import {
@@ -108,16 +109,12 @@ export function createBeachTerrain(parentGroup: THREE.Group): BeachTerrainSystem
       cDry.copy(PHUQUOC_COLORS.sand.dry).offsetHSL(0, 0, sandVar);
       const grass = new THREE.Color(0x6b8f3e).lerp(
         new THREE.Color(0x4e6b2c), THREE.MathUtils.smoothstep(-z, 3.3, 5.0) * 0.5);
-      const grassBlend = THREE.MathUtils.smoothstep(dist, 3.2, 5.8)
-        * (1 - THREE.MathUtils.smoothstep(x, 3.3, 5.2));
-      cDry.lerp(grass, grassBlend);
-      const rockBlend = Math.max(
-        THREE.MathUtils.smoothstep(x, 3.5, 5.5),
-        THREE.MathUtils.smoothstep(slope, 0.3, 0.65)
-      ) * THREE.MathUtils.smoothstep(dist, 0.8, 2.5);
+      const weights=getGroundWeights(x,z);
       const rock = PHUQUOC_COLORS.rock.graniteWarm.clone()
         .lerp(PHUQUOC_COLORS.rock.graniteLight, 0.35);
-      cDry.lerp(rock, rockBlend);
+      cDry.setRGB(cDry.r*weights.sand+grass.r*weights.soil+rock.r*weights.rock,
+        cDry.g*weights.sand+grass.g*weights.soil+rock.g*weights.rock,
+        cDry.b*weights.sand+grass.b*weights.soil+rock.b*weights.rock);
     }
 
     return cDry;

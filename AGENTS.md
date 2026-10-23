@@ -24,6 +24,7 @@
 ## Dữ liệu và hình học
 
 - Khai báo riêng biên đế/cảnh, vùng đất, vùng nước và bounds tính toán theo nhu cầu từng chủ đề. Các hệ thống dùng chung dữ liệu biên liên quan; không ép mọi hệ thống dùng một footprint duy nhất.
+- Tránh biên cao độ hoặc vật liệu bám trục tọa độ ngoài chủ đích thiết kế. Các nhánh địa hình và vùng ràng buộc điểm đỡ phải nối liên tục trên toàn vùng chuyển tiếp; dùng ràng buộc cục bộ có khoảng chuyển đủ rộng, không bảo toàn mảng lỗi theo khung chữ nhật. Quét cả X/Z trên toàn miền và tinh chỉnh quanh biên nhánh, không chỉ kiểm tra vài lát cắt. Trọng số vật liệu hiển thị, độ ướt và thoát nước dùng chung trường pha liên tục; tách nhãn phân loại rời rạc phục vụ logic.
 - Heightfield hoặc render target nội bộ được phép là hình chữ nhật. Miền lấy mẫu phải bao phủ mesh; không clamp phần địa hình mở rộng vào cạnh miền cũ gây kéo phẳng.
 - Mặt trên, thành bên, đáy và mặt cắt nước phải nối đúng các biên tương ứng, không có lỗ, phần thừa hoặc skirt ngoài thiết kế.
 - Khi mặt nước có mặt cắt trưng bày, mặt nước và skirt phải chia sẻ biên chính xác. Không giữ/bỏ nguyên ô lưới theo tâm làm cách duy nhất để cắt đường bao cong.

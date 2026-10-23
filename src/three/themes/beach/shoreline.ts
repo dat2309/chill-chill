@@ -101,7 +101,10 @@ export function getTerrainHeight(x: number, z: number): number {
         const rockStrength =
           Math.abs(x) < 1.2
             ? (1.2 - Math.abs(x)) / 1.2
-            : Math.min(1.0, (Math.abs(x) - 6.0) / 2.5);
+            : Math.min(1.0, (Math.abs(x) - 6.0) / 2.5)
+              // The west branch used to start at strength .4 at x=-7. Its
+              // continuous onset also keeps material slope samples free of seams.
+              * (x < -7 ? smoothstep(7.0,7.8,-x) : 1);
         mod += 0.35 * rockStrength * fbm2D(x * 0.4, z * 0.4, 3, 2.0, 0.5);
       }
 

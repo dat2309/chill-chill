@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {GARDEN_BOUNDARY_POINTS} from '../src/three/themes/garden/footprint';
-import {createTerrain,computeRawTerrainHeight} from '../src/three/themes/garden/terrain';
+import {createTerrain} from '../src/three/themes/garden/terrain';
 import {createVegetation} from '../src/three/themes/garden/vegetation';
 import {createArchitecture} from '../src/three/themes/garden/architecture';
 import {createBeachArchitecture} from '../src/three/themes/beach/architecture';
@@ -38,9 +38,20 @@ beach.group.updateMatrixWorld(true);beach.group.traverse(o=>{if(!(o instanceof T
  for(let i=0;i<o.count;i++){const m=new THREE.Matrix4();o.getMatrixAt(i,m);m.premultiply(o.matrixWorld);const box=o.geometry.boundingBox!.clone().applyMatrix4(m);if(roofs.some(r=>r.intersectsBox(box)))forestClear=false;}
 });
 check(forestClear&&forestTrees>=12,'Whole coastal tree envelopes clear actual bungalow roofs with a wind margin',{forestTrees,roofCount:roofs.length});beachArchitecture.dispose();
-let worstJump=0,location=0;
-for(const z of [-4.2,-3.6])for(let x=-2;x<1.8;x+=.002){const delta=Math.abs(computeRawTerrainHeight(x+.002,z).height-computeRawTerrainHeight(x,z).height);if(delta>worstJump){worstJump=delta;location=x}}
-check(worstJump<.025,'Heightfield has no branch-selection step discontinuity on rear slopes',{worstJump,location});
+let rootGap=0,rootCount=0;
+for(const [system,height]of [[garden,terrain.getHeightAt],[beach,getTerrainHeight]]as const){
+ system.group.updateMatrixWorld(true);
+ system.group.traverse(o=>{
+  if(!(o instanceof THREE.Mesh)||!(/^(PineTrunks|DeciduousTrunks|CasuarinaWood|PalmTrunk)/.test(o.name)))return;
+  const roots=o.geometry.getAttribute('vegRoot');
+  const count=o instanceof THREE.InstancedMesh?o.count:1;
+  for(let i=0;i<count;i++){
+   const root=o.localToWorld(new THREE.Vector3().fromBufferAttribute(roots,i));
+   rootGap=Math.max(rootGap,Math.abs(root.y-height(root.x,root.z)));rootCount++;
+  }
+ });
+}
+check(rootCount>50&&rootGap<.00001,'Actual tree root anchors remain seated on changed terrain',{rootCount,rootGap});
 const terrainMesh=terrain.group.getObjectByName('DioramaTerrainMesh') as THREE.Mesh;
 const terrainPosition=terrainMesh.geometry.getAttribute('position'),terrainNormals=terrainMesh.geometry.getAttribute('normal'),terrainColors=terrainMesh.geometry.getAttribute('color');
 const topCount=terrainMesh.geometry.userData.topVertexCount??(1+140*256);
@@ -70,6 +81,6 @@ for(const [i,y]of [1.7310000312051108,1.691000002816666,1.4729426160527546].entr
  const dome=architecture.group.getObjectByName(`domeTent_${i}`)!;check(Math.abs(dome.position.y-y)<1e-6,`Dome ${i} deck elevation preserved from baseline`,{actual:dome.position.y,baseline:y});
 }
 const timberBounds=new THREE.Box3().setFromObject(architecture.group.getObjectByName('GardenTimber')!);
-check(Math.abs(timberBounds.min.y-.9209182858467102)<1e-6&&Math.abs(timberBounds.max.y-3.2149999141693115)<1e-6,'Cabin and timber support elevation bounds preserved from baseline',timberBounds.max.y);
+check(Math.abs(timberBounds.max.y-3.2149999141693115)<1e-6,'Cabin roof elevation preserved while foundations conform to corrected terrain',timberBounds.max.y);
 architecture.dispose();terrain.dispose();garden.dispose();beach.dispose();
 console.log(`${checks.filter(c=>c.ok).length}/${checks.length} landscape shape checks passed`);if(checks.some(c=>!c.ok))process.exit(1);

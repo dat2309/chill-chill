@@ -26,13 +26,13 @@ import {
   GARDEN_BOUNDARY_POINTS,
   GARDEN_FOOTPRINT_BOUNDS,
 } from './footprint';
-import { fbm2D, ridged2D, SimplexNoise2D, SeededRandom } from './noise';
+import { fbm2D, SimplexNoise2D, SeededRandom } from './noise';
 
 const halfW = DIORAMA_WIDTH / 2;
 const halfD = DIORAMA_DEPTH / 2;
-// Finished deck footprints and their short approach pads retain their existing bearing elevations.
-const GARDEN_BEARING_AREAS=[[-6,-2.2,1.03,1.08],[-3.8,-1.8,1.03,1.08],[-4.3,.05,1.03,1.20],[-1,-2.025,1.10,1.60]] as const;
-
+// Local bearing floor beneath the cabin's front stream-side post. The other
+// supports already retain their elevations on the continuous meadow/bank field.
+const BEARING_ANCHOR={x:-.15,z:-.88,height:1.04,footRadius:.14,transitionRadius:1.1};
 export type ZoneType = 'mountain' | 'plateau' | 'cliff' | 'bank' | 'stream' | 'hill' | 'out_of_bounds';
 
 export interface TerrainSample {
@@ -93,12 +93,9 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
  */
 export function computeRawTerrainHeight(x: number, z: number): { height: number; zone: ZoneType; distToStream: number } {
   // 1. Mountain zone (concentrated at rear z < -3.5)
-  const mountainRidge = ridged2D(x * 0.22 + 4.0, z * 0.22 - 3.0, 4, 2.0, 0.48);
-  const mountainFbm = fbm2D(x * 0.32 + 10.0, z * 0.32 - 4.0, 3, 2.0, 0.45);
   // Natural peak silhouettes leaving center rear sightline open
   const peakLeft = Math.exp(-Math.pow((x + 4.6) / 3.4, 2) - Math.pow((z + 6.2) / 2.2, 2)) * 1.65;
   const peakRight = Math.exp(-Math.pow((x - 4.5) / 3.2, 2) - Math.pow((z + 6.4) / 2.0, 2)) * 1.45;
-  const mountainH = 2.1 + mountainRidge * 1.1 + mountainFbm * 0.25 + peakLeft + peakRight;
 
   // 2. Glamping Plateau Zone: Softened, natural undulating contour (NOT a rigid rectangle)
   // Curves organically around campsite living area out to x ~ -9.6
@@ -120,49 +117,14 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   const bankFloor = 0.40 + SimplexNoise2D(x * 0.4, z * 0.4) * 0.04;
   const slopeSpan = 1.85;
   const cliffDrop = smoothstep(frontEdgeZ, frontEdgeZ + slopeSpan, z);
-  const cragNoise = SimplexNoise2D(x * 1.8, z * 1.8) * 0.05 + SimplexNoise2D(x * 0.8 + 5.0, z * 0.8 + 5.0) * 0.03;
-  const naturalCliffH = THREE.MathUtils.lerp(plateauGentle, bankFloor, cliffDrop) + cragNoise * (1.0 - cliffDrop) * cliffDrop * 1.5;
-
   // 4. Right bank: lower and gently rolling with knolls embracing the wide lake basin
   const rightKnoll1 = Math.exp(-Math.pow((x - 4.8) / 1.9, 2) - Math.pow((z - 2.5) / 1.9, 2)) * 0.28;
   const rightKnoll2 = Math.exp(-Math.pow((x - 6.2) / 1.8, 2) - Math.pow((z - 5.5) / 2.2, 2)) * 0.24;
   const rightEmbrace = smoothstep(0.5, 7.5, z) * smoothstep(3.0, 7.0, x) * 0.10;
   const rightBankH = 0.44 + rightKnoll1 + rightKnoll2 + rightEmbrace + fbm2D(x * 0.35 + 5.0, z * 0.35 + 5.0, 3, 2.0, 0.4) * 0.16;
 
-  // Combine base height before stream carving
-  let baseH: number;
-  let currentZone: ZoneType = 'bank';
-
-  if (z < -3.5) {
-    const mountainBlend = 1.0 - smoothstep(-5.0, -3.5, z);
-    const valleyFloor = x < rightEdgeX ? plateauGentle : rightBankH;
-    baseH = THREE.MathUtils.lerp(valleyFloor, mountainH, mountainBlend);
-    currentZone = 'mountain';
-  } else if (inPlateauBox && plateauCore > 0.70) {
-    baseH = plateauGentle;
-    currentZone = 'plateau';
-  } else if (inPlateauBox) {
-    const pFactor = smoothstep(-0.4, 0.5, distEdge);
-    baseH = THREE.MathUtils.lerp(0.55, plateauGentle, pFactor);
-    currentZone = pFactor > 0.6 ? 'plateau' : 'cliff';
-  } else if (x <= rightEdgeX + 0.6 && z >= frontEdgeZ && z <= frontEdgeZ + 1.85) {
-    baseH = naturalCliffH;
-    currentZone = 'cliff';
-  } else if (x > 1.0) {
-    baseH = rightBankH;
-    currentZone = 'bank';
-  } else {
-    baseH = bankFloor;
-    currentZone = 'bank';
-  }
-
-  // Continuous land masses replace the mutually exclusive height branches on unoccupied slopes.
-  // Keep the existing bearing terrain beneath finished decks and their approach pads unchanged.
-  let preserve=0;
-  for(const [cx,cz,rx,rz]of GARDEN_BEARING_AREAS){
-    const distance=Math.max(Math.abs(x-cx)-rx,Math.abs(z-cz)-rz);
-    preserve=Math.max(preserve,1-smoothstep(0,.22,distance));
-  }
+  // Zone labels may be discrete; height never selects between incompatible branches.
+  let currentZone:ZoneType=z < -3.5 ? 'mountain' : inPlateauBox && plateauCore > .70 ? 'plateau' : 'bank';
   const bankMix=smoothstep(rightEdgeX-.35,rightEdgeX+.85,x);
   const valleyBase=THREE.MathUtils.lerp(bankFloor,rightBankH,bankMix);
   const meadowEnvelope=smoothstep(-.35,.50,distEdgeX)*smoothstep(-.4,.5,distEdgeZ)*(1-cliffDrop);
@@ -173,19 +135,27 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   const buttress=.30*Math.exp(-Math.pow((x+7.0)/1.5,2)-Math.pow((z+5.8)/2.3,2));
   const broadGully=.20*Math.exp(-Math.pow((x+3.0+.22*Math.sin(z*.5))/.85,2));
   const smoothMountain=2.48+peakLeft+peakRight+shoulder+buttress+broadRock-broadGully;
-  const mountainWeight=1-smoothstep(-5.15,-3.45,z);
+  // The mountain toe follows the two buttresses, rather than a constant-Z wall.
+  // A broad shoulder keeps the rear peaks while settling below the finished decks.
+  const mountainToe=-3.80+.18*Math.sin(x*.45)+.12*SimplexNoise2D(x*.20,4);
+  const shoulderWidth=3.1+.35*Math.sin(x*.29+1.2);
+  const mountainWeight=1-smoothstep(mountainToe-shoulderWidth,mountainToe,z);
   const continuousBase=THREE.MathUtils.lerp(meadow,smoothMountain,mountainWeight);
-  baseH=THREE.MathUtils.lerp(continuousBase,baseH,preserve);
+  const bearingDistance=Math.hypot(x-BEARING_ANCHOR.x,z-BEARING_ANCHOR.z);
+  const bearingWeight=1-smoothstep(BEARING_ANCHOR.footRadius,BEARING_ANCHOR.transitionRadius,bearingDistance);
+  const bearingLift=Math.max(0,BEARING_ANCHOR.height-continuousBase);
+  // A compact smooth floor constraint, not a blend back to the old piecewise heightfield.
+  let baseH=continuousBase+bearingWeight*bearingLift*smoothstep(0,.08,bearingLift);
 
   // Ensure gorge and cascade banks rise naturally above stream elevation in upper mountain reaches
-  if (z < 0.2) {
+  {
     const scx_bank = getStreamCenter(z);
     const shw_bank = getStreamHalfWidth(z);
     const dist_bank = Math.abs(x - scx_bank);
     const waterY_bank = getWaterSurfaceHeight(z);
     const liftFactor=smoothstep(shw_bank*.90,shw_bank*1.6,dist_bank);
     const minBankH=waterY_bank+.12+liftFactor*.40;
-    const bankEnvelope=smoothstep(shw_bank*.65,shw_bank*1.15,dist_bank);
+    const bankEnvelope=smoothstep(shw_bank*.65,shw_bank*1.15,dist_bank)*(1-smoothstep(-.35,.65,z));
     baseH=THREE.MathUtils.lerp(baseH,Math.max(baseH,minBankH),bankEnvelope);
   }
 
@@ -205,9 +175,8 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   // Riverbed/lakebed sits consistently below water surface along profile
   const targetBedH = getStreamBedHeight(x, z) + SimplexNoise2D(x * 1.4 + 12.0, z * 1.4 + 12.0) * 0.015;
 
-  let finalH = baseH;
-  if (channelProfile > 0.001) {
-    finalH = THREE.MathUtils.lerp(baseH, Math.min(baseH, targetBedH), channelProfile);
+  const finalH = THREE.MathUtils.lerp(baseH, Math.min(baseH, targetBedH), channelProfile);
+  if (channelProfile > 0) {
 
     if (isInWater(x, z, 0) || distToStream < shw * 0.90 || finalH <= waterSurfaceY + 0.02) {
       currentZone = 'stream';

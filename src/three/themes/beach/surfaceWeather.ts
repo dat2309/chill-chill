@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import {getGroundWeights, GroundWeights} from './groundMaterial';
+export {getGroundWeights} from './groundMaterial';
 import { BeachTerrainSystem } from './terrain';
-import { getDistanceToShore } from './shoreline';
 import { isInsideBeachFootprint } from './footprint';
 import { BEACH_COVER_GLSL, getBeachCoverHeight } from './rainExposure';
 
@@ -9,8 +10,9 @@ const DRAIN = { sand: .10, soil: .035, rock: .018 };
 export const MAX_PUDDLE_SLOPE = .08;
 const DRY = { sand: .014, soil: .007, rock: .009 };
 export function getGroundMaterial(x: number, z: number): GroundMaterial {
-  if (x > 5.0 || (Math.abs(x) < 1.4 && getDistanceToShore(x,z) < 3.2)) return 'rock';
-  return getDistanceToShore(x,z) < 3.2 ? 'sand' : 'soil';
+  // Discrete label is only for basin eligibility/reporting, never for shading.
+  const w=getGroundWeights(x,z);
+  return w.soil>Math.max(w.sand,w.rock) ? 'soil' : w.rock>w.sand ? 'rock' : 'sand';
 }
 function integrate(value: number, input: number, loss: number, dt: number): number {
   const rate = input + loss;
@@ -30,7 +32,7 @@ export function createGroundMoisture() {
 
 interface Basin {
   x: number; z: number; floor: number; level: number; radius: number; area: number;
-  type: GroundMaterial; amount: number; mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  type: GroundMaterial; weights:GroundWeights; drain:number; amount: number; mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
 }
 
 /** Flood connected depressions on the actual rendered triangles; never carve/flatten terrain. */
@@ -55,7 +57,7 @@ export function createBeachSurfaceWeather(parent: THREE.Group, terrain: BeachTer
   for (let i=0;i<count;i++) {
     const x=pos.getX(i), z=pos.getZ(i), type=getGroundMaterial(x,z);
     // Leave lawns/grass untouched; retain water in exposed sand and granite pockets.
-    valid[i] = +(type !== 'soil' && terrain.getSlopeAt(x,z) <= MAX_PUDDLE_SLOPE && pos.getY(i) > .54 && getBeachCoverHeight(x,z) === -Infinity && isInsideBeachFootprint(x,z,.25));
+    valid[i] = +(type !== 'soil' && getGroundWeights(x,z).soil < .18 && terrain.getSlopeAt(x,z) <= MAX_PUDDLE_SLOPE && pos.getY(i) > .54 && getBeachCoverHeight(x,z) === -Infinity && isInsideBeachFootprint(x,z,.25));
   }
   for(let t=0;t<index.count;t+=3) {
     const a=index.getX(t), b=index.getX(t+1), c=index.getX(t+2);
@@ -99,7 +101,7 @@ export function createBeachSurfaceWeather(parent: THREE.Group, terrain: BeachTer
         if(inside!==(b.y<level))clipped.push(a.clone().lerp(b,(level-a.y)/(b.y-a.y)));
       }
       polygon=clipped;
-      if(polygon.some(p=>getBeachCoverHeight(p.x,p.z)>-Infinity||!isInsideBeachFootprint(p.x,p.z,.15)||getGroundMaterial(p.x,p.z)==='soil')) { invalidBasin=true;break; }
+      if(polygon.some(p=>getBeachCoverHeight(p.x,p.z)>-Infinity||!isInsideBeachFootprint(p.x,p.z,.15)||(getGroundMaterial(p.x,p.z)==='soil'||getGroundWeights(p.x,p.z).soil>=.18))) { invalidBasin=true;break; }
       for(let i=1;i+1<polygon.length;i++) {
         const a=polygon[0],b=polygon[i],c=polygon[i+1];
         area+=Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x))*.5;
@@ -128,7 +130,9 @@ export function createBeachSurfaceWeather(parent: THREE.Group, terrain: BeachTer
       }`,
     });
     const mesh=new THREE.Mesh(geometry,material);mesh.name='RainPuddle';mesh.renderOrder=2;mesh.visible=false;group.add(mesh);
-    basins.push({x:root.x,z:root.z,floor:root.y,level,radius,area,type:getGroundMaterial(root.x,root.z),amount:0,mesh});
+    const weights=getGroundWeights(root.x,root.z);
+    const drain=weights.sand*DRAIN.sand+weights.soil*DRAIN.soil+weights.rock*DRAIN.rock;
+    basins.push({x:root.x,z:root.z,floor:root.y,level,radius,area,type:getGroundMaterial(root.x,root.z),weights,drain,amount:0,mesh});
   }
 
   const patched = new Set<THREE.Material>();
@@ -143,8 +147,8 @@ export function createBeachSurfaceWeather(parent: THREE.Group, terrain: BeachTer
       geo.setAttribute('aRainSurface',new THREE.BufferAttribute(allowed,1));
       const types=new Float32Array(pos.count*3);
       for(let i=0;i<count;i++) {
-        const type=getGroundMaterial(pos.getX(i),pos.getZ(i));
-        types[i*3+({sand:0,soil:1,rock:2}[type])]=1;
+        const weights=getGroundWeights(pos.getX(i),pos.getZ(i));
+        types.set([weights.sand,weights.soil,weights.rock],i*3);
       }
       geo.setAttribute('aRainMaterial',new THREE.BufferAttribute(types,3));
     }
@@ -176,7 +180,7 @@ export function createBeachSurfaceWeather(parent: THREE.Group, terrain: BeachTer
         float wetSheen=pow(1.0-max(dot(normal,normalize(vViewPosition)),0.0),4.0);
         reflectedLight.indirectSpecular+=uPondSky*wet*(.015+.08*wetSheen);`);
     };
-    mat.customProgramCacheKey=()=> `beach-ground-rain-v3-${top}-${rockSurface}`;mat.needsUpdate=true;
+    mat.customProgramCacheKey=()=> `beach-ground-rain-v4-${top}-${rockSurface}`;mat.needsUpdate=true;
   }
   terrain.group.traverse(obj=>{if(obj instanceof THREE.Mesh)patch(obj);});
   architecture.traverse(obj=>{if(obj instanceof THREE.Mesh)patch(obj);});
@@ -191,10 +195,10 @@ export function createBeachSurfaceWeather(parent: THREE.Group, terrain: BeachTer
       uniforms.uGroundRain.value=rain;uniforms.uRainTime.value=Number.isFinite(elapsed)?elapsed:0;uniforms.uSeaLevel.value=Number.isFinite(seaLevel)?seaLevel:.44;
       if(sky)uniforms.uPondSky.value.copy(sky);if(sun)uniforms.uPondSun.value.copy(sun);
       basins.forEach((b,i)=>{
-        b.amount=integrate(b.amount,rain*.12,DRAIN[b.type],step);
+        b.amount=integrate(b.amount,rain*.12,b.drain,step);
         b.mesh.material.uniforms.uPondLevel.value=b.floor+(b.level-b.floor)*b.amount;
         b.mesh.visible=b.amount>.015 && b.floor>seaLevel+.025;
-        uniforms.uPondRims.value[i].set(b.x,b.z,b.radius,Math.max(b.amount,ground.moisture[b.type]*.65));
+        uniforms.uPondRims.value[i].set(b.x,b.z,b.radius,Math.max(b.amount,(b.weights.sand*ground.moisture.sand+b.weights.soil*ground.moisture.soil+b.weights.rock*ground.moisture.rock)*.65));
       });
     },
     dispose(){basins.forEach(b=>{b.mesh.geometry.dispose();b.mesh.material.dispose();});group.clear();parent.remove(group);},

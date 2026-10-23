@@ -11,12 +11,13 @@
     "check-beach": "vite build --ssr scripts/check-beach.ts --outDir dist-scripts && node dist-scripts/check-beach.js",
     "check-phuquoc": "npm run check-beach",
     "check-lifecycle": "vite build --ssr scripts/check-lifecycle.ts --outDir dist-scripts && node dist-scripts/check-lifecycle.js",
-    "test": "tsc --noEmit && npm run check-stream && npm run check-beach && npm run check-lifecycle && npm run check-geometry && npm run check-vegetation && npm run check-surface-weather && npm run check-object-quality && npm run check-landscape-shape",
+    "test": "tsc --noEmit && npm run check-stream && npm run check-beach && npm run check-lifecycle && npm run check-geometry && npm run check-vegetation && npm run check-surface-weather && npm run check-object-quality && npm run check-landscape-shape && npm run check-terrain-transitions",
     "check-geometry": "vite build --ssr scripts/check-geometry.ts --outDir dist-scripts && node dist-scripts/check-geometry.js",
     "check-vegetation": "vite build --ssr scripts/check-vegetation.ts --outDir dist-scripts && node dist-scripts/check-vegetation.js",
     "check-surface-weather": "vite build --ssr scripts/check-surface-weather.ts --outDir dist-scripts && node dist-scripts/check-surface-weather.js",
     "check-object-quality": "vite build --ssr scripts/check-object-quality.ts --outDir dist-scripts && node dist-scripts/check-object-quality.js",
-    "check-landscape-shape": "vite build --ssr scripts/check-landscape-shape.ts --outDir dist-scripts && node dist-scripts/check-landscape-shape.js"
+    "check-landscape-shape": "vite build --ssr scripts/check-landscape-shape.ts --outDir dist-scripts && node dist-scripts/check-landscape-shape.js",
+    "check-terrain-transitions": "vite build --ssr scripts/check-terrain-transitions.ts --outDir dist-scripts && node dist-scripts/check-terrain-transitions.js"
   },
   "dependencies": {
     "react": "^18.3.1",
