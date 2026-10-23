@@ -1,5 +1,7 @@
 # Review tích hợp các theme — 2026-10-23
 
+Commit tích hợp và ảnh cuối: `df9fb82`.
+
 Thứ tự triển khai: Hội An (đã có) → Chợ nổi → Sapa → Cyberpunk → Cabin cực quang. Không push/deploy. Tất cả asset là procedural geometry/shader, không thêm model/texture ngoài.
 
 | Theme | Commit thêm theme | Test riêng cuối | Tam giác render | Draw calls |
