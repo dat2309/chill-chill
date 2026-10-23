@@ -1,3 +1,4 @@
+import {CYBER_METADATA} from './cyber/config';
 import {SAPA_METADATA} from './sapa/config';
 import {MARKET_METADATA} from './market/config';
 import * as THREE from 'three';
@@ -9,12 +10,13 @@ import { BEACH_METADATA } from './beach/config';
 export const THEME_METADATA_MAP: Record<ThemeId, ThemeMetadata<any>> = {
   market:MARKET_METADATA,
   sapa:SAPA_METADATA,
+  cyber:CYBER_METADATA,
   garden: GARDEN_METADATA,
   beach: BEACH_METADATA,
   lantern:LANTERN_METADATA,
 };
 
-export const THEME_LIST: ThemeMetadata<any>[] = [GARDEN_METADATA, BEACH_METADATA,LANTERN_METADATA,MARKET_METADATA, SAPA_METADATA];
+export const THEME_LIST: ThemeMetadata<any>[] = [GARDEN_METADATA, BEACH_METADATA,LANTERN_METADATA,MARKET_METADATA, SAPA_METADATA, CYBER_METADATA];
 
 /**
  * Resilient dynamic import helper with retry and stale-chunk recovery.
@@ -67,6 +69,7 @@ export const THEME_LOADERS: Record<
 > = {
   market:async(renderer)=>{const mod=await loadThemeWithRetry(()=>import('./market/index'));return new mod.MarketTheme(renderer)},
   sapa:async(renderer)=>{const mod=await loadThemeWithRetry(()=>import('./sapa/index'));return new mod.SapaTheme(renderer)},
+  cyber:async(renderer)=>{const mod=await loadThemeWithRetry(()=>import('./cyber/index'));return new mod.CyberTheme(renderer)},
   lantern:async(renderer)=>{const mod=await loadThemeWithRetry(()=>import('./lantern/index'));return new mod.LanternTheme(renderer)},
   garden: async (renderer) => {
     const mod = await loadThemeWithRetry(() => import('./garden/index'));

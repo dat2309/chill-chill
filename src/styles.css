@@ -960,3 +960,5 @@ input:focus-visible,
 @media (max-width: 640px) {
   .theme-lantern .lantern-rain-label { display: none; }
 }
+
+.theme-cyber .hero-title,.theme-cyber .logo-text {color:#f1e1ef}.theme-cyber .eyebrow,.theme-cyber .footer {color:#ded4e5}

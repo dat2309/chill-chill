@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type ThemeId = 'garden' | 'beach' | 'lantern' | 'sapa' | 'market';
+export type ThemeId = 'garden' | 'beach' | 'lantern' | 'cyber' | 'sapa' | 'market';
 
 export type GardenSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 export type BeachSeason = 'dry' | 'rainy';
@@ -10,6 +10,7 @@ export interface ThemeSeasonMap {
   garden: GardenSeason;
   beach: BeachSeason;
   lantern: LanternSeason;
+  cyber: 'rain' | 'after';
   sapa: 'flooded' | 'ripe';
   market: 'dawn' | 'noon';
 }
@@ -63,6 +64,7 @@ export interface PersistedAppState {
   lanternState: ThemeState<'lantern'>;
   marketState: ThemeState<'market'>;
   sapaState: ThemeState<'sapa'>;
+  cyberState: ThemeState<'cyber'>;
   phuquocState?: ThemeState<'beach'>; // legacy migration alias
   shared: SharedOptions;
   camera?: Partial<Record<ThemeId, SavedCameraState>>;

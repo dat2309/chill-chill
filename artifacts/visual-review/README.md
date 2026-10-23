@@ -87,3 +87,7 @@ Xem [Market review](market/README.md): 15 suite đạt, 13 kiểm tra Market; �
 ## Sapa — 2026-10-23
 
 Xem [Sapa review](sapa/README.md): 16 suite, 29 kiểm tra Sapa; ảnh hai mùa, side/top/close, reversal, gió và giao diện mobile.
+
+## Hẻm Cyberpunk — 2026-10-23
+
+Xem [Cyber review](cyber/README.md): 17 suite, 18 kiểm tra riêng; ảnh mưa/sau mưa và số đo halo/độ ẩm/WebGL.
