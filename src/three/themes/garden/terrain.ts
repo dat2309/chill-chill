@@ -379,16 +379,18 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     if (z < -3.6 && y > 2.2) {
       const rockFactor = smoothstep(2.2, 3.4, y);
       outCol.lerp(COLORS.terrain.rock, rockFactor * 0.65);
-      if (s === 'winter' && norm.y > 0.60) {
-        outCol.lerp(COLORS.terrain.snow, smoothstep(2.0, 3.2, y) * 0.85);
+      if (s === 'winter') {
+        // Coverage follows upward-facing slopes continuously; hard normal cutoffs
+        // made smooth shoulders read as long cliff cuts in winter renders.
+        outCol.lerp(COLORS.terrain.snow, rockFactor * smoothstep(.45,.93,norm.y) * .85);
       }
     }
 
     // Winter selective snow
     if (s === 'winter') {
-      if (norm.y > 0.75 && y > 0.30 && !(z >= 0.8 && distToStream < shw * 0.75)) {
-        outCol.lerp(COLORS.terrain.snow, 0.45);
-      }
+      const lakeBed=smoothstep(.5,1,z)*(1-smoothstep(shw*.70,shw*.85,distToStream));
+      const coverage=smoothstep(.55,.95,norm.y)*smoothstep(.25,.50,y)*(1-lakeBed);
+      outCol.lerp(COLORS.terrain.snow, coverage * .45);
     }
   }
 
