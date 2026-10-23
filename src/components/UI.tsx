@@ -495,7 +495,7 @@ export default function UI({
       {/* Footer Instructions and Badges */}
       <footer className="footer">
         <div className="footer-left">
-          {activeThemeId==='cyber' ? 'Kéo để xoay · Chọn chất lượng thấp để tắt halo neon' : activeThemeId==='sapa' ? 'Kéo để xoay · Chọn mùa để xem ruộng nước hoặc lúa chín' : activeThemeId==='market' ? 'Chạm vào ghe để xem hàng rao bán · Kéo để xoay góc nhìn' : activeThemeId==='lantern' ? 'Kéo để xoay góc nhìn · Chạm hoặc nhấp mặt sông để thả đèn hoa đăng' : isTouchDevice ? 'Kéo để xoay góc nhìn · Chạm vào nước để tạo sóng' : 'Kéo chuột để xoay · Di chuột qua mặt nước để tạo gợn sóng · Nhấp để tạo sóng tròn'}
+          {activeThemeId==='aurora' ? 'Kéo để xoay · Hồ đã đóng băng, chạm lên băng không tạo sóng' : activeThemeId==='cyber' ? 'Kéo để xoay · Chọn chất lượng thấp để tắt halo neon' : activeThemeId==='sapa' ? 'Kéo để xoay · Chọn mùa để xem ruộng nước hoặc lúa chín' : activeThemeId==='market' ? 'Chạm vào ghe để xem hàng rao bán · Kéo để xoay góc nhìn' : activeThemeId==='lantern' ? 'Kéo để xoay góc nhìn · Chạm hoặc nhấp mặt sông để thả đèn hoa đăng' : isTouchDevice ? 'Kéo để xoay góc nhìn · Chạm vào nước để tạo sóng' : 'Kéo chuột để xoay · Di chuột qua mặt nước để tạo gợn sóng · Nhấp để tạo sóng tròn'}
         </div>
         <div className="footer-right">
           <span>{activeMetadata.name}</span>

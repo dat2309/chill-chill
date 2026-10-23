@@ -1,0 +1,56 @@
+{
+  "status": "PASS",
+  "errors": [],
+  "changed": 369937,
+  "portrait": true,
+  "before": 77,
+  "after": 0,
+  "auroraDrawCalls": 1,
+  "iceChanged": 383434,
+  "metrics": {
+    "first": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "second": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "reversal": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "strong-wind": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "low-wind": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "portrait": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "top": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "side": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "close": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "ice-control": {
+      "triangles": 149618,
+      "calls": 77
+    },
+    "liquid-control": {
+      "triangles": 149618,
+      "calls": 77
+    }
+  }
+}

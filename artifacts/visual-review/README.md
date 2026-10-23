@@ -91,3 +91,7 @@ Xem [Sapa review](sapa/README.md): 16 suite, 29 kiểm tra Sapa; ảnh hai mùa,
 ## Hẻm Cyberpunk — 2026-10-23
 
 Xem [Cyber review](cyber/README.md): 17 suite, 18 kiểm tra riêng; ảnh mưa/sau mưa và số đo halo/độ ẩm/WebGL.
+
+## Cabin cực quang — 2026-10-23
+
+Xem [Aurora review](aurora/README.md): 18 suite, 23 kiểm tra riêng, ribbon1 draw call; ảnh clear/blizzard, tuyết/băng và hồi quy WebGL Garden/Beach8/8.

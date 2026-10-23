@@ -327,22 +327,10 @@ export function getGardenIcePotential(
   return THREE.MathUtils.clamp(p, 0.0, 1.0);
 }
 
-/** Depth/flow determine the freezing order, never an exemption from complete winter ice. */
-export function getGardenIceAmount(potential: number, progress: number): number {
-  if (!Number.isFinite(progress)) return 0;
-  if (progress >= .94) return 1;
-  const start = 0.04 + (1 - THREE.MathUtils.clamp(Number.isFinite(potential) ? potential : 0, 0, 1)) * 0.60;
-  return THREE.MathUtils.smoothstep(THREE.MathUtils.clamp(progress, 0, 1), start, start + 0.30);
-}
-
-// Same transition and constants are consumed by the actual surface shader.
-export const GARDEN_ICE_GLSL = `
-float gardenIceAmount(float potential, float progress) {
-  if (progress >= .94) return 1.0;
-  float start = 0.04 + (1.0 - clamp(potential, 0.0, 1.0)) * 0.60;
-  return smoothstep(start, start + 0.30, clamp(progress, 0.0, 1.0));
-}
-`;
+// Shared freezing rule; Garden retains its public names for existing consumers.
+export {iceAmount as getGardenIceAmount} from '../../core/freezing';
+import {iceAmount as getGardenIceAmount,ICE_GLSL} from '../../core/freezing';
+export const GARDEN_ICE_GLSL=ICE_GLSL.replace(/iceAmount/g,'gardenIceAmount');
 
 export function getGardenLocalIce(
   x: number, z: number, freezeProgress: number, waterLevel?: number, terrainH?: number

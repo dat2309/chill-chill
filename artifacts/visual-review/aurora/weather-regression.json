@@ -1,0 +1,38 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "ok": true,
+      "name": "Ice keeps the complete sloping stream profile"
+    },
+    {
+      "ok": true,
+      "name": "Actual complete-ice pixels are invariant to liquid time/wind at high tide (waves, foam and normals)"
+    },
+    {
+      "ok": true,
+      "name": "Actual complete-ice pixels are invariant to liquid time/wind at low tide (waves, foam and normals)"
+    },
+    {
+      "ok": true,
+      "name": "Positive control: actual liquid-water pixels animate"
+    },
+    {
+      "ok": true,
+      "name": "Live Beach theme accumulates visible retained water"
+    },
+    {
+      "ok": true,
+      "name": "Real ponds change 470 pixel channels in the full default-camera scene"
+    },
+    {
+      "ok": true,
+      "name": "Live Beach theme drains gradually after effective rain stops"
+    },
+    {
+      "ok": true,
+      "name": "No WebGL shader/runtime errors"
+    }
+  ],
+  "errors": []
+}

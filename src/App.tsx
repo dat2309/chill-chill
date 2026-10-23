@@ -18,7 +18,7 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const themeParam = urlParams.get('theme');
-      if (themeParam === 'garden' || themeParam === 'beach' || themeParam === 'phuquoc' || themeParam === 'lantern' || themeParam === 'cyber' || themeParam === 'sapa' || themeParam === 'market') {
+      if (themeParam === 'garden' || themeParam === 'beach' || themeParam === 'phuquoc' || themeParam === 'lantern' || themeParam === 'aurora' || themeParam === 'cyber' || themeParam === 'sapa' || themeParam === 'market') {
         loaded.activeThemeId = themeParam === 'phuquoc' ? 'beach' : themeParam;
       }
       const cameraParam = urlParams.get('camera');
@@ -27,6 +27,7 @@ export default function App() {
         loaded.gardenState.cameraState = topCam;
         loaded.beachState.cameraState = topCam;
         loaded.lanternState.cameraState = topCam;
+        loaded.auroraState.cameraState = topCam;
         loaded.cyberState.cameraState = topCam;
         loaded.sapaState.cameraState = topCam;
         loaded.marketState.cameraState = topCam;
@@ -35,6 +36,7 @@ export default function App() {
         loaded.gardenState.cameraState = sideCam;
         loaded.beachState.cameraState = sideCam;
         loaded.lanternState.cameraState = sideCam;
+        loaded.auroraState.cameraState = sideCam;
         loaded.cyberState.cameraState = sideCam;
         loaded.sapaState.cameraState = sideCam;
         loaded.marketState.cameraState = sideCam;
@@ -42,6 +44,7 @@ export default function App() {
         delete loaded.gardenState.cameraState;
         delete loaded.beachState.cameraState;
         delete loaded.lanternState.cameraState;
+        delete loaded.auroraState.cameraState;
         delete loaded.cyberState.cameraState;
         delete loaded.sapaState.cameraState;
         delete loaded.marketState.cameraState;
@@ -49,6 +52,7 @@ export default function App() {
           delete loaded.camera.garden;
           delete loaded.camera.beach;
           delete loaded.camera.lantern;
+          delete loaded.camera.aurora;
           delete loaded.camera.cyber;
           delete loaded.camera.sapa;
           delete loaded.camera.market;
