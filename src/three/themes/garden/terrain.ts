@@ -188,6 +188,90 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
   return { height: Math.max(0.08, finalH), zone: currentZone, distToStream };
 }
 
+export function evaluateSurfaceColor(x: number, y: number, z: number, norm: THREE.Vector3, s: Season, outCol: THREE.Color): void {
+  const pal = SEASON_PALETTES[s];
+  const slope = 1.0 - Math.max(0.0, norm.y);
+  const scx = getStreamCenter(z);
+  const distToStream = Math.abs(x - scx);
+  const shw = getStreamHalfWidth(z);
+
+  // Natural grass meadow
+  const gNoise = SimplexNoise2D(x * 0.55, z * 0.55) * 0.5 + 0.5;
+  outCol.copy(pal.ground).lerp(pal.grassTint, gNoise * 0.55);
+
+  // Broad overlapping meadow lobes follow the terrace, with no rectangle or
+  // contour threshold. Low-frequency warping avoids a conspicuous oval boundary.
+  const meadowX=x+.55*SimplexNoise2D(x*.17+3,z*.17-2);
+  const meadowZ=z+.60*SimplexNoise2D(x*.14-5,z*.14+7);
+  const upperMeadow=.70*Math.exp(-Math.pow((meadowX+5.7)/4.2,2)-Math.pow((meadowZ+1.6)/2.9,2));
+  const lowerMeadow=.50*Math.exp(-Math.pow((meadowX+3.0)/3.5,2)-Math.pow((meadowZ-.2)/3.1,2));
+  const meadowMass=1-(1-upperMeadow)*(1-lowerMeadow);
+  const gentleSlope=1-smoothstep(.06,.36,slope);
+  const terraceHeight=smoothstep(.55,1.15,y)*(1-smoothstep(1.85,2.8,y));
+  const dryBank=smoothstep(shw*1.05,shw*1.9,distToStream);
+  outCol.lerp(pal.grassTint, .18*meadowMass*gentleSlope*terraceHeight*dryBank);
+
+  // Stream channel & banks: multi-toned sandy gravel and riverbed stones from mountain gorge to front edge
+  if (distToStream < shw * 1.35) {
+    const gravelNoise1 = SimplexNoise2D(x * 2.2, z * 2.2) * 0.5 + 0.5;
+    const gravelNoise2 = SimplexNoise2D(x * 6.5 + 3.0, z * 6.5 + 3.0) * 0.5 + 0.5;
+    const gravelNoise3 = SimplexNoise2D(x * 14.0 + 8.0, z * 14.0 + 8.0) * 0.5 + 0.5;
+
+    const colSandWarm = COLORS.terrain.sand;
+    const colGravel = COLORS.water.bedGravel;
+    const colPebbleAmber = new THREE.Color(0xbfa57d);
+    const colPebbleSlate = new THREE.Color(0x656e6a);
+    const colPebbleJasper = new THREE.Color(0x9a6c52);
+
+    const pebbleMix = colSandWarm.clone().lerp(colGravel, gravelNoise1);
+    pebbleMix.lerp(colPebbleAmber, gravelNoise2 * 0.45);
+    pebbleMix.lerp(colPebbleSlate, (1.0 - gravelNoise2) * 0.35);
+    if (gravelNoise3 > 0.65) {
+      pebbleMix.lerp(colPebbleJasper, (gravelNoise3 - 0.65) * 1.5);
+    }
+
+    const shoreBlend = smoothstep(shw * 1.35, shw * 0.65, distToStream);
+    outCol.lerp(pebbleMix, shoreBlend * 0.95);
+  }
+
+  // Right bank: add natural dirt patches and warm gravel knolls (reduced uniform flat grass)
+  if (x > 1.2 && distToStream >= shw * 1.05) {
+    const dirtNoise = SimplexNoise2D(x * 0.75 + 10.0, z * 0.75 + 10.0) * 0.5 + 0.5;
+    if (dirtNoise > 0.62) {
+      outCol.lerp(COLORS.terrain.dirt, (dirtNoise - 0.62) * 1.3);
+    }
+  }
+
+  // Rocky cliffs: stratified rock with moss in crevices
+  if (slope > 0.26) {
+    const rockNoise = SimplexNoise2D(x * 1.1, z * 1.1) * 0.5 + 0.5;
+    const rockCol = COLORS.terrain.rock.clone().lerp(COLORS.terrain.rockDark, rockNoise);
+    if (slope > 0.40 && y > 0.35 && s !== 'winter') {
+      rockCol.lerp(COLORS.terrain.moss, 0.42);
+    }
+    outCol.lerp(rockCol, smoothstep(0.26, 0.58, slope));
+  }
+
+  // Rear mountain rock & snow
+  if (z < -3.6 && y > 2.2) {
+    const rockFactor = smoothstep(2.2, 3.4, y);
+    outCol.lerp(COLORS.terrain.rock, rockFactor * 0.65);
+    if (s === 'winter') {
+      // Coverage follows upward-facing slopes continuously; hard normal cutoffs
+      // made smooth shoulders read as long cliff cuts in winter renders.
+      outCol.lerp(COLORS.terrain.snow, rockFactor * smoothstep(.45,.93,norm.y) * .85);
+    }
+  }
+
+  // Winter selective snow
+  if (s === 'winter') {
+    const lakeBed=smoothstep(.5,1,z)*(1-smoothstep(shw*.70,shw*.85,distToStream));
+    const coverage=smoothstep(.55,.95,norm.y)*smoothstep(.25,.50,y)*(1-lakeBed);
+    outCol.lerp(COLORS.terrain.snow, coverage * .45);
+  }
+}
+
+
 export function createTerrain(scene: THREE.Scene): TerrainSystem {
   const group = new THREE.Group();
   group.name = 'TerrainSystemGroup';
@@ -317,82 +401,6 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     winter: new Float32Array(numTopVerts * 3),
   };
   const seasonsList: Season[] = ['spring', 'summer', 'autumn', 'winter'];
-
-  function evaluateSurfaceColor(x: number, y: number, z: number, norm: THREE.Vector3, s: Season, outCol: THREE.Color): void {
-    const pal = SEASON_PALETTES[s];
-    const slope = 1.0 - Math.max(0.0, norm.y);
-    const scx = getStreamCenter(z);
-    const distToStream = Math.abs(x - scx);
-    const shw = getStreamHalfWidth(z);
-
-    // Natural grass meadow
-    const gNoise = SimplexNoise2D(x * 0.55, z * 0.55) * 0.5 + 0.5;
-    outCol.copy(pal.ground).lerp(pal.grassTint, gNoise * 0.55);
-
-    // Glamping Plateau Meadow: richer lush green
-    if (x >= -9.0 && x <= -0.6 && z >= -3.5 && z <= 0.85 && slope < 0.20) {
-      outCol.lerp(pal.grassTint, 0.40);
-    }
-
-    // Stream channel & banks: multi-toned sandy gravel and riverbed stones from mountain gorge to front edge
-    if (distToStream < shw * 1.35) {
-      const gravelNoise1 = SimplexNoise2D(x * 2.2, z * 2.2) * 0.5 + 0.5;
-      const gravelNoise2 = SimplexNoise2D(x * 6.5 + 3.0, z * 6.5 + 3.0) * 0.5 + 0.5;
-      const gravelNoise3 = SimplexNoise2D(x * 14.0 + 8.0, z * 14.0 + 8.0) * 0.5 + 0.5;
-
-      const colSandWarm = COLORS.terrain.sand;
-      const colGravel = COLORS.water.bedGravel;
-      const colPebbleAmber = new THREE.Color(0xbfa57d);
-      const colPebbleSlate = new THREE.Color(0x656e6a);
-      const colPebbleJasper = new THREE.Color(0x9a6c52);
-
-      const pebbleMix = colSandWarm.clone().lerp(colGravel, gravelNoise1);
-      pebbleMix.lerp(colPebbleAmber, gravelNoise2 * 0.45);
-      pebbleMix.lerp(colPebbleSlate, (1.0 - gravelNoise2) * 0.35);
-      if (gravelNoise3 > 0.65) {
-        pebbleMix.lerp(colPebbleJasper, (gravelNoise3 - 0.65) * 1.5);
-      }
-
-      const shoreBlend = smoothstep(shw * 1.35, shw * 0.65, distToStream);
-      outCol.lerp(pebbleMix, shoreBlend * 0.95);
-    }
-
-    // Right bank: add natural dirt patches and warm gravel knolls (reduced uniform flat grass)
-    if (x > 1.2 && distToStream >= shw * 1.05) {
-      const dirtNoise = SimplexNoise2D(x * 0.75 + 10.0, z * 0.75 + 10.0) * 0.5 + 0.5;
-      if (dirtNoise > 0.62) {
-        outCol.lerp(COLORS.terrain.dirt, (dirtNoise - 0.62) * 1.3);
-      }
-    }
-
-    // Rocky cliffs: stratified rock with moss in crevices
-    if (slope > 0.26) {
-      const rockNoise = SimplexNoise2D(x * 1.1, z * 1.1) * 0.5 + 0.5;
-      const rockCol = COLORS.terrain.rock.clone().lerp(COLORS.terrain.rockDark, rockNoise);
-      if (slope > 0.40 && y > 0.35 && s !== 'winter') {
-        rockCol.lerp(COLORS.terrain.moss, 0.42);
-      }
-      outCol.lerp(rockCol, smoothstep(0.26, 0.58, slope));
-    }
-
-    // Rear mountain rock & snow
-    if (z < -3.6 && y > 2.2) {
-      const rockFactor = smoothstep(2.2, 3.4, y);
-      outCol.lerp(COLORS.terrain.rock, rockFactor * 0.65);
-      if (s === 'winter') {
-        // Coverage follows upward-facing slopes continuously; hard normal cutoffs
-        // made smooth shoulders read as long cliff cuts in winter renders.
-        outCol.lerp(COLORS.terrain.snow, rockFactor * smoothstep(.45,.93,norm.y) * .85);
-      }
-    }
-
-    // Winter selective snow
-    if (s === 'winter') {
-      const lakeBed=smoothstep(.5,1,z)*(1-smoothstep(shw*.70,shw*.85,distToStream));
-      const coverage=smoothstep(.55,.95,norm.y)*smoothstep(.25,.50,y)*(1-lakeBed);
-      outCol.lerp(COLORS.terrain.snow, coverage * .45);
-    }
-  }
 
   // 1. Uniformly tessellated terrain, clipped to the display contour rather than radial long diagonals.
   const cX=GARDEN_CENTER.x,cZ=GARDEN_CENTER.y;
