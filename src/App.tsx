@@ -6,8 +6,7 @@ import {
   loadPersistedAppState,
   savePersistedAppState,
   getThemeDefaultState,
-  DEFAULT_GARDEN_STATE,
-  DEFAULT_BEACH_STATE,
+  getPersistedThemeState, THEME_STATE_KEYS,
 } from './three/core/storage';
 import { SceneManager } from './three/core/SceneManager';
 import { THEME_METADATA_MAP } from './three/themes/registry';
@@ -19,7 +18,7 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const themeParam = urlParams.get('theme');
-      if (themeParam === 'garden' || themeParam === 'beach' || themeParam === 'phuquoc') {
+      if (themeParam === 'garden' || themeParam === 'beach' || themeParam === 'phuquoc' || themeParam === 'lantern') {
         loaded.activeThemeId = themeParam === 'phuquoc' ? 'beach' : themeParam;
       }
       const cameraParam = urlParams.get('camera');
@@ -27,16 +26,20 @@ export default function App() {
         const topCam: SavedCameraState = { position: [0.001, 38, 0], target: [0, 0, 0], zoom: 1 };
         loaded.gardenState.cameraState = topCam;
         loaded.beachState.cameraState = topCam;
+        loaded.lanternState.cameraState = topCam;
       } else if (cameraParam === 'side') {
         const sideCam: SavedCameraState = { position: [35, 8, 0], target: [0, 0, 0], zoom: 1 };
         loaded.gardenState.cameraState = sideCam;
         loaded.beachState.cameraState = sideCam;
+        loaded.lanternState.cameraState = sideCam;
       } else if (cameraParam === 'default') {
         delete loaded.gardenState.cameraState;
         delete loaded.beachState.cameraState;
+        delete loaded.lanternState.cameraState;
         if (loaded.camera) {
           delete loaded.camera.garden;
           delete loaded.camera.beach;
+          delete loaded.camera.lantern;
           delete (loaded.camera as Record<string, any>).phuquoc;
         }
       }
@@ -55,7 +58,7 @@ export default function App() {
   // Active theme is strictly what is currently committed and active in 3D
   const activeThemeId = persisted.activeThemeId;
   const rawThemeState =
-    activeThemeId === 'garden' ? persisted.gardenState : persisted.beachState;
+    getPersistedThemeState(persisted,activeThemeId);
   const currentThemeState = {
     ...rawThemeState,
     quality: persisted.shared.quality,
@@ -64,7 +67,7 @@ export default function App() {
   // Target theme for Scene component (in-flight request or committed active)
   const targetThemeId = requestedThemeId || activeThemeId;
   const rawTargetThemeState =
-    targetThemeId === 'garden' ? persisted.gardenState : persisted.beachState;
+    getPersistedThemeState(persisted,targetThemeId);
   const sceneThemeState = {
     ...rawTargetThemeState,
     quality: persisted.shared.quality,
@@ -102,23 +105,8 @@ export default function App() {
         handleQualityChange(quality);
       }
       setPersisted((prev) => {
-        if (prev.activeThemeId === 'garden') {
-          return {
-            ...prev,
-            gardenState: {
-              ...prev.gardenState,
-              ...themePatch,
-            },
-          };
-        } else {
-          return {
-            ...prev,
-            beachState: {
-              ...prev.beachState,
-              ...themePatch,
-            },
-          };
-        }
+        const key=THEME_STATE_KEYS[prev.activeThemeId];
+        return {...prev,[key]:{...prev[key],...themePatch}};
       });
     },
     [handleQualityChange]
@@ -127,19 +115,8 @@ export default function App() {
   const handleCameraChange = useCallback((themeId: ThemeId, camera: SavedCameraState) => {
     setPersisted((prev) => {
       const nextCamera = { ...prev.camera, [themeId]: camera };
-      if (themeId === 'garden') {
-        return {
-          ...prev,
-          camera: nextCamera,
-          gardenState: { ...prev.gardenState, cameraState: camera },
-        };
-      } else {
-        return {
-          ...prev,
-          camera: nextCamera,
-          beachState: { ...prev.beachState, cameraState: camera },
-        };
-      }
+      const key=THEME_STATE_KEYS[themeId];
+      return {...prev,camera:nextCamera,[key]:{...prev[key],cameraState:camera}};
     });
   }, []);
 
@@ -149,19 +126,7 @@ export default function App() {
     setPersisted((prev) => {
       const nextCamera = { ...prev.camera };
       delete nextCamera[activeThemeId];
-      if (prev.activeThemeId === 'garden') {
-        return {
-          ...prev,
-          camera: nextCamera,
-          gardenState: { ...DEFAULT_GARDEN_STATE, cameraState: undefined },
-        };
-      } else {
-        return {
-          ...prev,
-          camera: nextCamera,
-          beachState: { ...DEFAULT_BEACH_STATE, cameraState: undefined },
-        };
-      }
+      return {...prev,camera:nextCamera,[THEME_STATE_KEYS[prev.activeThemeId]]:{...defaultState,cameraState:undefined}};
     });
     managerRef.current?.resetCurrentTheme(defaultState);
   }, [activeThemeId]);
@@ -219,10 +184,7 @@ export default function App() {
     setThemeError(null);
     setThemeLoading(true);
     const targetId = requestedThemeId || activeThemeId;
-    const targetState =
-      targetId === 'garden'
-        ? { ...persisted.gardenState, quality: persisted.shared.quality }
-        : { ...persisted.beachState, quality: persisted.shared.quality };
+    const targetState = {...getPersistedThemeState(persisted,targetId),quality:persisted.shared.quality};
 
     managerRef.current?.switchTheme(targetId, targetState);
   }, [requestedThemeId, activeThemeId, persisted]);
@@ -239,7 +201,7 @@ export default function App() {
 
   return (
     <div
-      className="app-container"
+      className={`app-container theme-${activeThemeId}`}
       onPointerEnter={() => managerRef.current?.setPointerOnUI(false)}
     >
       <Scene

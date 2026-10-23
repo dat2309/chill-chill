@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {OCEAN_WAVES_GLSL} from '../../core/oceanWaves';
 import {
   DIORAMA_WIDTH,
   DIORAMA_DEPTH,
@@ -458,6 +459,7 @@ export function createBeachWater(
       uGheInvMatrix: { value: new THREE.Matrix4() },
     },
     vertexShader: `
+      ${OCEAN_WAVES_GLSL}
       attribute float aTerrainH;
       attribute float aSkirtBottom;
       attribute float aIsSkirt;
@@ -491,9 +493,7 @@ export function createBeachWater(
           pos.y = uWaterLevel;
 
           // Synchronized ocean swell waves (identical to CPU boat physics)
-          float swell = sin(pos.z * 1.75 - uTime * 1.6) * 0.045 * uWindStrength;
-          swell += cos(pos.x * 1.15 + pos.z * 0.85 - uTime * 2.1) * 0.025 * uWindStrength;
-          swell += sin(pos.x * 2.2 - pos.z * 1.3 + uTime * 3.0) * 0.012 * uWindStrength;
+          float swell = oceanWave(pos.xz, uTime, uWindStrength);
 
           if (uUseGpu > 0.5) {
             vec4 ripple = texture2D(uRippleMap, uv);

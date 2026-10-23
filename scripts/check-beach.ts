@@ -1218,7 +1218,7 @@ assert(
 // Layout migrations discard both camera storage paths while retaining settings.
 const oldWindow = (globalThis as any).window;
 try {
-  const raw = { ...mockAppState, version: CURRENT_STORAGE_VERSION - 1 };
+  const raw = { ...mockAppState, version: 3 };
   (globalThis as any).window = { localStorage: { getItem: () => JSON.stringify(raw) } };
   const migrated = loadPersistedAppState();
   assert(!migrated.gardenState.cameraState && !migrated.beachState.cameraState &&

@@ -509,7 +509,13 @@ export class SceneManager {
 
     const aspect = w / h;
     const currentFrustumH = (this.camera.top - this.camera.bottom) || 26.0;
-    setCameraProjection(this.camera, currentFrustumH, aspect);
+    // A desktop frustum reused at a narrow aspect clips a wide diorama.
+    // Refit the active content; retain the existing orbit target and camera.zoom.
+    const activeTheme=this.coordinator.getActiveTheme();
+    const fittedHeight=activeTheme
+      ? calculateBaseFrustumHeight(this.camera,this.renderer,activeTheme.group)
+      : currentFrustumH;
+    setCameraProjection(this.camera,fittedHeight,aspect);
     this.renderer.setSize(w, h);
   }
 

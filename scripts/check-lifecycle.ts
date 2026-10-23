@@ -181,6 +181,7 @@ async function runLifecycleTests() {
   const createdThemes: (ThemeInstance<any> & MockThemeExtra)[] = [];
 
   const loaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => {
       const t = createFakeThemeInstance('garden');
       createdThemes.push(t);
@@ -223,6 +224,7 @@ async function runLifecycleTests() {
 
   // Test 2B: Switch failure keeps active theme intact and disposes failed instance
   const failLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => {
       const t = createFakeThemeInstance('garden', { failInit: true, initDelay: 10 });
       createdThemes.push(t);
@@ -268,6 +270,7 @@ async function runLifecycleTests() {
   // =========================================================================
   let slowRejectTheme: any = null;
   const raceLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => {
       slowRejectTheme = createFakeThemeInstance('garden', { failInit: true, initDelay: 60 });
       createdThemes.push(slowRejectTheme);
@@ -317,6 +320,7 @@ async function runLifecycleTests() {
 
   const coordinatorInitA = new ThemeLifecycleCoordinator({
     loaderMap: {
+      lantern:async()=>createFakeThemeInstance('lantern'),
       garden: async () => {
         instanceInitA = createFakeThemeInstance('garden', { initPromise: deferredInitA.promise });
         return instanceInitA;
@@ -355,6 +359,7 @@ async function runLifecycleTests() {
 
   const coordinatorReloadB = new ThemeLifecycleCoordinator({
     loaderMap: {
+      lantern:async()=>createFakeThemeInstance('lantern'),
       garden: async () => {
         gardenLoadCount++;
         if (gardenLoadCount === 1) {
@@ -414,6 +419,7 @@ async function runLifecycleTests() {
 
     const rollbackCoordinator = new ThemeLifecycleCoordinator({
       loaderMap: {
+      lantern:async()=>createFakeThemeInstance('lantern'),
         garden: async () => {
           oldGarden = createFakeThemeInstance('garden');
           return oldGarden;
@@ -480,6 +486,7 @@ async function runLifecycleTests() {
     (newBeach as any).failApplyState = false;
     const retryCoordinatorPoint = new ThemeLifecycleCoordinator({
       loaderMap: {
+      lantern:async()=>createFakeThemeInstance('lantern'),
         garden: async () => oldGarden,
         beach: async () => createFakeThemeInstance('beach'),
       },
@@ -503,6 +510,7 @@ async function runLifecycleTests() {
 
   const inFlightUpdateCoordinator = new ThemeLifecycleCoordinator({
     loaderMap: {
+      lantern:async()=>createFakeThemeInstance('lantern'),
       garden: async () => {
         testGardenTheme = createFakeThemeInstance('garden');
         return testGardenTheme;
@@ -618,6 +626,7 @@ async function runLifecycleTests() {
   };
 
   const integrationLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => {
       attemptNumber++;
       const shouldFail = attemptNumber === 1;
@@ -665,6 +674,19 @@ async function runLifecycleTests() {
   assert(readyCount === 1, 'Integration: onReady was called exactly once');
   assert(successCount === 1, 'Integration: onThemeSuccess was called on retry');
 
+  // Regression: resizing the actual manager from desktop to portrait must refit
+  // rendered geometry, while preserving the user's orbit and zoom.
+  const resizeProbe=new THREE.Mesh(new THREE.BoxGeometry(20,5,15),new THREE.MeshBasicMaterial());
+  const resizeTheme=sceneManager.getActiveTheme()!;resizeTheme.group.add(resizeProbe);resizeTheme.group.updateMatrixWorld(true);
+  const resizeCamera=sceneManager.camera;
+  const savedPosition=resizeCamera.position.clone(),savedZoom=resizeCamera.zoom;
+  mockContainer.clientWidth=390;mockContainer.clientHeight=844;(sceneManager as any).handleResize();
+  let resizeContained=true;const resizeBounds=new THREE.Box3().setFromObject(resizeProbe);
+  for(const x of [resizeBounds.min.x,resizeBounds.max.x])for(const y of [resizeBounds.min.y,resizeBounds.max.y])for(const z of [resizeBounds.min.z,resizeBounds.max.z]){const point=new THREE.Vector3(x,y,z).project(resizeCamera);if(Math.abs(point.x)>1||Math.abs(point.y)>1)resizeContained=false;}
+  assert(resizeContained,'Integration: real manager desktop-to-portrait resize keeps rendered bounds visible');
+  assert(resizeCamera.position.distanceTo(savedPosition)<1e-12&&resizeCamera.zoom===savedZoom,'Integration: responsive fit preserves orbit position and user zoom');
+  resizeProbe.removeFromParent();resizeProbe.geometry.dispose();(resizeProbe.material as THREE.Material).dispose();mockContainer.clientWidth=800;mockContainer.clientHeight=600;(sceneManager as any).handleResize();
+
   // Step 3: Subsequent switch or start does not duplicate loop or ready
   sceneManager.start();
   assert(startCount === 2, 'Integration: Calling start again was attempted');
@@ -679,6 +701,7 @@ async function runLifecycleTests() {
   // Step 4: Unmount before in-flight switch completes
   const deferredUnmount = createDeferred();
   const unmountLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => createFakeThemeInstance('garden'),
     beach: async () => createFakeThemeInstance('beach', { initPromise: deferredUnmount.promise }),
   };
@@ -864,6 +887,7 @@ async function runLifecycleTests() {
   };
 
   const raycastLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+    lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => testRaycastTheme,
     beach: async () => testRaycastTheme,
   };

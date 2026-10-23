@@ -944,3 +944,19 @@ input:focus-visible,
   justify-content: flex-end;
 }
 
+
+/* Warm readable branding against Lantern Town's continuous night sky. */
+.theme-lantern .logo-text,
+.theme-lantern .hero-title,
+.theme-lantern .hero-title em {
+  color: #fff0d2;
+}
+.theme-lantern .eyebrow,
+.theme-lantern .footer-left,
+.theme-lantern .footer-right {
+  color: #dfcfca;
+}
+
+@media (max-width: 640px) {
+  .theme-lantern .lantern-rain-label { display: none; }
+}

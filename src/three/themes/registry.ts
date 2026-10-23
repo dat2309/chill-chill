@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 import { ThemeId, ThemeInstance, ThemeMetadata } from '../core/types';
 import { GARDEN_METADATA } from './garden/config';
+import {LANTERN_METADATA} from './lantern/config';
 import { BEACH_METADATA } from './beach/config';
 
 export const THEME_METADATA_MAP: Record<ThemeId, ThemeMetadata<any>> = {
   garden: GARDEN_METADATA,
   beach: BEACH_METADATA,
+  lantern:LANTERN_METADATA,
 };
 
-export const THEME_LIST: ThemeMetadata<any>[] = [GARDEN_METADATA, BEACH_METADATA];
+export const THEME_LIST: ThemeMetadata<any>[] = [GARDEN_METADATA, BEACH_METADATA,LANTERN_METADATA];
 
 /**
  * Resilient dynamic import helper with retry and stale-chunk recovery.
@@ -59,6 +61,7 @@ export const THEME_LOADERS: Record<
   ThemeId,
   (renderer: THREE.WebGLRenderer) => Promise<ThemeInstance<any>>
 > = {
+  lantern:async(renderer)=>{const mod=await loadThemeWithRetry(()=>import('./lantern/index'));return new mod.LanternTheme(renderer)},
   garden: async (renderer) => {
     const mod = await loadThemeWithRetry(() => import('./garden/index'));
     return new mod.GardenTheme(renderer);

@@ -1,17 +1,19 @@
 import * as THREE from 'three';
 
-export type ThemeId = 'garden' | 'beach';
+export type ThemeId = 'garden' | 'beach' | 'lantern';
 
 export type GardenSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 export type BeachSeason = 'dry' | 'rainy';
+export type LanternSeason = 'night' | 'festival';
 
 export interface ThemeSeasonMap {
   garden: GardenSeason;
   beach: BeachSeason;
+  lantern: LanternSeason;
 }
 
 export type ThemeSeason<T extends ThemeId> = ThemeSeasonMap[T];
-export type Season = GardenSeason | BeachSeason;
+export type Season = GardenSeason | BeachSeason | LanternSeason;
 
 export type TideLevel = 'low' | 'high';
 export type Quality = 'low' | 'medium' | 'high';
@@ -41,9 +43,10 @@ export interface ThemeState<T extends ThemeId = ThemeId> {
   quality?: Quality;
   cameraState?: SavedCameraState;
   debugTerrain?: boolean;
+  rainIntensity?: number;
 }
 
-export type AnyThemeState = ThemeState<'garden'> | ThemeState<'beach'>;
+export type AnyThemeState = ThemeState<'garden'> | ThemeState<'beach'> | ThemeState<'lantern'>;
 
 export interface SharedOptions {
   quality: Quality;
@@ -55,6 +58,7 @@ export interface PersistedAppState {
   activeThemeId: ThemeId;
   gardenState: ThemeState<'garden'>;
   beachState: ThemeState<'beach'>;
+  lanternState: ThemeState<'lantern'>;
   phuquocState?: ThemeState<'beach'>; // legacy migration alias
   shared: SharedOptions;
   camera?: Partial<Record<ThemeId, SavedCameraState>>;

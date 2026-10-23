@@ -304,7 +304,7 @@ export default function UI({
         </div>
         <div className="eyebrow">{activeMetadata.eyebrow}</div>
         <h1 className="hero-title">
-          {activeThemeId === 'garden' ? (
+          {activeThemeId === 'lantern' ? <>Đèn phố<br/>soi dòng <em>Hoài.</em></> : activeThemeId === 'garden' ? (
             <>Where the garden<br />meets the <em>stream.</em></>
           ) : (
             <>Where the palms<br />meet the <em>sunset beach.</em></>
@@ -320,7 +320,7 @@ export default function UI({
           >
             <LayersIcon />
             <span className="theme-btn-text">
-              {activeThemeId === 'garden' ? 'Chillax Garden' : 'Sunset Beach'}
+              {activeMetadata.name}
             </span>
           </button>
           <button
@@ -343,26 +343,14 @@ export default function UI({
       {/* Top Right Controls & Time Slider */}
       <div className="top-right-panel">
         <div className="badge-row">
-          {activeThemeId === 'garden' ? (
-            <>
-              <span className="badge">Chillax Garden</span>
-              <span className="badge">Highland Stream</span>
-              <span className="badge">Valley Cove</span>
-            </>
-          ) : (
-            <>
-              <span className="badge">Sunset Beach</span>
-              <span className="badge">Bãi Hoàng Hôn</span>
-              <span className="badge">Mái Lá & Cầu Tàu</span>
-            </>
-          )}
+          {activeMetadata.badges.map(b=><span key={b} className="badge">{b}</span>)}
         </div>
         <div className="time-control">
           <span className="time-icon" aria-hidden="true">{getTimeIcon(state.timeOfDay)}</span>
           <input
             className="time-slider"
             type="range"
-            min="0"
+            min={activeThemeId==='lantern'?18:0}
             max="24"
             step="0.1"
             value={state.timeOfDay}
@@ -381,11 +369,12 @@ export default function UI({
         </button>
         <div className="ctrl-divider" aria-hidden="true" />
 
+        {activeThemeId==='lantern'&&<button className={`ctrl-btn lantern-rain-toggle ${(state.rainIntensity??0)>0?'active':''}`} aria-label="Mưa nhẹ Hội An" aria-pressed={(state.rainIntensity??0)>0} onClick={()=>onChange({rainIntensity:(state.rainIntensity??0)>0?0:.65})}><span aria-hidden="true">🌧️</span><span className="lantern-rain-label">Mưa nhẹ</span></button>}
         {/* Dynamic Season Selector per active theme */}
         <div className="season-selector" role="group" aria-label="Choose season">
           {activeMetadata.seasons.map(s => {
             const isSelected = state.season === s.id;
-            const emoji = SEASON_EMOJIS[s.id] || '🌱';
+            const emoji = s.icon || SEASON_EMOJIS[s.id] || '🌱';
             return (
               <button
                 key={s.id}
@@ -510,7 +499,7 @@ export default function UI({
       {/* Footer Instructions and Badges */}
       <footer className="footer">
         <div className="footer-left">
-          {isTouchDevice ? 'Kéo để xoay góc nhìn · Chạm vào nước để tạo sóng' : 'Kéo chuột để xoay · Di chuột qua mặt nước để tạo gợn sóng · Nhấp để tạo sóng tròn'}
+          {activeThemeId==='lantern' ? 'Kéo để xoay góc nhìn · Chạm hoặc nhấp mặt sông để thả đèn hoa đăng' : isTouchDevice ? 'Kéo để xoay góc nhìn · Chạm vào nước để tạo sóng' : 'Kéo chuột để xoay · Di chuột qua mặt nước để tạo gợn sóng · Nhấp để tạo sóng tròn'}
         </div>
         <div className="footer-right">
           <span>{activeMetadata.name}</span>
@@ -552,7 +541,7 @@ export default function UI({
                     aria-label={`Chọn chủ đề: ${theme.name}`}
                   >
                     <div className="theme-card-preview">
-                      {theme.id === 'garden' ? <GardenCardPreview /> : <BeachCardPreview />}
+                      {theme.id === 'lantern'?<div style={{height:120,background:theme.previewGradient,display:'grid',placeItems:'center',fontSize:48}}>🏮</div>:theme.id === 'garden' ? <GardenCardPreview /> : <BeachCardPreview />}
                     </div>
                     <div className="theme-card-info">
                       <div className="theme-card-title">{theme.name}</div>
