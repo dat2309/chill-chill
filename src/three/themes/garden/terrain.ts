@@ -253,13 +253,17 @@ export function evaluateSurfaceColor(x: number, y: number, z: number, norm: THRE
   }
 
   // Rear mountain rock & snow
-  if (z < -3.6 && y > 2.2) {
-    const rockFactor = smoothstep(2.2, 3.4, y);
+  if (z < -3.6 && y > 2.0) {
+    const rockFactor = smoothstep(2.0, 3.2, y);
     outCol.lerp(COLORS.terrain.rock, rockFactor * 0.65);
     if (s === 'winter') {
-      // Coverage follows upward-facing slopes continuously; hard normal cutoffs
-      // made smooth shoulders read as long cliff cuts in winter renders.
-      outCol.lerp(COLORS.terrain.snow, rockFactor * smoothstep(.45,.93,norm.y) * .85);
+      // Prominent snow coverage on high peaks and high slopes:
+      // Elevation factor enables rich snow pack on high slopes (y > 2.4) and summits (y > 3.0)
+      const snowElev = smoothstep(2.0, 3.1, y);
+      const slopeFactor = smoothstep(0.38, 0.88, norm.y);
+      const peakBonus = smoothstep(2.9, 3.5, y) * 0.22;
+      const snowFactor = Math.min(1.0, snowElev * slopeFactor * 0.95 + peakBonus);
+      outCol.lerp(COLORS.terrain.snow, snowFactor);
     }
   }
 
