@@ -8,7 +8,7 @@ import {
   CameraState,
 } from './types';
 
-export const CURRENT_STORAGE_VERSION = 5;
+export const CURRENT_STORAGE_VERSION = 6;
 export const STORAGE_KEY = 'chillax_diorama_state_v2';
 
 export const DEFAULT_GARDEN_STATE: ThemeState<'garden'> = {
@@ -43,7 +43,9 @@ export function sanitizeLanternState(raw:any):ThemeState<'lantern'> {
     timeOfDay:Number.isFinite(raw?.timeOfDay)?Math.max(18,valid.timeOfDay):19.5,
     rainIntensity:Number.isFinite(raw?.rainIntensity)?Math.max(0,Math.min(1,raw.rainIntensity)):0};
 }
-export const THEME_STATE_KEYS={garden:'gardenState',beach:'beachState',lantern:'lanternState'}as const;
+export const DEFAULT_MARKET_STATE: ThemeState<'market'> = {...DEFAULT_BEACH_STATE,themeId:'market',season:'dawn',timeOfDay:6.5};
+export function sanitizeMarketState(raw:any):ThemeState<'market'>{return {...sanitizeBeachState(raw),themeId:'market',season:raw?.season==='noon'?'noon':'dawn',timeOfDay:Number.isFinite(raw?.timeOfDay)?Math.max(0,Math.min(24,raw.timeOfDay)):DEFAULT_MARKET_STATE.timeOfDay};}
+export const THEME_STATE_KEYS={market:'marketState',garden:'gardenState',beach:'beachState',lantern:'lanternState'}as const;
 export function getPersistedThemeState(state:PersistedAppState,id:ThemeId){return state[THEME_STATE_KEYS[id]];}
 
 export const DEFAULT_SHARED_OPTIONS: SharedOptions = {
@@ -162,6 +164,7 @@ export function loadPersistedAppState(): PersistedAppState {
     gardenState: { ...DEFAULT_GARDEN_STATE },
     beachState: { ...DEFAULT_BEACH_STATE },
     lanternState: {...DEFAULT_LANTERN_STATE},
+    marketState: {...DEFAULT_MARKET_STATE},
     shared: { ...DEFAULT_SHARED_OPTIONS },
   };
 
@@ -176,28 +179,32 @@ export function loadPersistedAppState(): PersistedAppState {
     const data = JSON.parse(rawStr);
     if (!data || typeof data !== 'object') return fallback;
 
-    const activeThemeId: ThemeId = data.activeThemeId==='lantern'?'lantern':(data.activeThemeId === 'beach' || data.activeThemeId === 'phuquoc') ? 'beach' : 'garden';
+    const activeThemeId: ThemeId = data.activeThemeId==='market'?'market':data.activeThemeId==='lantern'?'lantern':(data.activeThemeId === 'beach' || data.activeThemeId === 'phuquoc') ? 'beach' : 'garden';
     const gardenState = sanitizeGardenState(data.gardenState);
     const beachState = sanitizeBeachState(data.beachState ?? data.phuquocState);
     const lanternState=sanitizeLanternState(data.lanternState);
+    const marketState=sanitizeMarketState(data.marketState);
     const shared: SharedOptions = {
       quality: ['low', 'medium', 'high'].includes(data.shared?.quality) ? data.shared.quality : 'high',
       debugTerrain: Boolean(data.shared?.debugTerrain),
     };
 
-    if (data.version !== CURRENT_STORAGE_VERSION && data.version !== 4) {
+    if (!(data.version >= 4 && data.version <= CURRENT_STORAGE_VERSION)) {
       gardenState.cameraState = undefined;
       beachState.cameraState = undefined;
     }
     const camera: Partial<Record<ThemeId, CameraState>> = {};
     const gardenCam = sanitizeCameraState(data.camera?.garden ?? data.gardenState?.cameraState);
-    if ((data.version === CURRENT_STORAGE_VERSION || data.version === 4) && gardenCam) camera.garden = gardenCam;
+    if ((data.version >= 4 && data.version <= CURRENT_STORAGE_VERSION) && gardenCam) camera.garden = gardenCam;
     const beachCam = sanitizeCameraState(data.camera?.beach ?? data.camera?.phuquoc ?? data.beachState?.cameraState ?? data.phuquocState?.cameraState);
-    if ((data.version === CURRENT_STORAGE_VERSION || data.version === 4) && beachCam) camera.beach = beachCam;
+    if ((data.version >= 4 && data.version <= CURRENT_STORAGE_VERSION) && beachCam) camera.beach = beachCam;
 
     const lanternCam=sanitizeCameraState(data.camera?.lantern??data.lanternState?.cameraState);
-    if(data.version===CURRENT_STORAGE_VERSION&&lanternCam)camera.lantern=lanternCam;
+    if(data.version>=5&&data.version<=CURRENT_STORAGE_VERSION&&lanternCam)camera.lantern=lanternCam;
+    const marketCam=sanitizeCameraState(data.camera?.market??data.marketState?.cameraState);
+    if(data.version>=CURRENT_STORAGE_VERSION&&marketCam)camera.market=marketCam;
     return {
+      marketState,
       version: CURRENT_STORAGE_VERSION,
       activeThemeId,
       gardenState,
@@ -221,6 +228,7 @@ export function savePersistedAppState(state: PersistedAppState): void {
       gardenState: state.gardenState,
       beachState: state.beachState,
       lanternState: state.lanternState,
+      marketState: state.marketState,
       shared: state.shared,
       camera: state.camera,
     });
@@ -230,6 +238,7 @@ export function savePersistedAppState(state: PersistedAppState): void {
   }
 }
 
-export function getThemeDefaultState(themeId: ThemeId): ThemeState<'garden'> | ThemeState<'beach'> | ThemeState<'lantern'> {
+export function getThemeDefaultState(themeId: ThemeId): import('./types').AnyThemeState {
+  if(themeId==='market')return {...DEFAULT_MARKET_STATE};
   return themeId==='lantern'?{...DEFAULT_LANTERN_STATE}:themeId === 'garden' ? { ...DEFAULT_GARDEN_STATE } : { ...DEFAULT_BEACH_STATE };
 }

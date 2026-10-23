@@ -25,7 +25,7 @@ export interface SceneManagerOptions {
   onThemeSuccess?: (themeId: ThemeId) => void;
   onThemeError?: (error: Error) => void;
   initialQuality?: Quality;
-  loaderMap?: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>;
+  loaderMap?: Partial<Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>>;
   renderer?: THREE.WebGLRenderer;
 }
 
@@ -655,6 +655,8 @@ export class SceneManager {
         }
       }
     }
+
+    if (isSplash && activeTheme.handleClick?.(this.raycaster.ray)) return;
 
     if (hitX !== null && hitZ !== null && activeTheme.isInWater(hitX, hitZ)) {
       // Fast analytical / AABB occlusion check

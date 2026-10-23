@@ -304,7 +304,7 @@ export default function UI({
         </div>
         <div className="eyebrow">{activeMetadata.eyebrow}</div>
         <h1 className="hero-title">
-          {activeThemeId === 'lantern' ? <>Đèn phố<br/>soi dòng <em>Hoài.</em></> : activeThemeId === 'garden' ? (
+          {activeThemeId === 'market' ? <>{activeMetadata.tagline}</> : activeThemeId === 'lantern' ? <>Đèn phố<br/>soi dòng <em>Hoài.</em></> : activeThemeId === 'garden' ? (
             <>Where the garden<br />meets the <em>stream.</em></>
           ) : (
             <>Where the palms<br />meet the <em>sunset beach.</em></>
@@ -499,7 +499,7 @@ export default function UI({
       {/* Footer Instructions and Badges */}
       <footer className="footer">
         <div className="footer-left">
-          {activeThemeId==='lantern' ? 'Kéo để xoay góc nhìn · Chạm hoặc nhấp mặt sông để thả đèn hoa đăng' : isTouchDevice ? 'Kéo để xoay góc nhìn · Chạm vào nước để tạo sóng' : 'Kéo chuột để xoay · Di chuột qua mặt nước để tạo gợn sóng · Nhấp để tạo sóng tròn'}
+          {activeThemeId==='market' ? 'Chạm vào ghe để xem hàng rao bán · Kéo để xoay góc nhìn' : activeThemeId==='lantern' ? 'Kéo để xoay góc nhìn · Chạm hoặc nhấp mặt sông để thả đèn hoa đăng' : isTouchDevice ? 'Kéo để xoay góc nhìn · Chạm vào nước để tạo sóng' : 'Kéo chuột để xoay · Di chuột qua mặt nước để tạo gợn sóng · Nhấp để tạo sóng tròn'}
         </div>
         <div className="footer-right">
           <span>{activeMetadata.name}</span>
@@ -541,7 +541,7 @@ export default function UI({
                     aria-label={`Chọn chủ đề: ${theme.name}`}
                   >
                     <div className="theme-card-preview">
-                      {theme.id === 'lantern'?<div style={{height:120,background:theme.previewGradient,display:'grid',placeItems:'center',fontSize:48}}>🏮</div>:theme.id === 'garden' ? <GardenCardPreview /> : <BeachCardPreview />}
+                      {theme.id === 'market'?<div style={{height:120,background:theme.previewGradient,display:'grid',placeItems:'center',fontSize:48}}>🛶</div>:theme.id === 'lantern'?<div style={{height:120,background:theme.previewGradient,display:'grid',placeItems:'center',fontSize:48}}>🏮</div>:theme.id === 'garden' ? <GardenCardPreview /> : <BeachCardPreview />}
                     </div>
                     <div className="theme-card-info">
                       <div className="theme-card-title">{theme.name}</div>

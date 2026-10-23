@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "errors": [],
+  "changed": 829526,
+  "portrait": true,
+  "before": 214,
+  "after": 0,
+  "metrics": {
+    "first": {
+      "triangles": 97726,
+      "calls": 233
+    },
+    "second": {
+      "triangles": 97726,
+      "calls": 233
+    },
+    "reversal": {
+      "triangles": 97726,
+      "calls": 233
+    },
+    "strong-wind": {
+      "triangles": 97726,
+      "calls": 233
+    },
+    "low-wind": {
+      "triangles": 97726,
+      "calls": 233
+    },
+    "portrait": {
+      "triangles": 97726,
+      "calls": 233
+    },
+    "top": {
+      "triangles": 97726,
+      "calls": 233
+    },
+    "side": {
+      "triangles": 97726,
+      "calls": 233
+    },
+    "close": {
+      "triangles": 97666,
+      "calls": 228
+    }
+  }
+}

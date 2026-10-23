@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type ThemeId = 'garden' | 'beach' | 'lantern';
+export type ThemeId = 'garden' | 'beach' | 'lantern' | 'market';
 
 export type GardenSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 export type BeachSeason = 'dry' | 'rainy';
@@ -10,10 +10,11 @@ export interface ThemeSeasonMap {
   garden: GardenSeason;
   beach: BeachSeason;
   lantern: LanternSeason;
+  market: 'dawn' | 'noon';
 }
 
 export type ThemeSeason<T extends ThemeId> = ThemeSeasonMap[T];
-export type Season = GardenSeason | BeachSeason | LanternSeason;
+export type Season = ThemeSeasonMap[ThemeId];
 
 export type TideLevel = 'low' | 'high';
 export type Quality = 'low' | 'medium' | 'high';
@@ -46,7 +47,7 @@ export interface ThemeState<T extends ThemeId = ThemeId> {
   rainIntensity?: number;
 }
 
-export type AnyThemeState = ThemeState<'garden'> | ThemeState<'beach'> | ThemeState<'lantern'>;
+export type AnyThemeState = {[K in ThemeId]:ThemeState<K>}[ThemeId];
 
 export interface SharedOptions {
   quality: Quality;
@@ -59,6 +60,7 @@ export interface PersistedAppState {
   gardenState: ThemeState<'garden'>;
   beachState: ThemeState<'beach'>;
   lanternState: ThemeState<'lantern'>;
+  marketState: ThemeState<'market'>;
   phuquocState?: ThemeState<'beach'>; // legacy migration alias
   shared: SharedOptions;
   camera?: Partial<Record<ThemeId, SavedCameraState>>;
@@ -114,6 +116,7 @@ export interface ThemeInstance<T extends ThemeId = ThemeId> {
   isWaterVisibleAt?(worldPoint: THREE.Vector3, ray?: THREE.Ray): boolean;
   addRipple(worldX: number, worldZ: number, strength: number): void;
   reactToSplash(worldX: number, worldZ: number): void;
+  handleClick?(ray: THREE.Ray): boolean;
   intersectWater?(ray: THREE.Ray): { point: THREE.Vector3; distance: number } | null;
   getTideOffset?(): number;
   getWaterLevel?(): number;

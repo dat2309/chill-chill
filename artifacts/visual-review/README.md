@@ -79,3 +79,7 @@ Prompt review có thể sao chép:
 ## Bổ sung Hội An đêm — 2026-10-23
 
 Code commit `c01f7fc`: thêm theme `lantern`, storage v5 (giữ state và camera v4), hai trạng thái đêm thường/đêm rằm và mưa nhẹ độc lập. [Bộ ảnh, số đo, phạm vi kiểm chứng và giới hạn](lantern/README.md) được ghi riêng để giữ nguyên lịch sử review Garden/Beach phía trên.
+
+## Chợ nổi — 2026-10-23
+
+Xem [Market review](market/README.md): 15 suite đạt, 13 kiểm tra Market; ảnh WebGL và ứng dụng desktop/mobile, số đo và giới hạn trong thư mục.

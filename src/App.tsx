@@ -18,7 +18,7 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const themeParam = urlParams.get('theme');
-      if (themeParam === 'garden' || themeParam === 'beach' || themeParam === 'phuquoc' || themeParam === 'lantern') {
+      if (themeParam === 'garden' || themeParam === 'beach' || themeParam === 'phuquoc' || themeParam === 'lantern' || themeParam === 'market') {
         loaded.activeThemeId = themeParam === 'phuquoc' ? 'beach' : themeParam;
       }
       const cameraParam = urlParams.get('camera');
@@ -27,19 +27,23 @@ export default function App() {
         loaded.gardenState.cameraState = topCam;
         loaded.beachState.cameraState = topCam;
         loaded.lanternState.cameraState = topCam;
+        loaded.marketState.cameraState = topCam;
       } else if (cameraParam === 'side') {
         const sideCam: SavedCameraState = { position: [35, 8, 0], target: [0, 0, 0], zoom: 1 };
         loaded.gardenState.cameraState = sideCam;
         loaded.beachState.cameraState = sideCam;
         loaded.lanternState.cameraState = sideCam;
+        loaded.marketState.cameraState = sideCam;
       } else if (cameraParam === 'default') {
         delete loaded.gardenState.cameraState;
         delete loaded.beachState.cameraState;
         delete loaded.lanternState.cameraState;
+        delete loaded.marketState.cameraState;
         if (loaded.camera) {
           delete loaded.camera.garden;
           delete loaded.camera.beach;
           delete loaded.camera.lantern;
+          delete loaded.camera.market;
           delete (loaded.camera as Record<string, any>).phuquoc;
         }
       }

@@ -9,7 +9,7 @@ import {
 import { THEME_LOADERS } from '../themes/registry';
 
 export interface ThemeLifecycleCoordinatorOptions<TTheme extends ThemeInstance<any> = ThemeInstance<any>> {
-  loaderMap?: Record<ThemeId, (renderer: any) => Promise<TTheme>>;
+  loaderMap?: Partial<Record<ThemeId, (renderer: any) => Promise<TTheme>>>;
   renderer?: any;
   initialQuality?: Quality;
   initialThemeId?: ThemeId;

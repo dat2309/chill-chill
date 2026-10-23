@@ -1,3 +1,4 @@
+import {MARKET_METADATA} from './market/config';
 import * as THREE from 'three';
 import { ThemeId, ThemeInstance, ThemeMetadata } from '../core/types';
 import { GARDEN_METADATA } from './garden/config';
@@ -5,12 +6,13 @@ import {LANTERN_METADATA} from './lantern/config';
 import { BEACH_METADATA } from './beach/config';
 
 export const THEME_METADATA_MAP: Record<ThemeId, ThemeMetadata<any>> = {
+  market:MARKET_METADATA,
   garden: GARDEN_METADATA,
   beach: BEACH_METADATA,
   lantern:LANTERN_METADATA,
 };
 
-export const THEME_LIST: ThemeMetadata<any>[] = [GARDEN_METADATA, BEACH_METADATA,LANTERN_METADATA];
+export const THEME_LIST: ThemeMetadata<any>[] = [GARDEN_METADATA, BEACH_METADATA,LANTERN_METADATA,MARKET_METADATA];
 
 /**
  * Resilient dynamic import helper with retry and stale-chunk recovery.
@@ -61,6 +63,7 @@ export const THEME_LOADERS: Record<
   ThemeId,
   (renderer: THREE.WebGLRenderer) => Promise<ThemeInstance<any>>
 > = {
+  market:async(renderer)=>{const mod=await loadThemeWithRetry(()=>import('./market/index'));return new mod.MarketTheme(renderer)},
   lantern:async(renderer)=>{const mod=await loadThemeWithRetry(()=>import('./lantern/index'));return new mod.LanternTheme(renderer)},
   garden: async (renderer) => {
     const mod = await loadThemeWithRetry(() => import('./garden/index'));

@@ -180,7 +180,7 @@ function createDeferred<T = void>() {
 async function runLifecycleTests() {
   const createdThemes: (ThemeInstance<any> & MockThemeExtra)[] = [];
 
-  const loaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+  const loaderMap: Partial<Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>> = {
     lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => {
       const t = createFakeThemeInstance('garden');
@@ -223,7 +223,7 @@ async function runLifecycleTests() {
   );
 
   // Test 2B: Switch failure keeps active theme intact and disposes failed instance
-  const failLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+  const failLoaderMap: Partial<Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>> = {
     lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => {
       const t = createFakeThemeInstance('garden', { failInit: true, initDelay: 10 });
@@ -269,7 +269,7 @@ async function runLifecycleTests() {
   // Old request reject must NEVER clear requestedThemeId of a newer request!
   // =========================================================================
   let slowRejectTheme: any = null;
-  const raceLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+  const raceLoaderMap: Partial<Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>> = {
     lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => {
       slowRejectTheme = createFakeThemeInstance('garden', { failInit: true, initDelay: 60 });
@@ -625,7 +625,7 @@ async function runLifecycleTests() {
     }),
   };
 
-  const integrationLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+  const integrationLoaderMap: Partial<Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>> = {
     lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => {
       attemptNumber++;
@@ -700,7 +700,7 @@ async function runLifecycleTests() {
 
   // Step 4: Unmount before in-flight switch completes
   const deferredUnmount = createDeferred();
-  const unmountLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+  const unmountLoaderMap: Partial<Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>> = {
     lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => createFakeThemeInstance('garden'),
     beach: async () => createFakeThemeInstance('beach', { initPromise: deferredUnmount.promise }),
@@ -886,7 +886,7 @@ async function runLifecycleTests() {
     return mockIntersectWaterReturn;
   };
 
-  const raycastLoaderMap: Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>> = {
+  const raycastLoaderMap: Partial<Record<ThemeId, (renderer: any) => Promise<ThemeInstance<any>>>> = {
     lantern:async()=>createFakeThemeInstance('lantern'),
     garden: async () => testRaycastTheme,
     beach: async () => testRaycastTheme,

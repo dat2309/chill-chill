@@ -10,7 +10,7 @@
     "check-stream": "vite build --ssr scripts/check-stream.ts --outDir dist-scripts && node dist-scripts/check-stream.js",
     "check-beach": "vite build --ssr scripts/check-beach.ts --outDir dist-scripts && node dist-scripts/check-beach.js",
     "check-lifecycle": "vite build --ssr scripts/check-lifecycle.ts --outDir dist-scripts && node dist-scripts/check-lifecycle.js",
-    "test": "tsc --noEmit && npm run check-stream && npm run check-beach && npm run check-beach-4states && npm run check-lifecycle && npm run check-geometry && npm run check-vegetation && npm run check-surface-weather && npm run check-object-quality && npm run check-landscape-shape && npm run check-terrain-transitions && npm run check-terrain-snow && npm run check-garden-meadow-color && npm run check-triangle-budget && npm run check-lantern",
+    "test": "tsc --noEmit && npm run check-stream && npm run check-beach && npm run check-beach-4states && npm run check-lifecycle && npm run check-geometry && npm run check-vegetation && npm run check-surface-weather && npm run check-object-quality && npm run check-landscape-shape && npm run check-terrain-transitions && npm run check-terrain-snow && npm run check-garden-meadow-color && npm run check-triangle-budget && npm run check-lantern && npm run check-market",
     "check-beach-4states": "vite build --ssr scripts/check-beach-4states.ts --outDir dist-scripts && node dist-scripts/check-beach-4states.js",
     "check-triangle-budget": "vite build --ssr scripts/check-triangle-budget.ts --outDir dist-scripts && node dist-scripts/check-triangle-budget.js",
     "check-geometry": "vite build --ssr scripts/check-geometry.ts --outDir dist-scripts && node dist-scripts/check-geometry.js",
@@ -21,7 +21,8 @@
     "check-terrain-transitions": "vite build --ssr scripts/check-terrain-transitions.ts --outDir dist-scripts && node dist-scripts/check-terrain-transitions.js",
     "check-terrain-snow": "vite build --ssr scripts/check-terrain-snow.ts --outDir dist-scripts && node dist-scripts/check-terrain-snow.js",
     "check-garden-meadow-color": "vite build --ssr scripts/check-garden-meadow-color.ts --outDir dist-scripts && node dist-scripts/check-garden-meadow-color.js",
-    "check-lantern": "vite build --ssr scripts/check-lantern.ts --outDir dist-scripts && node dist-scripts/check-lantern.js"
+    "check-lantern": "vite build --ssr scripts/check-lantern.ts --outDir dist-scripts && node dist-scripts/check-lantern.js",
+    "check-market": "vite build --ssr scripts/check-market.ts --outDir dist-scripts && node dist-scripts/check-market.js"
   },
   "dependencies": {
     "react": "^18.3.1",
