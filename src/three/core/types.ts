@@ -108,6 +108,7 @@ export interface ThemeInstance<T extends ThemeId = ThemeId> {
   applyState(state: ThemeState<T>, prevSeason?: ThemeSeason<T>, blendFactor?: number): void;
   getContentBounds(): THREE.Box3;
   isInWater(worldX: number, worldZ: number): boolean;
+  isWaterVisibleAt?(worldPoint: THREE.Vector3, ray?: THREE.Ray): boolean;
   addRipple(worldX: number, worldZ: number, strength: number): void;
   reactToSplash(worldX: number, worldZ: number): void;
   intersectWater?(ray: THREE.Ray): { point: THREE.Vector3; distance: number } | null;

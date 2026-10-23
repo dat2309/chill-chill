@@ -179,6 +179,42 @@ export class GardenTheme implements ThemeInstance<'garden'> {
     this.fish?.reactToRipple(worldX, worldZ);
   }
 
+  // Fast analytical proxy boxes for emergent obstacles in the stream (e.g. Boulder 2 at x=4.6, z=3.6)
+  private readonly obstacleBoxes: THREE.Box3[] = [
+    new THREE.Box3(
+      new THREE.Vector3(4.6 - 0.42, 0.20, 3.6 - 0.42),
+      new THREE.Vector3(4.6 + 0.42, 0.60, 3.6 + 0.42)
+    ),
+  ];
+
+  isWaterVisibleAt(worldPoint: THREE.Vector3, ray?: THREE.Ray): boolean {
+    if (this.water?.isFrozen(worldPoint.x, worldPoint.z)) {
+      return false;
+    }
+    if (ray) {
+      const boxHit = new THREE.Vector3();
+      const waterDist = ray.origin.distanceTo(worldPoint);
+      for (let i = 0; i < this.obstacleBoxes.length; i++) {
+        const hit = ray.intersectBox(this.obstacleBoxes[i], boxHit);
+        if (hit && ray.origin.distanceTo(hit) < waterDist - 0.005) {
+          return false;
+        }
+      }
+    } else {
+      for (let i = 0; i < this.obstacleBoxes.length; i++) {
+        const box = this.obstacleBoxes[i];
+        if (
+          worldPoint.x >= box.min.x && worldPoint.x <= box.max.x &&
+          worldPoint.z >= box.min.z && worldPoint.z <= box.max.z &&
+          worldPoint.y <= box.max.y
+        ) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   intersectWater(ray: THREE.Ray): { point: THREE.Vector3; distance: number } | null {
     const tideOffset = this.water ? this.water.getTideOffset() : 0;
     return intersectGardenWater(ray, tideOffset);

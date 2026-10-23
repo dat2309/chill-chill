@@ -253,6 +253,41 @@ export class BeachTheme implements ThemeInstance<'beach'> {
     }
   }
 
+  // Fast analytical proxy boxes for pier and floating boats over water
+  private readonly obstacleBoxes: THREE.Box3[] = [
+    // Pier structure & gazebo pavilion
+    new THREE.Box3(new THREE.Vector3(-2.55, 0.20, 1.15), new THREE.Vector3(-1.45, 1.80, 5.75)),
+    // Thuyền thúng
+    new THREE.Box3(new THREE.Vector3(1.8 - 0.75, 0.15, 4.5 - 0.75), new THREE.Vector3(1.8 + 0.75, 0.75, 4.5 + 0.75)),
+    // Ghe nhỏ
+    new THREE.Box3(new THREE.Vector3(-4.5 - 0.50, 0.15, 5.2 - 1.20), new THREE.Vector3(-4.5 + 0.50, 0.85, 5.2 + 1.20)),
+  ];
+
+  isWaterVisibleAt(worldPoint: THREE.Vector3, ray?: THREE.Ray): boolean {
+    if (ray) {
+      const boxHit = new THREE.Vector3();
+      const waterDist = ray.origin.distanceTo(worldPoint);
+      for (let i = 0; i < this.obstacleBoxes.length; i++) {
+        const hit = ray.intersectBox(this.obstacleBoxes[i], boxHit);
+        if (hit && ray.origin.distanceTo(hit) < waterDist - 0.005) {
+          return false;
+        }
+      }
+    } else {
+      for (let i = 0; i < this.obstacleBoxes.length; i++) {
+        const box = this.obstacleBoxes[i];
+        if (
+          worldPoint.x >= box.min.x && worldPoint.x <= box.max.x &&
+          worldPoint.z >= box.min.z && worldPoint.z <= box.max.z &&
+          worldPoint.y <= box.max.y
+        ) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   intersectWater(ray: THREE.Ray): { point: THREE.Vector3; distance: number } | null {
     const waterLevel = this.water ? this.water.getWaterLevel() : 0.3;
     const tideOffset = this.water && this.water.getTideOffset ? this.water.getTideOffset() : 0;

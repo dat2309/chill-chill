@@ -54,6 +54,9 @@ export class SceneManager {
   private isPointerDown = false;
   private isDragging = false;
   private pointerDownPos = new THREE.Vector2();
+  private pointerMoveRafId = 0;
+  private pendingPointerMove = false;
+  private pendingPointerClientPos = new THREE.Vector2();
   private waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private waterHitPoint = new THREE.Vector3();
 
@@ -548,9 +551,28 @@ export class SceneManager {
     const activeTheme = this.coordinator.getActiveTheme();
     if (this.isDragging || this.isPointerOnUI || !activeTheme) return;
 
+    this.pendingPointerClientPos.set(e.clientX, e.clientY);
+    if (!this.pendingPointerMove) {
+      this.pendingPointerMove = true;
+      if (typeof requestAnimationFrame !== 'undefined') {
+        this.pointerMoveRafId = requestAnimationFrame(this.handleThrottledPointerMove);
+      } else {
+        this.handleThrottledPointerMove();
+      }
+    }
+  };
+
+  private handleThrottledPointerMove = (): void => {
+    this.pendingPointerMove = false;
+    this.pointerMoveRafId = 0;
+    if (this.disposed || this.isDragging || this.isPointerOnUI) return;
+    const activeTheme = this.coordinator.getActiveTheme();
+    if (!activeTheme) return;
+
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    if (rect.width <= 0 || rect.height <= 0) return;
+    this.mouse.x = ((this.pendingPointerClientPos.x - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((this.pendingPointerClientPos.y - rect.top) / rect.height) * 2 + 1;
 
     this.raycastAndRipple(0.18, false);
   };
@@ -562,6 +584,11 @@ export class SceneManager {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    if (this.pointerMoveRafId !== 0 && typeof cancelAnimationFrame !== 'undefined') {
+      cancelAnimationFrame(this.pointerMoveRafId);
+      this.pointerMoveRafId = 0;
+      this.pendingPointerMove = false;
+    }
     const activeTheme = this.coordinator.getActiveTheme();
     if (!this.isDragging && !this.isPointerOnUI && activeTheme) {
       const rect = this.renderer.domElement.getBoundingClientRect();
@@ -624,14 +651,10 @@ export class SceneManager {
     }
 
     if (hitX !== null && hitZ !== null && activeTheme.isInWater(hitX, hitZ)) {
-      // Check if any solid obstacle (terrain, emergent rocks, trees, architecture, boats) is in front of the water hit
-      const obstacles = activeTheme.getObstacleMeshes?.();
-      if (obstacles && obstacles.length > 0) {
-        const obstacleHits = this.raycaster.intersectObjects(obstacles, true);
-        if (obstacleHits.length > 0 && obstacleHits[0].distance < waterDist - 0.005) {
-          // Ray hits a solid foreground obstacle before reaching water; skip ripple
-          return;
-        }
+      // Fast analytical / AABB occlusion check
+      const hitPt = this.waterHitPoint.set(hitX, activeTheme.getWaterLevel?.() ?? 0.3, hitZ);
+      if (activeTheme.isWaterVisibleAt && !activeTheme.isWaterVisibleAt(hitPt, this.raycaster.ray)) {
+        return;
       }
 
       activeTheme.addRipple(hitX, hitZ, baseStrength * activeState.rippleStrength);
@@ -655,6 +678,11 @@ export class SceneManager {
     if (this.animFrameId !== 0 && typeof cancelAnimationFrame !== 'undefined') {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = 0;
+    }
+    if (this.pointerMoveRafId !== 0 && typeof cancelAnimationFrame !== 'undefined') {
+      cancelAnimationFrame(this.pointerMoveRafId);
+      this.pointerMoveRafId = 0;
+      this.pendingPointerMove = false;
     }
 
     if (typeof document !== 'undefined') {
