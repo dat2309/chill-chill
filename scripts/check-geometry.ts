@@ -14,7 +14,7 @@ for (const [name, system] of [
   const geometry = mesh.geometry;
   const position = geometry.getAttribute('position');
   const index = geometry.getIndex()!;
-  const topCount = 1 + 140 * 256;
+  const topCount = geometry.userData.topVertexCount ?? (1 + 140 * 256);
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   let top = 0, bottom = 0, walls = 0;
   for (let i = 0; i < index.count; i += 3) {

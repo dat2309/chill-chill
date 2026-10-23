@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createBranchCrown } from '../../core/branchCrown';
 import { createVegetationWeather } from '../../core/vegetationWeather';
 import { BEACH_COLORS, PHUQUOC_COLORS, BeachSeason, PhuQuocSeason, SEED } from './constants';
 import { getDistanceToShore, isInWater, BUNGALOW_SPOTS } from './shoreline';
@@ -214,19 +215,10 @@ export function createBeachVegetation(
   });
 
   // --- 2. Coastal Pines (Phi Lao Ven Biển) ---
-  const pineTrunkGeo = new THREE.CylinderGeometry(0.06, 0.10, 1.4, 6, 6);
-  pineTrunkGeo.translate(0, 0.7, 0);
-  geometriesToDispose.push(pineTrunkGeo);
-
-  const pineCanopyGeo = new THREE.ConeGeometry(0.7, 2.2, 9, 5);
-  pineCanopyGeo.translate(0,1.1,0);
-  const needles=pineCanopyGeo.getAttribute('position');
-  for(let i=0;i<needles.count;i++){
-    const y=needles.getY(i),factor=.94+.075*Math.sin(y*7+.4);
-    needles.setX(i,needles.getX(i)*factor);needles.setZ(i,needles.getZ(i)*factor*(.94+.04*Math.sin(y*3)));
-  }
-  pineCanopyGeo.computeVertexNormals();
-  geometriesToDispose.push(pineCanopyGeo);
+  const coastalCrowns=[0,1,2].map(variant=>createBranchCrown(true,variant));
+  for(const crown of coastalCrowns)geometriesToDispose.push(crown.wood,crown.foliage);
+  const pineTrunkGeo=coastalCrowns[0].wood,pineCanopyGeo=coastalCrowns[0].foliage;
+  casuarinaMat.color.offsetHSL(0,-.04,.055);casuarinaMat.vertexColors=true;casuarinaMat.side=THREE.DoubleSide;casuarinaMat.roughness=.83;
 
   const maxPines = 35;
   const pineTrunkMesh = new THREE.InstancedMesh(pineTrunkGeo, palmTrunkMat, maxPines);
@@ -234,48 +226,38 @@ export function createBeachVegetation(
   pineTrunkMesh.castShadow = true;
   pineCanopyMesh.castShadow = true;
 
-  const dummy = new THREE.Object3D();
-  let placedPines = 0;
-
-  for (let i = 0; i < maxPines * 4 && placedPines < maxPines; i++) {
-    const px = rng.range(-8.5, 8.5);
-    const pz = rng.range(-7.5, -2.5);
-
-    if (isInsideBeachFootprint(px, pz, 0.45) && getDistanceToShore(px, pz) > 1.8 && !isInWater(px, pz)) {
-      const py = getHeightAt(px, pz);
-      const scale = rng.range(0.75, 1.25);
-
-      dummy.position.set(px, py, pz);
-      dummy.scale.set(scale, scale, scale);
-      dummy.rotation.set(0, rng.range(0, Math.PI * 2), 0);
-      dummy.updateMatrix();
-      pineTrunkMesh.setMatrixAt(placedPines, dummy.matrix);
-
-      dummy.position.set(px, py + .75 * scale, pz);
-      dummy.updateMatrix();
-      pineCanopyMesh.setMatrixAt(placedPines, dummy.matrix);
-
+  pineTrunkMesh.name='CasuarinaWood';pineCanopyMesh.name='CasuarinaNeedles';
+  const coastalBatches=[{wood:pineTrunkMesh,leaves:pineCanopyMesh,heights:[] as number[]}];
+  vegGroup.add(pineTrunkMesh,pineCanopyMesh);
+  for(let variant=1;variant<3;variant++){
+    const wood=new THREE.InstancedMesh(coastalCrowns[variant].wood,palmTrunkMat,maxPines),leaves=new THREE.InstancedMesh(coastalCrowns[variant].foliage,casuarinaMat,maxPines);
+    wood.name=`CasuarinaWood_${variant}`;leaves.name=`CasuarinaNeedles_${variant}`;wood.castShadow=true;leaves.castShadow=true;leaves.receiveShadow=true;vegGroup.add(wood,leaves);coastalBatches.push({wood,leaves,heights:[]});
+  }
+  const dummy=new THREE.Object3D();let placedPines=0;
+  for(let i=0;i<maxPines*4&&placedPines<maxPines;i++){
+    const px=rng.range(-8.5,8.5),pz=rng.range(-7.5,-2.5);
+    if(isInsideBeachFootprint(px,pz,.45)&&getDistanceToShore(px,pz)>1.8&&!isInWater(px,pz)){
+      const py=getHeightAt(px,pz),scale=rng.range(.75,1.25),yaw=rng.range(0,Math.PI*2),batch=coastalBatches[placedPines%3],index=batch.heights.length;
+      const height=scale*(2.45+.16*(placedPines%3));dummy.position.set(px,py,pz);dummy.rotation.set(.035*Math.cos(placedPines),yaw,.06*Math.sin(placedPines*1.7));dummy.scale.set(scale*(.68+.05*(placedPines%3)),height,scale*.65);dummy.updateMatrix();
+      // Preserve the seeded grove positions; omit trees whose complete crown would enter a roof.
+      const envelope=coastalCrowns[placedPines%3].foliage.boundingBox!.clone().applyMatrix4(dummy.matrix);
+      const blocked=BUNGALOW_ROOF_BOUNDS.some(b=>envelope.max.x>b.minX-.20&&envelope.min.x<b.maxX+.20&&envelope.max.z>b.minZ-.20&&envelope.min.z<b.maxZ+.20);
       placedPines++;
+      if(blocked)continue;
+      batch.wood.setMatrixAt(index,dummy.matrix);batch.leaves.setMatrixAt(index,dummy.matrix);batch.heights.push(height);
     }
   }
-  pineTrunkMesh.count = Math.max(1, placedPines);
-  pineCanopyMesh.count = Math.max(1, placedPines);
-  pineTrunkMesh.instanceMatrix.needsUpdate = true;
-  pineCanopyMesh.instanceMatrix.needsUpdate = true;
-  vegGroup.add(pineTrunkMesh);
-  vegGroup.add(pineCanopyMesh);
+  for(const batch of coastalBatches){batch.wood.count=batch.heights.length;batch.leaves.count=batch.heights.length;batch.wood.instanceMatrix.needsUpdate=true;batch.leaves.instanceMatrix.needsUpdate=true;}
+  const coastalMeshes=new Set<THREE.Object3D>(coastalBatches.flatMap(b=>[b.wood,b.leaves]));
 
   const weather = createVegetationWeather();
   vegGroup.updateMatrixWorld(true);
   vegGroup.traverse(obj => {
     if (!(obj instanceof THREE.Mesh)) return;
-    if (obj === pineTrunkMesh || obj === pineCanopyMesh) {
-      weather.attach(obj, obj === pineTrunkMesh ? .009 : .018, i => {
-        const m = new THREE.Matrix4(); pineTrunkMesh.getMatrixAt(i, m);
-        return new THREE.Vector3().setFromMatrixPosition(m);
-      },false,false,obj===pineCanopyMesh?{stem:.009,joint:i=>{
-        const m=new THREE.Matrix4();pineCanopyMesh.getMatrixAt(i,m);return new THREE.Vector3().setFromMatrixPosition(m);
-      }}:undefined);
+    if(coastalMeshes.has(obj as THREE.InstancedMesh)){
+      const mesh=obj as THREE.InstancedMesh,batch=coastalBatches.find(b=>b.wood===obj||b.leaves===obj)!;
+      const root=(i:number)=>{const m=new THREE.Matrix4();mesh.getMatrixAt(i,m);return new THREE.Vector3().setFromMatrixPosition(m)};
+      weather.attach(mesh,.018,root,false,false,{stem:.009,joint:i=>root(i).add(new THREE.Vector3(0,batch.heights[i]*.25,0))});
     } else {
       const frond = obj.material === palmFrondMat;
       // Each frond bends from its attachment; trunk segments share the palm's ground anchor.

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createClippedTerrainGrid } from '../../core/clippedTerrainGrid';
 import { groundRock } from '../../core/objectGeometry';
 import {
   DIORAMA_WIDTH,
@@ -29,6 +30,8 @@ import { fbm2D, ridged2D, SimplexNoise2D, SeededRandom } from './noise';
 
 const halfW = DIORAMA_WIDTH / 2;
 const halfD = DIORAMA_DEPTH / 2;
+// Finished deck footprints and their short approach pads retain their existing bearing elevations.
+const GARDEN_BEARING_AREAS=[[-6,-2.2,1.03,1.08],[-3.8,-1.8,1.03,1.08],[-4.3,.05,1.03,1.20],[-1,-2.025,1.10,1.60]] as const;
 
 export type ZoneType = 'mountain' | 'plateau' | 'cliff' | 'bank' | 'stream' | 'hill' | 'out_of_bounds';
 
@@ -153,17 +156,37 @@ export function computeRawTerrainHeight(x: number, z: number): { height: number;
     currentZone = 'bank';
   }
 
+  // Continuous land masses replace the mutually exclusive height branches on unoccupied slopes.
+  // Keep the existing bearing terrain beneath finished decks and their approach pads unchanged.
+  let preserve=0;
+  for(const [cx,cz,rx,rz]of GARDEN_BEARING_AREAS){
+    const distance=Math.max(Math.abs(x-cx)-rx,Math.abs(z-cz)-rz);
+    preserve=Math.max(preserve,1-smoothstep(0,.22,distance));
+  }
+  const bankMix=smoothstep(rightEdgeX-.35,rightEdgeX+.85,x);
+  const valleyBase=THREE.MathUtils.lerp(bankFloor,rightBankH,bankMix);
+  const meadowEnvelope=smoothstep(-.35,.50,distEdgeX)*smoothstep(-.4,.5,distEdgeZ)*(1-cliffDrop);
+  const meadow=THREE.MathUtils.lerp(valleyBase,plateauGentle,meadowEnvelope);
+  // Broad shoulders and two main summits; no absolute-value ridge cusps or high octaves.
+  const shoulder=Math.exp(-Math.pow((x+6.3)/2.2,2)-Math.pow((z+5.2)/1.6,2))*.26;
+  const broadRock=SimplexNoise2D(x*.19+4,z*.19-3)*.16+SimplexNoise2D(x*.38+1,z*.38+2)*.035;
+  const buttress=.30*Math.exp(-Math.pow((x+7.0)/1.5,2)-Math.pow((z+5.8)/2.3,2));
+  const broadGully=.20*Math.exp(-Math.pow((x+3.0+.22*Math.sin(z*.5))/.85,2));
+  const smoothMountain=2.48+peakLeft+peakRight+shoulder+buttress+broadRock-broadGully;
+  const mountainWeight=1-smoothstep(-5.15,-3.45,z);
+  const continuousBase=THREE.MathUtils.lerp(meadow,smoothMountain,mountainWeight);
+  baseH=THREE.MathUtils.lerp(continuousBase,baseH,preserve);
+
   // Ensure gorge and cascade banks rise naturally above stream elevation in upper mountain reaches
   if (z < 0.2) {
     const scx_bank = getStreamCenter(z);
     const shw_bank = getStreamHalfWidth(z);
     const dist_bank = Math.abs(x - scx_bank);
     const waterY_bank = getWaterSurfaceHeight(z);
-    if (dist_bank >= shw_bank * 0.90) {
-      const liftFactor = smoothstep(shw_bank * 0.90, shw_bank * 1.6, dist_bank);
-      const minBankH = waterY_bank + 0.12 + liftFactor * 0.40;
-      baseH = Math.max(baseH, minBankH);
-    }
+    const liftFactor=smoothstep(shw_bank*.90,shw_bank*1.6,dist_bank);
+    const minBankH=waterY_bank+.12+liftFactor*.40;
+    const bankEnvelope=smoothstep(shw_bank*.65,shw_bank*1.15,dist_bank);
+    baseH=THREE.MathUtils.lerp(baseH,Math.max(baseH,minBankH),bankEnvelope);
   }
 
   // 5. Continuous Stream Channel & Expansive Foreground Lake Carving
@@ -254,7 +277,8 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   }
 
   function getNormalAt(x: number, z: number): THREE.Vector3 {
-    const eps = 0.05;
+    // Span several heightfield cells so diagonal cell gradients do not stripe a continuous cliff.
+    const eps = 0.12;
     const hL = getHeightAt(x - eps, z);
     const hR = getHeightAt(x + eps, z);
     const hD = getHeightAt(x, z - eps);
@@ -313,9 +337,9 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   const indices: number[] = [];
 
   const tempCol = new THREE.Color();
-  const numRings = 140;
-  const numSegments = GARDEN_BOUNDARY_SAMPLES; // 256
-  const numTopVerts = 1 + numRings * numSegments;
+  const grid=createClippedTerrainGrid(GARDEN_BOUNDARY_POINTS,nx,nz,{minX,maxX,minZ,maxZ});
+  const boundaryPoints=grid.boundary;
+  const numSegments=boundaryPoints.length,numTopVerts=grid.points.length;
 
   const seasonPalettesData: Record<Season, Float32Array> = {
     spring: new Float32Array(numTopVerts * 3),
@@ -399,89 +423,27 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     }
   }
 
-  // 1. Build Top Surface (Concentric rings connecting center to natural diorama footprint)
-  const cX = GARDEN_CENTER.x;
-  const cZ = GARDEN_CENTER.y;
-  const cY = getHeightAt(cX, cZ);
-  const cNorm = getNormalAt(cX, cZ);
-
-  positions.push(cX, cY, cZ);
-  normals.push(cNorm.x, cNorm.y, cNorm.z);
-  for (const s of seasonsList) {
-    evaluateSurfaceColor(cX, cY, cZ, cNorm, s, tempCol);
-    seasonPalettesData[s][0] = tempCol.r;
-    seasonPalettesData[s][1] = tempCol.g;
-    seasonPalettesData[s][2] = tempCol.b;
+  // 1. Uniformly tessellated terrain, clipped to the display contour rather than radial long diagonals.
+  const cX=GARDEN_CENTER.x,cZ=GARDEN_CENTER.y;
+  for(const [vIdx,point]of grid.points.entries()){
+    const x=point.x,z=point.y,y=getHeightAt(x,z),norm=getNormalAt(x,z);
+    positions.push(x,y,z);normals.push(norm.x,norm.y,norm.z);
+    for(const season of seasonsList){evaluateSurfaceColor(x,y,z,norm,season,tempCol);seasonPalettesData[season][vIdx*3]=tempCol.r;seasonPalettesData[season][vIdx*3+1]=tempCol.g;seasonPalettesData[season][vIdx*3+2]=tempCol.b;}
+    colors.push(seasonPalettesData.spring[vIdx*3],seasonPalettesData.spring[vIdx*3+1],seasonPalettesData.spring[vIdx*3+2]);
   }
-  colors.push(
-    seasonPalettesData.spring[0],
-    seasonPalettesData.spring[1],
-    seasonPalettesData.spring[2]
-  );
-
-  for (let ir = 1; ir <= numRings; ir++) {
-    const frac = ir / numRings;
-    for (let it = 0; it < numSegments; it++) {
-      const bPt = GARDEN_BOUNDARY_POINTS[it];
-      const x = cX + frac * (bPt.x - cX);
-      const z = cZ + frac * (bPt.y - cZ);
-      const y = getHeightAt(x, z);
-      const norm = getNormalAt(x, z);
-
-      positions.push(x, y, z);
-      normals.push(norm.x, norm.y, norm.z);
-
-      const vIdx = 1 + (ir - 1) * numSegments + it;
-      for (const s of seasonsList) {
-        evaluateSurfaceColor(x, y, z, norm, s, tempCol);
-        seasonPalettesData[s][vIdx * 3] = tempCol.r;
-        seasonPalettesData[s][vIdx * 3 + 1] = tempCol.g;
-        seasonPalettesData[s][vIdx * 3 + 2] = tempCol.b;
-      }
-
-      colors.push(
-        seasonPalettesData.spring[vIdx * 3],
-        seasonPalettesData.spring[vIdx * 3 + 1],
-        seasonPalettesData.spring[vIdx * 3 + 2]
-      );
-    }
-  }
-
-  // Quads for Top Surface (strictly +Y normal winding)
-  // Center to ring 1: triangle fan
-  for (let it = 0; it < numSegments; it++) {
-    const nextIt = (it + 1) % numSegments;
-    indices.push(0, 1 + nextIt, 1 + it);
-  }
-
-  // Ring k to Ring k + 1: quads
-  for (let ir = 1; ir < numRings; ir++) {
-    const ringCurr = 1 + (ir - 1) * numSegments;
-    const ringNext = 1 + ir * numSegments;
-
-    for (let it = 0; it < numSegments; it++) {
-      const nextIt = (it + 1) % numSegments;
-      const i00 = ringCurr + it;
-      const i10 = ringCurr + nextIt;
-      const i01 = ringNext + it;
-      const i11 = ringNext + nextIt;
-
-      indices.push(i00, i11, i01);
-      indices.push(i00, i10, i11);
-    }
-  }
+  for(const index of grid.triangles)indices.push(index);
 
   // 2. Continuous Organic Side Walls around Natural Boundary
   const nySide = 12;
-  const colSoil = COLORS.terrain.strataSoil;
-  const colSubsoil = new THREE.Color(0x6e563b);
-  const colRock = COLORS.terrain.strataRock1;
+  const colSoil = new THREE.Color(0x9c8065);
+  const colSubsoil = new THREE.Color(0xb0a08a);
+  const colRock = new THREE.Color(0xa6a397);
   const colBase = COLORS.base;
 
   const boundaryNormals: THREE.Vector2[] = [];
   for (let it = 0; it < numSegments; it++) {
-    const prevPt = GARDEN_BOUNDARY_POINTS[(it - 1 + numSegments) % numSegments];
-    const nextPt = GARDEN_BOUNDARY_POINTS[(it + 1) % numSegments];
+    const prevPt = boundaryPoints[(it - 1 + numSegments) % numSegments];
+    const nextPt = boundaryPoints[(it + 1) % numSegments];
     const tangent = new THREE.Vector2().subVectors(nextPt, prevPt);
     const norm = new THREE.Vector2(tangent.y, -tangent.x).normalize();
     boundaryNormals.push(norm);
@@ -491,7 +453,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   for (let iy = 0; iy <= nySide; iy++) {
     const ty = iy / nySide;
     for (let it = 0; it < numSegments; it++) {
-      const bPt = GARDEN_BOUNDARY_POINTS[it];
+      const bPt = boundaryPoints[it];
       const norm2d = boundaryNormals[it];
       const yTop = getHeightAt(bPt.x, bPt.y);
       const y = yTop * (1.0 - ty) + wallCutoffY * ty;
@@ -499,16 +461,10 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
       positions.push(bPt.x, y, bPt.y);
       normals.push(norm2d.x, 0, norm2d.y);
 
-      const bSoil = yTop - 0.16 - SimplexNoise2D(it * 0.15, 5.0) * 0.04;
-      const bSubsoil = (yTop + wallCutoffY) * 0.50 + SimplexNoise2D(it * 0.12, 15.0) * 0.06;
-
-      if (y > bSoil) {
-        tempCol.copy(colSoil);
-      } else if (y > bSubsoil) {
-        tempCol.copy(colSubsoil);
-      } else {
-        tempCol.copy(colRock);
-      }
+      const depth=yTop-y;
+      const seam=.025*SimplexNoise2D(bPt.x*.25,bPt.y*.25);
+      tempCol.copy(colSoil).lerp(colSubsoil,smoothstep(.08+seam,.24+seam,depth));
+      tempCol.lerp(colRock,smoothstep(.25+seam,.55+seam,depth));
       colors.push(tempCol.r, tempCol.g, tempCol.b);
     }
   }
@@ -540,7 +496,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     const nOut = Math.cos(phi);
 
     for (let it = 0; it < numSegments; it++) {
-      const bPt = GARDEN_BOUNDARY_POINTS[it];
+      const bPt = boundaryPoints[it];
       const norm2d = boundaryNormals[it];
       const curX = bPt.x + norm2d.x * outward;
       const curZ = bPt.y + norm2d.y * outward;
@@ -585,7 +541,11 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
   terrainGeom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   terrainGeom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   terrainGeom.setIndex(indices);
+  terrainGeom.userData.topVertexCount=numTopVerts;terrainGeom.userData.boundaryCount=numSegments;
   terrainGeom.computeVertexNormals();
+  // The rendered top and CPU surface use the same sampled differential, independent of radial diagonals.
+  const terrainNormals=terrainGeom.getAttribute('normal');
+  for(let i=0;i<numTopVerts;i++)terrainNormals.setXYZ(i,normals[i*3],normals[i*3+1],normals[i*3+2]);
   terrainGeom.computeBoundingBox();
   terrainGeom.computeBoundingSphere();
 
@@ -625,7 +585,7 @@ export function createTerrain(scene: THREE.Scene): TerrainSystem {
     const ringAlpha = 0.38 * Math.pow(1.0 - frac, 1.4);
 
     for (let it = 0; it < numSegments; it++) {
-      const bPt = GARDEN_BOUNDARY_POINTS[it];
+      const bPt = boundaryPoints[it];
       const norm2d = boundaryNormals[it];
       const sx = bPt.x + norm2d.x * expand;
       const sz = bPt.y + norm2d.y * expand;

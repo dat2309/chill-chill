@@ -1212,8 +1212,8 @@ let unexpectedVegMeshCount = 0;
 let unexpectedVegMeshDetails = '';
 pqVeg.group.traverse((obj) => {
   if (obj instanceof THREE.InstancedMesh) {
-    const isPineTrunk = obj.geometry instanceof THREE.CylinderGeometry;
-    const isPineCanopy = obj.geometry instanceof THREE.ConeGeometry;
+    const isPineTrunk = obj.name.startsWith('CasuarinaWood');
+    const isPineCanopy = obj.name.startsWith('CasuarinaNeedles');
     if (!isPineTrunk && !isPineCanopy) {
       unexpectedVegMeshCount++;
       unexpectedVegMeshDetails = `Unexpected InstancedMesh found in vegetation with geometry ${obj.geometry.type}`;

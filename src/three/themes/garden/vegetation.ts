@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createBranchCrown } from '../../core/branchCrown';
 import { createVegetationWeather } from '../../core/vegetationWeather';
 import {
   DIORAMA_WIDTH,
@@ -78,13 +79,8 @@ export function createVegetation(
 
   // 1. PINE / CONIFER TREES (~26 well-scaled trees in natural alpine groves, not in a rigid line)
   // Height: 1.4 - 2.3, Radius: 0.36 - 0.58, with varied silhouettes per tree
-  const pineTrunkGeom = new THREE.CylinderGeometry(0.04, 0.08, 1.0, 6, 6);
-  pineTrunkGeom.translate(0, 0.5, 0);
-
-  // 9-segment cone with smooth vertex normals for rich evergreen light wrap (never black)
-  const pineConeGeom = new THREE.ConeGeometry(1.0, 1.0, 9);
-  pineConeGeom.computeVertexNormals();
-  pineConeGeom.translate(0, 0.5, 0);
+  const pineCrowns=[0,1,2].map(variant=>createBranchCrown(false,variant));
+  const pineTrunkGeom=pineCrowns[0].wood,pineNeedlesGeom=pineCrowns[0].foliage;
 
   const pineTrunkMat = new THREE.MeshStandardMaterial({
     color: 0x5c4230,
@@ -97,13 +93,13 @@ export function createVegetation(
     color: 0xffffff, // White base so instanceColor reflects exact alpine evergreen tint
     roughness: 0.65,
     metalness: 0.03,
-    flatShading: false, // Smooth cone lighting wrap so shaded sides retain rich evergreen depth
+    flatShading: false, vertexColors:true, side:THREE.DoubleSide, // Real folded needle sprays with open gaps.
   });
 
   const pineCount = 26;
-  const maxPineLayers = 5;
+  const maxPineLayers = 5; // Retain the seeded placement sequence from the previous scene.
   const pineTrunkMesh = new THREE.InstancedMesh(pineTrunkGeom, pineTrunkMat, pineCount);
-  const pineFoliageMesh = new THREE.InstancedMesh(pineConeGeom, pineFoliageMat, pineCount * maxPineLayers);
+  const pineFoliageMesh = new THREE.InstancedMesh(pineNeedlesGeom, pineFoliageMat, pineCount);
   pineTrunkMesh.castShadow = true;
   pineFoliageMesh.castShadow = true;
   pineFoliageMesh.receiveShadow = true;
@@ -166,43 +162,19 @@ export function createVegetation(
     pineInstances.push({ x, y: h, z, h: treeH, r: treeR, layers, tint: pineTint });
   }
 
-  let pFolIdx = 0;
-  for (let i = 0; i < pineInstances.length; i++) {
-    const p = pineInstances[i];
-    dummy.position.set(p.x, p.y, p.z);
-    dummy.rotation.set(vRng.range(-0.06, 0.06), vRng.range(0, Math.PI * 2), vRng.range(-0.06, 0.06));
-    dummy.scale.set(1.0, p.h, 1.0);
-    dummy.updateMatrix();
-    dummy.rotation.x=0;dummy.rotation.z=0;dummy.updateMatrix();
-    pineTrunkMesh.setMatrixAt(i, dummy.matrix);
-
-    for (let l = 0; l < maxPineLayers; l++) {
-      if (l < p.layers) {
-        const frac = 0.32 + (l / (p.layers - 0.2)) * 0.58;
-        const ly = p.y + p.h * frac;
-        const layerRScale = 1.0 - (l / p.layers) * 0.60;
-        const lr = p.r * layerRScale;
-        const lh = p.h * (0.44 / p.layers * 4.0) * layerRScale;
-        dummy.position.set(p.x, ly, p.z);
-        dummy.rotation.set(0, vRng.range(0, Math.PI * 2), 0);
-        dummy.scale.set(lr, lh, lr);
-
-        // Subtle gradient from darker lower branches to sunlit crown
-        const layerTint = p.tint.clone().offsetHSL(0, 0, (l / p.layers - 0.5) * 0.05);
-        pineFoliageMesh.setColorAt(pFolIdx, layerTint);
-      } else {
-        dummy.position.set(p.x, p.y, p.z);
-        dummy.scale.set(0, 0, 0);
-        pineFoliageMesh.setColorAt(pFolIdx, p.tint);
-      }
-      dummy.updateMatrix();
-      pineFoliageMesh.setMatrixAt(pFolIdx++, dummy.matrix);
-    }
+  const pineBatches=[{wood:pineTrunkMesh,leaves:pineFoliageMesh,trees:[] as PineInstance[]}];
+  for(let variant=1;variant<3;variant++){
+    const wood=new THREE.InstancedMesh(pineCrowns[variant].wood,pineTrunkMat,pineCount),leaves=new THREE.InstancedMesh(pineCrowns[variant].foliage,pineFoliageMat,pineCount);
+    wood.name=`PineTrunks_${variant}`;leaves.name=`PineFoliage_${variant}`;wood.castShadow=true;leaves.castShadow=true;leaves.receiveShadow=true;group.add(wood,leaves);pineBatches.push({wood,leaves,trees:[]});
   }
-  pineTrunkMesh.count=pineInstances.length;pineFoliageMesh.count=pineInstances.length*maxPineLayers;
-  pineTrunkMesh.instanceMatrix.needsUpdate = true;
-  pineFoliageMesh.instanceMatrix.needsUpdate = true;
-  if (pineFoliageMesh.instanceColor) pineFoliageMesh.instanceColor.needsUpdate = true;
+  for(let i=0;i<pineInstances.length;i++){
+    const p=pineInstances[i],batch=pineBatches[i%3],index=batch.trees.length;
+    const tiltX=vRng.range(-.06,.06),yaw=vRng.range(0,Math.PI*2),tiltZ=vRng.range(-.06,.06);
+    dummy.position.set(p.x,p.y,p.z);dummy.rotation.set(tiltX,yaw,tiltZ);dummy.scale.set(p.r,p.h,p.r*(.87+.11*(i%3)));dummy.updateMatrix();
+    batch.wood.setMatrixAt(index,dummy.matrix);batch.leaves.setMatrixAt(index,dummy.matrix);batch.leaves.setColorAt(index,p.tint);batch.trees.push(p);
+    for(let l=0;l<maxPineLayers;l++)if(l<p.layers)vRng.range(0,Math.PI*2);
+  }
+  for(const batch of pineBatches){batch.wood.count=batch.trees.length;batch.leaves.count=batch.trees.length;batch.wood.instanceMatrix.needsUpdate=true;batch.leaves.instanceMatrix.needsUpdate=true;if(batch.leaves.instanceColor)batch.leaves.instanceColor.needsUpdate=true;}
 
   // 2. Deciduous shade trees with tapered wood and open leaf-bearing twigs.
   const decTrunkGeom = new THREE.CylinderGeometry(0.025, 0.14, 1.0, 7, 6);
@@ -666,18 +638,13 @@ export function createVegetation(
   scene.add(group);
 
   const weather = createVegetationWeather();
-  const pineRoot = (i: number, layers = false) => {
-    const p = pineInstances[layers ? Math.floor(i / maxPineLayers) : i];
-    return new THREE.Vector3(p?.x ?? 0, p?.y ?? 0, p?.z ?? 0);
-  };
   const treeRoot = (i: number, parts = 1) => {
     const p = decTrees[Math.floor(i / parts)];
     return new THREE.Vector3(p?.x ?? 0, p?.y ?? 0, p?.z ?? 0);
   };
-  weather.attach(pineTrunkMesh, .009, i => pineRoot(i));
-  weather.attach(pineFoliageMesh,.018,i=>pineRoot(i,true),false,false,{stem:.009,joint:i=>{
-    const m=new THREE.Matrix4();pineFoliageMesh.getMatrixAt(i,m);return new THREE.Vector3().setFromMatrixPosition(m);
-  }});
+  for(const batch of pineBatches)for(const mesh of [batch.wood,batch.leaves])weather.attach(mesh,.018,i=>{
+    const p=batch.trees[i];return new THREE.Vector3(p.x,p.y,p.z);
+  },false,false,{stem:.009,joint:i=>{const p=batch.trees[i];return new THREE.Vector3(p.x,p.y+p.h*.25,p.z)}});
   weather.attach(decTrunkMesh, .012, i => treeRoot(i));
   const treeJoint=(i:number,parts:number)=>{const p=decTrees[Math.floor(i/parts)];return new THREE.Vector3(p.x,p.y+p.h*.60,p.z);};
   weather.attach(decBranchMesh,.019,i=>treeRoot(i,branchesPerTree),false,false,{stem:.012,joint:i=>treeJoint(i,branchesPerTree)});
@@ -713,7 +680,7 @@ export function createVegetation(
       const c = palette(key); const base = SEASON_PALETTES.spring[key];
       (mat as THREE.MeshStandardMaterial).color.setRGB(c.r / Math.max(.01, base.r), c.g / Math.max(.01, base.g), c.b / Math.max(.01, base.b));
     };
-    tint(pineFoliageMesh.material as THREE.Material, 'pineFoliage');
+    for(const batch of pineBatches)tint(batch.leaves.material as THREE.Material,'pineFoliage');
     tint(decCanopyMesh.material as THREE.Material, 'canopyPrimary');
     (grassMesh.material as THREE.MeshStandardMaterial).color.setRGB(1, 1 - weights.autumn * .2 - weights.winter * .25, 1 - weights.autumn * .3);
     (fernMesh.material as THREE.MeshStandardMaterial).color.setRGB(.18 + weights.autumn * .06, .4 - weights.winter * .15, .12);
@@ -731,9 +698,8 @@ export function createVegetation(
     dispose() {
       weather.dispose();
       flowerWeather.dispose();
-      pineTrunkGeom.dispose();
+      pineCrowns.forEach(c=>{c.wood.dispose();c.foliage.dispose()});
       pineTrunkMat.dispose();
-      pineConeGeom.dispose();
       pineFoliageMat.dispose();
       decTrunkGeom.dispose();
       decTrunkMat.dispose();

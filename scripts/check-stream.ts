@@ -329,7 +329,7 @@ if (indexAttr) {
     e2.subVectors(v2, v0);
     faceNormal.crossVectors(e1, e2).normalize();
     // Triangles on the top surface (vertices strictly within top surface fan and rings)
-    const isTopTriangle = i0 < 35841 && i1 < 35841 && i2 < 35841;
+    const isTopTriangle = i0 < geom.userData.topVertexCount && i1 < geom.userData.topVertexCount && i2 < geom.userData.topVertexCount;
 
     // Bottom face triangles (at baseBottomY = -0.70)
     if (Math.abs(v0.y - (-0.70)) < 0.001 && Math.abs(v1.y - (-0.70)) < 0.001 && Math.abs(v2.y - (-0.70)) < 0.001) {
@@ -361,7 +361,7 @@ if (indexAttr) {
 }
 
 assert(topTrianglesCount > 5000 && topWindingCorrect, `Top surface has verified +Y normal winding across all ${topTrianglesCount} triangles`);
-assert(bottomTrianglesCount === 256 && bottomWindingCorrect, `Bottom face has verified strictly -Y normal winding across all ${bottomTrianglesCount} triangles`);
+assert(bottomTrianglesCount === geom.userData.boundaryCount && bottomTrianglesCount >= 256 && bottomWindingCorrect, `Bottom face has verified strictly -Y normal winding across all ${bottomTrianglesCount} triangles`);
 assert(sideTrianglesCount > 1000 && sideWindingCorrect, `Side walls have verified outward-facing normal winding across all ${sideTrianglesCount} triangles`);
 
 // Verify no DoubleSide masking on terrain material

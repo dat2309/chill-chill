@@ -10,6 +10,7 @@ export function createVegetationWeather() {
   function attach(mesh: THREE.Mesh, softness: number, rootAt?: (i: number) => THREE.Vector3, deciduous = false, tip = false, articulation?: {stem:number; joint:(i:number)=>THREE.Vector3}) {
     // Geometry can be shared by other meshes with different roots.
     mesh.geometry = mesh.geometry.clone();
+    if(!mesh.geometry.getAttribute('vegSnowCover'))mesh.geometry.setAttribute('vegSnowCover',new THREE.Float32BufferAttribute(new Float32Array(mesh.geometry.getAttribute('position').count).fill(1),1));
     const inst = mesh as THREE.InstancedMesh;
     const count = inst.isInstancedMesh ? inst.count : mesh.geometry.attributes.position.count;
     const roots = new Float32Array(count * 3);
@@ -34,6 +35,8 @@ export function createVegetationWeather() {
     mesh.geometry.setAttribute('vegJoint',inst.isInstancedMesh?new THREE.InstancedBufferAttribute(joints,3):new THREE.BufferAttribute(joints,3));
     const declarations = `
 attribute vec3 vegRoot, vegCenter, vegJoint;
+attribute float vegSnowCover;
+varying float vegSnowExposure;
 uniform float vegTime, vegWind, vegSnow, vegDensity;
 varying float vegUp;
 vec3 vegetationDeform(vec3 p, vec3 root) {
@@ -77,6 +80,7 @@ vn /= max(vec3(dot(instanceMatrix[0].xyz, instanceMatrix[0].xyz),
 vn = mat3(instanceMatrix) * vn;
 #endif
 vegUp = clamp(normalize(mat3(modelMatrix) * vn).y, 0.0, 1.0);
+vegSnowExposure=vegSnowCover;
 `;
     const material = (mesh.material as THREE.Material).clone();
     const patch = (mat: THREE.Material, surface: boolean) => {
@@ -86,10 +90,10 @@ vegUp = clamp(normalize(mat3(modelMatrix) * vn).y, 0.0, 1.0);
         shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', deform);
         shader.vertexShader = shader.vertexShader.replace('#include <worldpos_vertex>', THREE.ShaderChunk.worldpos_vertex.replace('worldPosition = modelMatrix * worldPosition;', 'worldPosition = vp;'));
         if (surface) {
-          shader.fragmentShader = 'uniform float vegWet, vegSnow, vegRain; varying float vegUp;\n' + shader.fragmentShader;
+          shader.fragmentShader = 'uniform float vegWet, vegSnow, vegRain; varying float vegUp,vegSnowExposure;\n' + shader.fragmentShader;
           shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
  diffuseColor.rgb *= 1.0 - vegWet * .14 - vegRain * .04;
- diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.87,.92,.95), vegSnow * smoothstep(.35,.85,vegUp) * .85);`);
+ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.87,.92,.95), vegSnow * vegSnowExposure * smoothstep(.35,.85,vegUp) * (gl_FrontFacing ? .85 : 0.0));`);
           if (mat instanceof THREE.MeshStandardMaterial) shader.fragmentShader = shader.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= 1.0 - vegWet * .28 - vegRain * .1;');
         }
       };

@@ -16,7 +16,7 @@ function step(theme,season,seconds,wind=.45){const state={...base,themeId:theme.
 // This also executes density collapse and the frond's inherited trunk motion; no wind formula is copied.
 function probe(mesh,index,point,time,wind,snow,density){
  const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};mesh.material.onBeforeCompile(shader,renderer);
- const decl=shader.vertexShader.slice(0,shader.vertexShader.indexOf('#define STANDARD')).replace('attribute vec3','uniform vec3').replace('varying float vegUp;','out float vegUp;');
+ const decl=shader.vertexShader.slice(0,shader.vertexShader.indexOf('#define STANDARD')).replaceAll('attribute ','uniform ').replaceAll('varying float','out float');
  const start=shader.vertexShader.indexOf('vec4 vp ='),end=shader.vertexShader.indexOf('#include <logdepthbuf_vertex>',start);
  const block=shader.vertexShader.slice(start,end);
  const vertex=`#version 300 es\nprecision highp float;${decl}\nuniform mat4 modelMatrix,viewMatrix,projectionMatrix;uniform vec3 inputPoint;out vec3 sampled;void main(){vec3 transformed=inputPoint;vec3 normal=vec3(0,1,0);${block}\nsampled=vp.xyz;}`;
@@ -28,9 +28,20 @@ function probe(mesh,index,point,time,wind,snow,density){
  for(const [key,m]of [['modelMatrix',mesh.matrixWorld],['viewMatrix',new THREE.Matrix4()],['projectionMatrix',new THREE.Matrix4()]])gl.uniformMatrix4fv(gl.getUniformLocation(p,key),false,m.elements);
  const vao=gl.createVertexArray();gl.bindVertexArray(vao);const tf=gl.createTransformFeedback();gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,tf);const buf=gl.createBuffer();gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER,buf);gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER,12,gl.STREAM_READ);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,buf);gl.enable(gl.RASTERIZER_DISCARD);gl.beginTransformFeedback(gl.POINTS);gl.drawArrays(gl.POINTS,0,1);gl.endTransformFeedback();gl.disable(gl.RASTERIZER_DISCARD);const values=new Float32Array(3);gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER,0,values);gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,null);gl.bindVertexArray(null);gl.deleteTransformFeedback(tf);gl.deleteVertexArray(vao);gl.deleteBuffer(buf);gl.deleteProgram(p);gl.deleteShader(vs);gl.deleteShader(fs);renderer.resetState();if(![...values].every(Number.isFinite))throw Error('Non-finite actual GPU deformation');const output=new THREE.Vector3(...values);const bound=(mesh.boundingBox||mesh.geometry.boundingBox)?.clone().applyMatrix4(mesh.matrixWorld).expandByScalar(.001);if(bound&&!bound.containsPoint(output))throw Error('GPU displacement exceeds actual mesh bounds: '+mesh.name);return output
 }
+function checkForest(group,woodName,leafName){
+ const wood=group.getObjectByName(woodName),leaves=group.getObjectByName(leafName);group.updateMatrixWorld(true);
+ const matrix=new THREE.Matrix4();leaves.getMatrixAt(0,matrix);
+ const positions=leaves.geometry.getAttribute('position'),join=new THREE.Vector3().fromBufferAttribute(positions,Math.floor(positions.count*.65/5)*5).applyMatrix4(matrix).applyMatrix4(leaves.matrixWorld);
+ const root=new THREE.Vector3().fromBufferAttribute(wood.geometry.getAttribute('vegRoot'),0).applyMatrix4(wood.matrixWorld);let gap=0,rootError=0;
+ for(const time of [0,2,7])for(const snow of [0,1]){
+  gap=Math.max(gap,probe(wood,0,join,time,1.2,snow,1).distanceTo(probe(leaves,0,join,time,1.2,snow,1)));
+  rootError=Math.max(rootError,probe(wood,0,root,time,1.2,snow,1).distanceTo(root));
+ }
+ check(gap<.00002&&rootError<.00002,`Actual GPU ${woodName}: wood/needles stay joined and root fixed (gap ${gap}, root ${rootError})`);
+}
 try{
  const garden=new GardenTheme({});await garden.init();const scene=new THREE.Scene();scene.background=new THREE.Color(0xbcd1da);scene.add(garden.group);const gc=camera(garden);
- step(garden,'summer',8);snap(scene,gc,'Garden summer · default · 14:00 · high tide');
+ step(garden,'summer',8);checkForest(garden.group,'PineTrunks','PineFoliage');snap(scene,gc,'Garden summer · default · 14:00 · high tide');
  const dome=garden.group.getObjectByName('domeTent_0')||garden.group.getObjectByName('domeTent_1');const dp=dome.getWorldPosition(new THREE.Vector3());const dc=close(dp,new THREE.Vector3(3,1.8,4),2.8);snap(scene,dc,'Dome: fabric, frame, deck and supports');
  step(garden,'winter',9);snap(scene,gc,'Garden complete winter · same camera/time/tide');snap(scene,dc,'Dome snow follows roof · winter');snap(scene,close(new THREE.Vector3(-1,2,-2.5),new THREE.Vector3(3,2,4),3.8),'Cabin roof snow and deck supports');
  const trunks=garden.group.getObjectByName('DeciduousTrunks'),branches=garden.group.getObjectByName('DeciduousBranches'),twigs=garden.group.getObjectByName('DeciduousTwigs'),leaves=garden.group.getObjectByName('DeciduousLeaves');scene.updateMatrixWorld(true);
@@ -47,7 +58,7 @@ try{
  step(garden,'summer',.8,1.2);snap(scene,gc,'Garden winter→summer mid transition · strong wind');step(garden,'winter',.5,.05);snap(scene,gc,'Garden reversal to winter · wind reduced');
  snap(scene,close(new THREE.Vector3(0,1,0),new THREE.Vector3(0,32,.01),24),'Garden top');snap(scene,close(new THREE.Vector3(0,1,0),new THREE.Vector3(25,7,17),21),'Garden side');garden.dispose();
  const beach=new BeachTheme({});await beach.init();const bs=new THREE.Scene();bs.background=new THREE.Color(0xbcd1da);bs.add(beach.group);const bc=camera(beach);
- step(beach,'dry',4);snap(bs,bc,'Beach dry · default · same time/tide');
+ step(beach,'dry',4);checkForest(beach.group,'CasuarinaWood','CasuarinaNeedles');snap(bs,bc,'Beach dry · default · same time/tide');
  bs.updateMatrixWorld(true);const palm=beach.group.getObjectByName('PalmTrunk'),palmObject=palm.parent.parent,crown=palmObject.children.find(o=>o!==palm.parent),frond=crown.children.find(o=>o.isMesh);
  const attachment=crown.getWorldPosition(new THREE.Vector3()),palmRoot=palmObject.getWorldPosition(new THREE.Vector3());let palmGap=0,palmRootError=0,frondMotion=0;
  const fp=frond.geometry.getAttribute('position'),tipPoint=frond.localToWorld(new THREE.Vector3().fromBufferAttribute(fp,fp.count-2));
